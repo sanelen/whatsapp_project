@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm install && npm run build",
+  "installCommand": "npm install",
+  "outputDirectory": "platform/.next",
+  "root": "platform"
+}
