@@ -5,15 +5,17 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 // Client-side Supabase client (for browser/public operations)
-export const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+export const supabaseClient = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
 
 let supabaseAdmin: SupabaseClient | null = null;
 
 // Server-side Supabase client (with service role for sensitive operations)
 function getSupabaseAdmin() {
   if (!supabaseAdmin) {
-    if (!supabaseServiceRoleKey) {
-      throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for server-side operations');
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      throw new Error('SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_URL are required for server-side operations');
     }
 
     supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
