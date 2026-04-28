@@ -230,7 +230,7 @@
 
   <script>
     (function () {
-      const STORAGE_KEY = 'wa_ai_progress_v1';
+      const STORAGE_KEY = 'wa_ai_progress_v2';
 
       const groups = [
         {
@@ -246,7 +246,7 @@
           id: 'integration',
           title: 'WhatsApp Integration',
           items: [
-            { id: 'webhook-live', label: 'Webhook route reachable (localhost + ngrok)' },
+            { id: 'webhook-live', label: 'Webhook route reachable (localhost + Cloudflare tunnel)' },
             { id: 'twilio-config', label: 'Twilio sandbox webhook configured' },
             { id: 'inbound-log', label: 'Inbound event persisted to database' }
           ]
@@ -285,8 +285,7 @@
           'twilio-config': true,
           'inbound-log': true,
           'ai-chain': true,
-          'admin-convos': true,
-          'e2e-pass': true
+          'admin-convos': true
         };
       }
 

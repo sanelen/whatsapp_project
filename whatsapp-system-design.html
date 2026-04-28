@@ -431,6 +431,15 @@
       <div class="checklist-grid" id="checklist-grid"></div>
     </div>
 
+    <div class="card">
+      <h2 style="margin-top:0;">Session Decisions (April 26, 2026)</h2>
+      <ul class="small">
+        <li><strong>Progress baseline corrected:</strong> checklist defaults include completed foundation + integration + AI chain + admin conversation visibility. <strong>kb-ready</strong> and <strong>e2e-pass</strong> are intentionally not auto-completed.</li>
+        <li><strong>Webhook callback methods:</strong> Twilio should use <code>POST /api/webhooks/twilio</code> for inbound messages and <code>POST /api/webhooks/twilio/status</code> for delivery/status updates.</li>
+        <li><strong>Local validation target:</strong> use <code>http://localhost:3000</code> when the active dev server is running.</li>
+      </ul>
+    </div>
+
     <h2>1) Core Stack</h2>
     <div class="grid cards-5">
       <div class="card">
@@ -648,7 +657,7 @@
 
   <script>
     (function () {
-      const STORAGE_KEY = 'wa_ai_progress_v1';
+      const STORAGE_KEY = 'wa_ai_progress_v2';
       const LOCAL_APP = 'http://localhost:3000';
       const PUBLIC_TWILIO_WEBHOOK = 'https://ecommerce-analyst-mines-concerts.trycloudflare.com/api/webhooks/twilio';
       const PUBLIC_TWILIO_STATUS = 'https://ecommerce-analyst-mines-concerts.trycloudflare.com/api/webhooks/twilio/status';
@@ -667,7 +676,7 @@
           id: 'integration',
           title: 'WhatsApp Integration',
           items: [
-            { id: 'webhook-live', label: 'Webhook route reachable (localhost + ngrok)' },
+            { id: 'webhook-live', label: 'Webhook route reachable (localhost + Cloudflare tunnel)' },
             { id: 'twilio-config', label: 'Twilio sandbox webhook configured' },
             { id: 'inbound-log', label: 'Inbound event persisted to database' }
           ]
@@ -790,8 +799,7 @@
           'twilio-config': true,
           'inbound-log': true,
           'ai-chain': true,
-          'admin-convos': true,
-          'e2e-pass': true
+          'admin-convos': true
         });
       }
 

@@ -35,6 +35,10 @@ export default function AdminPage() {
     inFlightRef.current = true;
 
     try {
+      if (!supabaseClient) {
+        throw new Error('Supabase is not configured in this environment');
+      }
+
       if (isBackgroundRefresh) {
         setRefreshing(true);
       } else {
@@ -116,6 +120,10 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
+    if (!supabaseClient) {
+      return;
+    }
+
     const channel = supabaseClient
       .channel('admin-live-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
