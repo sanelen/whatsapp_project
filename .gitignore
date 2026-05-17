@@ -20,6 +20,9 @@
 # production
 /build
 
+# local chat history (persisted to JSON, not committed)
+/data/chat-history.json
+
 # misc
 .DS_Store
 *.pem

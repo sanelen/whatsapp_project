@@ -2,14 +2,28 @@
   "name": "sa-chatbot",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.9.7",
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "check:runtime": "node scripts/check-runtime.mjs",
+    "predev": "npm run check:runtime",
+    "dev": "NODE_ENV=development next dev --webpack",
+    "prebuild": "npm run check:runtime",
+    "build": "NODE_ENV=production next build",
+    "prestart": "npm run check:runtime",
+    "start": "NODE_ENV=production next start",
+    "prelint": "npm run check:runtime",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit --incremental false"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.94.0",
+    "@supabase/supabase-js": "2.105.3",
     "next": "16.2.4",
+    "openai": "^6.34.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
