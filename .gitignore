@@ -1,5 +1,31 @@
 # macOS
 .DS_Store
 
+# dependencies
+node_modules/
+**/node_modules/
+
+# build output
+.next/
+**/.next/
+out/
+**/out/
+build/
+**/build/
+coverage/
+**/coverage/
+
+# local environment and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+*.pem
+
 # local logs and scratch output
 logs/
+*.log
+
+# TypeScript / Next generated files
+*.tsbuildinfo
+next-env.d.ts
