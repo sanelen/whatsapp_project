@@ -59,6 +59,29 @@ CREATE TABLE IF NOT EXISTS knowledge_base (
 
 CREATE INDEX idx_knowledge_base_category ON knowledge_base(category);
 CREATE INDEX idx_knowledge_base_is_active ON knowledge_base(is_active);
+
+-- Prompt settings table (singleton row per app)
+CREATE TABLE IF NOT EXISTS prompt_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(100) NOT NULL DEFAULT 'default',
+  system_prompt TEXT NOT NULL DEFAULT 'You are a helpful assistant.',
+  temperature NUMERIC(3,2) NOT NULL DEFAULT 0.40 CHECK (temperature >= 0 AND temperature <= 2),
+  -- LLM provider settings
+  llm_provider VARCHAR(50) NOT NULL DEFAULT 'openai',
+  llm_model VARCHAR(100) NOT NULL DEFAULT 'gpt-5.4',
+  llm_api_key TEXT NOT NULL DEFAULT '',
+  llm_base_url VARCHAR(500) NOT NULL DEFAULT '',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_prompt_settings_name ON prompt_settings(name);
+
+-- Seed a default row so GET always returns something
+INSERT INTO prompt_settings (name, system_prompt, temperature, llm_provider, llm_model, llm_api_key, llm_base_url)
+VALUES ('default', 'You are a helpful assistant.', 0.40, 'openai', 'gpt-5.4', '', '')
+ON CONFLICT (name) DO NOTHING;
+CREATE INDEX idx_knowledge_base_is_active ON knowledge_base(is_active);
 CREATE INDEX idx_knowledge_base_created_at ON knowledge_base(created_at);
 
 -- Webhooks log table (for tracking inbound events)
