@@ -81,7 +81,6 @@ CREATE UNIQUE INDEX idx_prompt_settings_name ON prompt_settings(name);
 INSERT INTO prompt_settings (name, system_prompt, temperature, llm_provider, llm_model, llm_api_key, llm_base_url)
 VALUES ('default', 'You are a helpful assistant.', 0.40, 'openai', 'gpt-5.4', '', '')
 ON CONFLICT (name) DO NOTHING;
-CREATE INDEX idx_knowledge_base_is_active ON knowledge_base(is_active);
 CREATE INDEX idx_knowledge_base_created_at ON knowledge_base(created_at);
 
 -- Webhooks log table (for tracking inbound events)

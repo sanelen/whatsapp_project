@@ -9,7 +9,7 @@ export async function PATCH(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: 'KB ID required' },
+        { success: false, error: 'KB ID required', timestamp: new Date().toISOString() },
         { status: 400 }
       );
     }
@@ -34,7 +34,7 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       console.error('KB update error:', error);
       return NextResponse.json<ApiResponse>(
-        { success: false, error: `Update failed: ${error.message}` },
+        { success: false, error: `Update failed: ${error.message}`, timestamp: new Date().toISOString() },
         { status: 500 }
       );
     }
@@ -46,7 +46,7 @@ export async function PATCH(request: NextRequest) {
   } catch (err) {
     console.error('KB update exception:', err);
     return NextResponse.json<ApiResponse>(
-      { success: false, error: `Server error: ${err instanceof Error ? err.message : 'Unknown'}` },
+      { success: false, error: `Server error: ${err instanceof Error ? err.message : 'Unknown'}`, timestamp: new Date().toISOString() },
       { status: 500 }
     );
   }

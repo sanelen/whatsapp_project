@@ -1,5 +1,17 @@
 # WhatsApp AI Project - Session Handoff
 
+## Current Analysis Documents (May 17, 2026)
+
+- [platform/docs/PROJECT_ANALYSIS.md](platform/docs/PROJECT_ANALYSIS.md) - current repository analysis, risks, and recommended sequence.
+- [platform/docs/PROGRESS_TRACKER.md](platform/docs/PROGRESS_TRACKER.md) - markdown progress tracker for setup, Supabase, Twilio, AI, deployment, and tests.
+- [platform/docs/LINEAR_ISSUE_DRAFT.md](platform/docs/LINEAR_ISSUE_DRAFT.md) - ready-to-paste Linear issue body while the Linear connector is unavailable.
+
+Current cloned path:
+
+```bash
+/Users/macdaddy/Documents/Codex/2026-05-17/clone-my-whatsapp-project-github-github/whatsapp_project/SAWhatsApp/platform
+```
+
 ## ✅ Completed in This Session (April 25-26, 2026)
 
 ### Deployment to Vercel

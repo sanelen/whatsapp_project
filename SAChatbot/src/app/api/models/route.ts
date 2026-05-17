@@ -87,13 +87,6 @@ const MODEL_CATALOG: Record<string, ModelCatalogEntry> = {
   },
 };
 
-// Allowlists for known providers — the live API results are filtered to these.
-// Any model returned by the API that is NOT in the allowlist is dropped.
-const PROVIDER_ALLOWLIST: Record<string, Set<string>> = {
-  openai: new Set(PROVIDER_ORDER.openai),
-  deepseek: new Set(PROVIDER_ORDER.deepseek),
-};
-
 // ---------------------------------------------------------------------------
 // GET /api/models?provider=openai&apiKey=sk-...&baseUrl=...
 // ---------------------------------------------------------------------------

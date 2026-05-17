@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
 
     if (!category || !title || !content) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Missing required fields: category, title, content' },
+        { success: false, error: 'Missing required fields: category, title, content', timestamp: new Date().toISOString() },
         { status: 400 }
       );
     }
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
     if (existing && existing.length > 0) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: `KB entry "${title}" already exists in ${category}. Delete the existing entry first if you want to replace it.` },
+        { success: false, error: `KB entry "${title}" already exists in ${category}. Delete the existing entry first if you want to replace it.`, timestamp: new Date().toISOString() },
         { status: 409 }
       );
     }
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('KB upload error:', error);
       return NextResponse.json<ApiResponse>(
-        { success: false, error: `Failed to save KB: ${error.message}` },
+        { success: false, error: `Failed to save KB: ${error.message}`, timestamp: new Date().toISOString() },
         { status: 500 }
       );
     }
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('KB upload exception:', err);
     return NextResponse.json<ApiResponse>(
-      { success: false, error: `Server error: ${err instanceof Error ? err.message : 'Unknown'}` },
+      { success: false, error: `Server error: ${err instanceof Error ? err.message : 'Unknown'}`, timestamp: new Date().toISOString() },
       { status: 500 }
     );
   }

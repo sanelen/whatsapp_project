@@ -35,7 +35,8 @@ export default function AdminPage() {
     inFlightRef.current = true;
 
     try {
-      if (!supabaseClient) {
+      const client = supabaseClient;
+      if (!client) {
         throw new Error('Supabase is not configured in this environment');
       }
 
@@ -56,7 +57,7 @@ export default function AdminPage() {
       }
 
       // Fetch conversations with customer data
-      const { data: convData, error: convError } = await supabaseClient
+      const { data: convData, error: convError } = await client
         .from('conversations')
         .select('*')
         .order('last_message_at', { ascending: false })
@@ -67,13 +68,13 @@ export default function AdminPage() {
       // For each conversation, fetch customer and messages
       const enriched = await Promise.all(
         (convData || []).map(async (conv) => {
-          const { data: customerData } = await supabaseClient
+          const { data: customerData } = await client
             .from('customers')
             .select('*')
             .eq('id', conv.customer_id)
             .single();
 
-          const { data: messageData } = await supabaseClient
+          const { data: messageData } = await client
             .from('messages')
             .select('*')
             .eq('conversation_id', conv.id)
@@ -120,11 +121,12 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (!supabaseClient) {
+    const client = supabaseClient;
+    if (!client) {
       return;
     }
 
-    const channel = supabaseClient
+    const channel = client
       .channel('admin-live-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
         fetchDashboardData(true);
@@ -138,7 +140,7 @@ export default function AdminPage() {
       .subscribe();
 
     return () => {
-      supabaseClient.removeChannel(channel);
+      client.removeChannel(channel);
     };
   }, []);
 

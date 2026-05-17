@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
 
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: 'Query parameter required' },
+        { success: false, error: 'Query parameter required', timestamp: new Date().toISOString() },
         { status: 400 }
       );
     }
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('KB search error:', error);
       return NextResponse.json<ApiResponse>(
-        { success: false, error: `Search failed: ${error.message}` },
+        { success: false, error: `Search failed: ${error.message}`, timestamp: new Date().toISOString() },
         { status: 500 }
       );
     }
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('KB search exception:', err);
     return NextResponse.json<ApiResponse>(
-      { success: false, error: `Server error: ${err instanceof Error ? err.message : 'Unknown'}` },
+      { success: false, error: `Server error: ${err instanceof Error ? err.message : 'Unknown'}`, timestamp: new Date().toISOString() },
       { status: 500 }
     );
   }

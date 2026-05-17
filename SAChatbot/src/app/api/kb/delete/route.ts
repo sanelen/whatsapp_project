@@ -9,7 +9,7 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: 'KB ID required' },
+        { success: false, error: 'KB ID required', timestamp: new Date().toISOString() },
         { status: 400 }
       );
     }
@@ -23,7 +23,7 @@ export async function DELETE(request: NextRequest) {
     if (error) {
       console.error('KB delete error:', error);
       return NextResponse.json<ApiResponse>(
-        { success: false, error: `Delete failed: ${error.message}` },
+        { success: false, error: `Delete failed: ${error.message}`, timestamp: new Date().toISOString() },
         { status: 500 }
       );
     }
@@ -35,7 +35,7 @@ export async function DELETE(request: NextRequest) {
   } catch (err) {
     console.error('KB delete exception:', err);
     return NextResponse.json<ApiResponse>(
-      { success: false, error: `Server error: ${err instanceof Error ? err.message : 'Unknown'}` },
+      { success: false, error: `Server error: ${err instanceof Error ? err.message : 'Unknown'}`, timestamp: new Date().toISOString() },
       { status: 500 }
     );
   }
