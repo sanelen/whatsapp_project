@@ -18,7 +18,9 @@
     "prelint": "npm run check:runtime",
     "lint": "eslint",
     "pretypecheck": "npm run check:runtime",
-    "typecheck": "tsc --noEmit --incremental false"
+    "typecheck": "tsc --noEmit --incremental false",
+    "test": "node --import tsx --test 'lib/**/*.test.ts'",
+    "test:integration": "node --env-file=.env.local --import tsx --test 'lib/**/*.itest.ts'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.104.1",
@@ -35,6 +37,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
+    "tsx": "4.20.6",
     "typescript": "^5"
   }
 }

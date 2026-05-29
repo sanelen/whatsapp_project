@@ -23,6 +23,14 @@ export const supabaseClient = supabaseUrl && supabasePublishableKey
 
 let supabaseAdmin: SupabaseClient | null = null;
 
+/**
+ * Test-only: inject a mock admin client so unit tests can exercise the
+ * helpers below without a live Supabase connection. Pass null to reset.
+ */
+export function __setTestSupabaseAdmin(client: SupabaseClient | null) {
+  supabaseAdmin = client;
+}
+
 // Server-side Supabase client (with service role for sensitive operations)
 function getSupabaseAdmin() {
   if (!supabaseAdmin) {
