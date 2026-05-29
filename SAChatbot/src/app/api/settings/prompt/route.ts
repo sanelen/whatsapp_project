@@ -25,7 +25,7 @@ export async function GET() {
             system_prompt: 'You are a helpful assistant.',
             temperature: 0.4,
             llm_provider: 'openai',
-            llm_model: 'gpt-5.4',
+            llm_model: 'gpt-4o',
             llm_api_key: '',
             llm_base_url: '',
             created_at: '',

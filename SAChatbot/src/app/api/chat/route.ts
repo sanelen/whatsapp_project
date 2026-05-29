@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
+import { getPromptSettings } from '@/lib/supabase';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -13,15 +14,6 @@ type ChatRequest = {
   systemPrompt?: string;
 };
 
-type PromptSettingsRow = {
-  system_prompt: string;
-  temperature: number;
-  llm_provider: string;
-  llm_model: string;
-  llm_api_key: string;
-  llm_base_url: string;
-};
-
 type UsageShape = {
   prompt_tokens: number;
   completion_tokens: number;
@@ -30,10 +22,10 @@ type UsageShape = {
   };
 };
 
-// Default pricing (OpenAI gpt-5.4) — used as fallback
+// Default pricing (OpenAI gpt-4o) — used as fallback
 const PRICE_IN = 2.5 / 1_000_000;
 const PRICE_IN_CACHED = 0.25 / 1_000_000;
-const PRICE_OUT = 15 / 1_000_000;
+const PRICE_OUT = 10 / 1_000_000;
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant for a simple hello-world chatbot app.';
 
 function calculateCost(usage: UsageShape): number {
@@ -54,31 +46,14 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as ChatRequest;
     const messages = Array.isArray(body?.messages) ? body.messages : [];
 
-    // Load persisted settings from DB
-    let dbSystemPrompt = DEFAULT_SYSTEM_PROMPT;
-    let temperature = 0.4;
-    let llmProvider = 'openai';
-    let llmModel = 'gpt-5.4';
-    let llmApiKey = '';
-    let llmBaseUrl = '';
-
-    try {
-      const settingsRes = await fetch(`${process.env.APP_URL || 'http://localhost:3000'}/api/settings/prompt`);
-      if (settingsRes.ok) {
-        const settingsData = await settingsRes.json() as { success: boolean; data?: PromptSettingsRow };
-        if (settingsData.success && settingsData.data) {
-          const d = settingsData.data;
-          if (d.system_prompt) dbSystemPrompt = d.system_prompt;
-          if (typeof d.temperature === 'number') temperature = d.temperature;
-          if (d.llm_provider) llmProvider = d.llm_provider;
-          if (d.llm_model) llmModel = d.llm_model;
-          if (d.llm_api_key) llmApiKey = d.llm_api_key;
-          if (d.llm_base_url) llmBaseUrl = d.llm_base_url;
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load prompt settings:', err);
-    }
+    // Load persisted settings from DB directly (avoids an internal HTTP round-trip)
+    const settings = await getPromptSettings();
+    let dbSystemPrompt = settings.system_prompt || DEFAULT_SYSTEM_PROMPT;
+    let temperature = typeof settings.temperature === 'number' ? settings.temperature : 0.4;
+    let llmProvider = settings.llm_provider || 'openai';
+    let llmModel = settings.llm_model || 'gpt-4o';
+    let llmApiKey = settings.llm_api_key || '';
+    let llmBaseUrl = settings.llm_base_url || '';
 
     const resolvedApiKey = resolveApiKey(llmProvider, llmApiKey);
     // Default base URLs for known providers when not explicitly set

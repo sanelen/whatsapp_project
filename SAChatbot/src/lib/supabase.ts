@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { PromptSettings } from '@/lib/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabasePublishableKey =
@@ -23,4 +24,40 @@ export function getSupabaseAdmin() {
     supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
   }
   return supabaseAdmin;
+}
+
+const DEFAULT_PROMPT_SETTINGS: PromptSettings = {
+  id: '',
+  name: 'default',
+  system_prompt: 'You are a helpful assistant.',
+  temperature: 0.4,
+  llm_provider: 'openai',
+  llm_model: 'gpt-4o',
+  llm_api_key: '',
+  llm_base_url: '',
+  created_at: '',
+  updated_at: '',
+};
+
+/** Load prompt settings directly from the database — avoids an internal HTTP round-trip. */
+export async function getPromptSettings(name = 'default'): Promise<PromptSettings> {
+  try {
+    const admin = getSupabaseAdmin();
+    const { data, error } = await admin
+      .from('prompt_settings')
+      .select('*')
+      .eq('name', name)
+      .single();
+
+    if (error) {
+      // Row not yet created — return defaults
+      if (error.code === 'PGRST116') return DEFAULT_PROMPT_SETTINGS;
+      console.error('Prompt settings fetch error:', error.message);
+      return DEFAULT_PROMPT_SETTINGS;
+    }
+
+    return data as PromptSettings;
+  } catch {
+    return DEFAULT_PROMPT_SETTINGS;
+  }
 }

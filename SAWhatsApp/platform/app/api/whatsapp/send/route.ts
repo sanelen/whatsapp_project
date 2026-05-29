@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { logMessage } from '@/lib/supabase';
+import { getAssistantSettings, logMessage, markHumanResponse } from '@/lib/supabase';
 import { getTwilioClient, TWILIO_FROM_NUMBER } from '@/lib/twilio';
 import type { ApiResponse } from '@/lib/types';
 
@@ -29,12 +29,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       body: message,
     });
 
-    await logMessage(conversationId, 'outbound', message, sent.sid);
+    const assistantSettings = await getAssistantSettings();
+    await logMessage(conversationId, 'outbound', message, sent.sid, 'human');
+    await markHumanResponse(conversationId, assistantSettings.handoff_pause_minutes);
 
     return NextResponse.json(
       {
         success: true,
-        data: { messageId: sent.sid, sent: true, status: sent.status },
+        data: {
+          messageId: sent.sid,
+          sent: true,
+          status: sent.status,
+          botPausedForMinutes: assistantSettings.handoff_pause_minutes,
+        },
         timestamp: new Date().toISOString(),
       },
       { status: 200 }

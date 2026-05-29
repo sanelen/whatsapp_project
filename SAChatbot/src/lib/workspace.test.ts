@@ -92,10 +92,12 @@ test('property chatbot settings can be updated independently', () => {
   const next = updatePropertyChatbot(workspace, target.id, {
     model: 'gpt-5.4-mini',
     systemPrompt: 'Custom property instruction',
+    knowledgeSources: ['Lease terms and viewing policy'],
   });
 
   assert.equal(next.properties[0].chatbot.model, 'gpt-5.4-mini');
   assert.equal(next.properties[0].chatbot.systemPrompt, 'Custom property instruction');
+  assert.deepEqual(next.properties[0].chatbot.knowledgeSources, ['Lease terms and viewing policy']);
   assert.equal(next.properties[1].chatbot.model, untouched.chatbot.model);
 });
 

@@ -3,14 +3,17 @@ import {
   getOrCreateCustomer,
   getOrCreateConversation,
   getActiveKnowledgeBase,
+  getAssistantSettings,
   getRecentMessages,
   logMessage,
   logWebhookEvent,
+  markConversationHandoff,
+  markFirstBotResponse,
 } from '@/lib/supabase';
 import { validateTwilioSignature, parseTwilioBody } from '@/lib/twilio-signature';
 import { getTwilioClient, TWILIO_FROM_NUMBER } from '@/lib/twilio';
-import { buildGroundedReply } from '@/lib/assistant';
-import type { ApiResponse } from '@/lib/types';
+import { decideAssistantResponse } from '@/lib/assistant';
+import type { ApiResponse, Conversation } from '@/lib/types';
 
 export async function GET(): Promise<NextResponse<ApiResponse>> {
   return NextResponse.json(
@@ -60,34 +63,66 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       );
     }
 
-    const customer = (await getOrCreateCustomer(phoneNumber)) as { id: string; name?: string } | null;
+    // Fetch customer, assistant settings, and knowledge base in parallel — none depend on each other
+    const [customer, assistantSettings, knowledgeEntries] = await Promise.all([
+      getOrCreateCustomer(phoneNumber) as Promise<{ id: string; name?: string }>,
+      getAssistantSettings(),
+      getActiveKnowledgeBase(25),
+    ]);
+
     if (!customer) {
       throw new Error('Failed to resolve customer from inbound message');
     }
 
-    const conversation = (await getOrCreateConversation(customer.id)) as { id: string };
-    await logMessage(conversation.id, 'inbound', messageBody, messageSid);
+    const conversation = (await getOrCreateConversation(customer.id)) as Conversation;
 
-    const knowledgeEntries = await getActiveKnowledgeBase(25);
-    const recentMessages = await getRecentMessages(conversation.id, 8);
-    const replyText = buildGroundedReply({
+    // Log the inbound message and fetch conversation history in parallel
+    const [, recentMessages] = await Promise.all([
+      logMessage(conversation.id, 'inbound', messageBody, messageSid),
+      getRecentMessages(conversation.id, 8),
+    ]);
+
+    const assistantDecision = await decideAssistantResponse({
       inboundText: messageBody,
       customer,
+      conversation,
       knowledgeEntries,
       recentMessages,
+      settings: assistantSettings,
     });
 
     let outboundSid: string | null = null;
     let outboundError: string | null = null;
-    if (TWILIO_FROM_NUMBER) {
+    const automationStatus = assistantDecision.reason;
+
+    if (assistantDecision.reason === 'tenant_requested_handoff') {
+      await markConversationHandoff(
+        conversation.id,
+        assistantDecision.handoffReason || 'Tenant requested a human response',
+        assistantSettings.handoff_pause_minutes
+      );
+    }
+
+    if (!assistantDecision.shouldReply) {
+      await logWebhookEvent(
+        'twilio.message.automation_skipped',
+        {
+          phoneNumber,
+          conversationId: conversation.id,
+          reason: assistantDecision.reason,
+        },
+        'success'
+      );
+    } else if (TWILIO_FROM_NUMBER && assistantDecision.replyText) {
       try {
         const outbound = await getTwilioClient().messages.create({
           from: `whatsapp:${TWILIO_FROM_NUMBER}`,
           to: `whatsapp:${phoneNumber}`,
-          body: replyText,
+          body: assistantDecision.replyText,
         });
         outboundSid = outbound.sid;
-        await logMessage(conversation.id, 'outbound', replyText, outbound.sid);
+        await logMessage(conversation.id, 'outbound', assistantDecision.replyText, outbound.sid, 'bot');
+        await markFirstBotResponse(conversation.id);
       } catch (sendError) {
         outboundError = sendError instanceof Error ? sendError.message : 'Failed to send outbound reply';
         await logWebhookEvent('twilio.message.outbound', { phoneNumber, conversationId: conversation.id }, 'failed', outboundError);
@@ -108,6 +143,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
           messageSid,
           outboundSid,
           outboundError,
+          automationStatus,
         },
         timestamp: new Date().toISOString(),
       },

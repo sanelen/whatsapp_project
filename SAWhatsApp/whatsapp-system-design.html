@@ -354,8 +354,8 @@
     <div class="top-actions">
       <a class="btn" href="./whatsapp-progress-tracker.html">Open Detailed Progress Tracker</a>
       <a class="btn" href="./whatsapp-system-design.html">Open System Design</a>
-      <a class="btn" href="http://localhost:3000/" target="_blank" rel="noreferrer">Open App Home</a>
-      <a class="btn" href="http://localhost:3000/admin" target="_blank" rel="noreferrer">Open Admin</a>
+      <a class="btn" href="http://localhost:3001/" target="_blank" rel="noreferrer">Open App Home</a>
+      <a class="btn" href="http://localhost:3001/admin" target="_blank" rel="noreferrer">Open Admin</a>
       <a class="btn" href="./platform/README.md">View Project README</a>
     </div>
 
@@ -385,7 +385,7 @@
           </div>
           <div class="copy-row">
             <strong>Command to create a fresh Cloudflare tunnel URL</strong>
-            <code>cloudflared tunnel --url http://localhost:3000</code>
+            <code>cloudflared tunnel --url http://localhost:3001</code>
           </div>
         </div>
       </div>
@@ -398,7 +398,7 @@
       </p>
       <ol class="small">
         <li><strong>Confirm the app is running:</strong> App Home, Admin, Health API, and Local Twilio Webhook should show <span class="good">Up</span>.</li>
-        <li><strong>Confirm the public tunnel is alive:</strong> Public Twilio Webhook should show <span class="good">Up</span>. If it is down, start a new tunnel to <code>http://localhost:3000</code>.</li>
+        <li><strong>Confirm the public tunnel is alive:</strong> Public Twilio Webhook should show <span class="good">Up</span>. If it is down, start a new tunnel to <code>http://localhost:3001</code>.</li>
         <li><strong>Copy the new tunnel URL into Twilio:</strong> use <code>/api/webhooks/twilio</code> for incoming messages and <code>/api/webhooks/twilio/status</code> for status callbacks, both with method <code>POST</code>.</li>
         <li><strong>Click Save in Twilio:</strong> visible fields are not enough; the sandbox must save the values.</li>
         <li><strong>Send an inbound WhatsApp message:</strong> reply from your phone to the Twilio sandbox number. This should create a <code>POST /api/webhooks/twilio</code> line in the Next server logs.</li>
@@ -436,7 +436,7 @@
       <ul class="small">
         <li><strong>Progress baseline corrected:</strong> checklist defaults include completed foundation + integration + AI chain + admin conversation visibility. <strong>kb-ready</strong> and <strong>e2e-pass</strong> are intentionally not auto-completed.</li>
         <li><strong>Webhook callback methods:</strong> Twilio should use <code>POST /api/webhooks/twilio</code> for inbound messages and <code>POST /api/webhooks/twilio/status</code> for delivery/status updates.</li>
-        <li><strong>Local validation target:</strong> use <code>http://localhost:3000</code> when the active dev server is running.</li>
+        <li><strong>Local validation target:</strong> use <code>http://localhost:3001</code> when the active dev server is running.</li>
       </ul>
     </div>
 
@@ -658,7 +658,7 @@
   <script>
     (function () {
       const STORAGE_KEY = 'wa_ai_progress_v2';
-      const LOCAL_APP = 'http://localhost:3000';
+      const LOCAL_APP = 'http://localhost:3001';
       const PUBLIC_TWILIO_WEBHOOK = 'https://ecommerce-analyst-mines-concerts.trycloudflare.com/api/webhooks/twilio';
       const PUBLIC_TWILIO_STATUS = 'https://ecommerce-analyst-mines-concerts.trycloudflare.com/api/webhooks/twilio/status';
 

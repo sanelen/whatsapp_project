@@ -28,8 +28,11 @@ export function validateTwilioSignature(
       .update(data)
       .digest('base64');
 
-    // Compare signatures
-    return computed === signature;
+    // Use timing-safe comparison to prevent timing-based attacks
+    const computedBuf = Buffer.from(computed);
+    const signatureBuf = Buffer.from(signature);
+    if (computedBuf.length !== signatureBuf.length) return false;
+    return crypto.timingSafeEqual(computedBuf, signatureBuf);
   } catch (error) {
     console.error('Signature validation error:', error);
     return false;

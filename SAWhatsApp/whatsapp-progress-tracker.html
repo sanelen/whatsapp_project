@@ -179,12 +179,25 @@
 <body>
   <div class="wrap">
     <h1>WhatsApp AI Progress Tracker</h1>
-    <p>Use this as the operating checklist for what we have finished, what is in progress, and what remains before we have a complete AI customer conversation app.</p>
+    <p>Aligned to Linear project <strong>WhatsApp Tenant Assistant Guardrails</strong> (team Automatemylife). Each milestone below mirrors a Linear issue — click through to see the full description and update status in Linear, the source of truth.</p>
 
     <div class="links">
       <a class="btn" href="./whatsapp-system-design.html">Back to System Design</a>
-      <a class="btn" href="http://localhost:3000/admin" target="_blank" rel="noreferrer">Open Admin</a>
-      <a class="btn" href="http://localhost:3000/api/health" target="_blank" rel="noreferrer">Open API Health</a>
+      <a class="btn" href="https://linear.app/automatemylife/project/whatsapp-tenant-assistant-guardrails" target="_blank" rel="noreferrer">Open Linear Project</a>
+      <a class="btn" href="http://localhost:3001/admin" target="_blank" rel="noreferrer">Open Admin (3001)</a>
+      <a class="btn" href="http://localhost:3001/api/health" target="_blank" rel="noreferrer">API Health (3001)</a>
+      <a class="btn" href="http://localhost:3002" target="_blank" rel="noreferrer">Open Chatbot (3002)</a>
+    </div>
+
+    <div class="panel">
+      <h2>Connection Status</h2>
+      <p class="hint">Snapshot from last session check — 2026-05-29.</p>
+      <div class="grid">
+        <div class="group"><h3>Supabase</h3><label class="row done"><span>✅ Live (project unpaused) — core tables present &amp; seeded</span></label></div>
+        <div class="group"><h3>OpenAI</h3><label class="row done"><span>✅ API key valid (HTTP 200)</span></label></div>
+        <div class="group"><h3>GitHub</h3><label class="row done"><span>✅ sanelen/whatsapp_project — in sync with origin/main</span></label></div>
+        <div class="group"><h3>Twilio</h3><label class="row"><span>⚠️ Credentials missing from platform/.env.local</span></label></div>
+      </div>
     </div>
 
     <div class="panel">
@@ -211,189 +224,94 @@
           <span class="l">Completion</span>
         </div>
       </div>
-      <div class="actions">
-        <button class="action-btn" id="btn-mark-baseline">MARK Current Completed Work</button>
-        <button class="action-btn" id="btn-complete-foundation">Mark Foundation Done</button>
-        <button class="action-btn" id="btn-complete-integration">Mark Integration Done</button>
-        <button class="action-btn" id="btn-complete-all">Mark All Done</button>
-        <button class="action-btn" id="btn-reset">Reset Checklist</button>
-      </div>
-      <p class="hint">This page shares the same saved progress as the system design page, so changes are synchronized both ways.</p>
-      <p class="stamp" id="last-updated">Last updated: not set</p>
+      <p class="hint">Progress is computed from Linear issue status (Done = completed, In&nbsp;Progress = started). Update status in Linear and refresh this snapshot to keep it aligned.</p>
+      <p class="stamp" id="last-updated">Snapshot: 2026-05-29</p>
     </div>
 
     <div class="panel">
-      <h2>Milestone Checklist</h2>
+      <h2>Linear Issues</h2>
       <div class="grid" id="checklist"></div>
     </div>
   </div>
 
   <script>
     (function () {
-      const STORAGE_KEY = 'wa_ai_progress_v2';
-
-      const groups = [
-        {
-          id: 'foundation',
-          title: 'Foundation',
-          items: [
-            { id: 'env-configured', label: 'Environment variables configured' },
-            { id: 'supabase-schema', label: 'Supabase schema and indexes ready' },
-            { id: 'health-endpoint', label: 'Health endpoints returning 200' }
-          ]
-        },
-        {
-          id: 'integration',
-          title: 'WhatsApp Integration',
-          items: [
-            { id: 'webhook-live', label: 'Webhook route reachable (localhost + Cloudflare tunnel)' },
-            { id: 'twilio-config', label: 'Twilio sandbox webhook configured' },
-            { id: 'inbound-log', label: 'Inbound event persisted to database' }
-          ]
-        },
-        {
-          id: 'ai-app',
-          title: 'AI + Product Flow',
-          items: [
-            { id: 'kb-ready', label: 'Knowledge base seeded for responses' },
-            { id: 'ai-chain', label: 'AI response chain integrated' },
-            { id: 'admin-convos', label: 'Admin page shows live conversations' },
-            { id: 'e2e-pass', label: 'End-to-end customer conversation test passed' }
-          ]
-        }
+      // Mirrors Linear project "WhatsApp Tenant Assistant Guardrails" (team Automatemylife).
+      // Snapshot date: 2026-05-29. Update this array when Linear status changes.
+      const baseUrl = 'https://linear.app/automatemylife/issue/';
+      const issues = [
+        { id: 'AUT-9',  title: 'Extend Supabase schema for tenant register & assistant config', priority: 'Urgent', status: 'In Review', statusType: 'started',   url: baseUrl + 'AUT-9' },
+        { id: 'AUT-8',  title: 'Human handoff & companion-mode bot pause rules',                priority: 'Urgent', status: 'Todo',      statusType: 'unstarted', url: baseUrl + 'AUT-8' },
+        { id: 'AUT-7',  title: 'Configurable WhatsApp greeting & first-message intake',          priority: 'High',   status: 'Todo',      statusType: 'unstarted', url: baseUrl + 'AUT-7' },
+        { id: 'AUT-10', title: 'Admin configuration UI for assistant behavior',                  priority: 'High',   status: 'Todo',      statusType: 'unstarted', url: baseUrl + 'AUT-10' },
+        { id: 'AUT-12', title: 'Validate WhatsApp end-to-end with safe automation boundaries',   priority: 'High',   status: 'Todo',      statusType: 'unstarted', url: baseUrl + 'AUT-12' },
+        { id: 'AUT-6',  title: 'Overhaul app into organization/property chatbot workspace',      priority: 'High',   status: 'Backlog',   statusType: 'backlog',   url: baseUrl + 'AUT-6' },
+        { id: 'AUT-5',  title: 'Analyze & stabilize WhatsApp integration platform',              priority: 'Medium', status: 'Backlog',   statusType: 'backlog',   url: baseUrl + 'AUT-5' }
       ];
 
-      function readState() {
-        try {
-          return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-        } catch (err) {
-          return {};
-        }
+      const priorityColors = { Urgent: '#fb7185', High: '#fbbf24', Medium: '#7dd3fc', Low: '#a5b4fc' };
+      const statusColors = { completed: '#86efac', started: '#a78bfa', unstarted: '#b8c2e3', backlog: '#64748b' };
+
+      function badge(text, color) {
+        const b = document.createElement('span');
+        b.textContent = text;
+        b.style.cssText = 'display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid ' + color + ';color:' + color + ';margin-left:8px;';
+        return b;
       }
 
-      function writeState(state) {
-        state._updatedAt = new Date().toISOString();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      }
-
-      function baselineState() {
-        return {
-          'env-configured': true,
-          'supabase-schema': true,
-          'health-endpoint': true,
-          'webhook-live': true,
-          'twilio-config': true,
-          'inbound-log': true,
-          'ai-chain': true,
-          'admin-convos': true
-        };
-      }
-
-      function seedInitialState() {
-        const existing = readState();
-        const hasKeys = Object.keys(existing).some((k) => !k.startsWith('_'));
-        if (hasKeys) return;
-        writeState({
-          ...baselineState()
-        });
-      }
-
-      function markCurrentCompletedWork() {
-        const state = readState();
-        writeState({
-          ...state,
-          ...baselineState()
-        });
-        render();
-      }
-
-      function totals(state) {
-        let total = 0;
-        let done = 0;
-        groups.forEach((group) => {
-          group.items.forEach((item) => {
-            total += 1;
-            if (state[item.id]) done += 1;
-          });
-        });
-        return { total, done, left: total - done };
-      }
-
-      function markGroupDone(groupId) {
-        const state = readState();
-        const group = groups.find((g) => g.id === groupId);
-        if (!group) return;
-        group.items.forEach((item) => {
-          state[item.id] = true;
-        });
-        writeState(state);
-        render();
-      }
-
-      function markAllDone() {
-        const state = readState();
-        groups.forEach((group) => {
-          group.items.forEach((item) => {
-            state[item.id] = true;
-          });
-        });
-        writeState(state);
-        render();
-      }
-
-      function resetAll() {
-        writeState({});
-        render();
+      function totals() {
+        const total = issues.length;
+        const done = issues.filter((i) => i.statusType === 'completed').length;
+        const started = issues.filter((i) => i.statusType === 'started').length;
+        return { total, done, started, left: total - done };
       }
 
       function render() {
-        const state = readState();
-        const t = totals(state);
+        const t = totals();
         const percent = t.total ? Math.round((t.done / t.total) * 100) : 0;
 
-        document.getElementById('summary').textContent = t.done + ' of ' + t.total + ' milestones complete. We are at ' + percent + '% toward a working AI customer conversation app.';
+        document.getElementById('summary').textContent =
+          t.done + ' of ' + t.total + ' issues complete, ' + t.started + ' in progress. ' + percent + '% toward a working AI customer conversation app.';
         document.getElementById('kpi-total').textContent = String(t.total);
         document.getElementById('kpi-done').textContent = String(t.done);
         document.getElementById('kpi-left').textContent = String(t.left);
         document.getElementById('kpi-percent').textContent = percent + '%';
         document.getElementById('fill').style.width = percent + '%';
-        const updatedRaw = state._updatedAt;
-        const updatedText = updatedRaw
-          ? new Date(updatedRaw).toLocaleString()
-          : 'not set';
-        document.getElementById('last-updated').textContent = 'Last updated: ' + updatedText;
 
+        const order = ['started', 'unstarted', 'backlog', 'completed'];
+        const groupTitles = { started: 'In Progress', unstarted: 'Todo', backlog: 'Backlog', completed: 'Done' };
         const root = document.getElementById('checklist');
         root.innerHTML = '';
 
-        groups.forEach((group) => {
+        order.forEach((st) => {
+          const items = issues.filter((i) => i.statusType === st);
+          if (!items.length) return;
+
           const card = document.createElement('div');
           card.className = 'group';
-
           const h = document.createElement('h3');
-          h.textContent = group.title;
+          h.textContent = groupTitles[st] + ' (' + items.length + ')';
           card.appendChild(h);
 
-          group.items.forEach((item) => {
-            const row = document.createElement('label');
+          items.forEach((it) => {
+            const row = document.createElement('div');
             row.className = 'row';
-            if (state[item.id]) row.classList.add('done');
+            if (st === 'completed') row.classList.add('done');
 
-            const input = document.createElement('input');
-            input.type = 'checkbox';
-            input.checked = Boolean(state[item.id]);
-            input.addEventListener('change', () => {
-              const next = readState();
-              next[item.id] = input.checked;
-              writeState(next);
-              render();
-            });
+            const link = document.createElement('a');
+            link.href = it.url;
+            link.target = '_blank';
+            link.rel = 'noreferrer';
+            link.style.cssText = 'color:var(--accent);font-weight:700;text-decoration:none;margin-right:6px;';
+            link.textContent = it.id;
 
             const label = document.createElement('span');
-            label.textContent = item.label;
+            label.textContent = it.title;
 
-            row.appendChild(input);
+            row.appendChild(link);
             row.appendChild(label);
+            row.appendChild(badge(it.priority, priorityColors[it.priority] || '#b8c2e3'));
+            row.appendChild(badge(it.status, statusColors[it.statusType] || '#b8c2e3'));
             card.appendChild(row);
           });
 
@@ -401,17 +319,6 @@
         });
       }
 
-      document.getElementById('btn-complete-foundation').addEventListener('click', function () {
-        markGroupDone('foundation');
-      });
-      document.getElementById('btn-mark-baseline').addEventListener('click', markCurrentCompletedWork);
-      document.getElementById('btn-complete-integration').addEventListener('click', function () {
-        markGroupDone('integration');
-      });
-      document.getElementById('btn-complete-all').addEventListener('click', markAllDone);
-      document.getElementById('btn-reset').addEventListener('click', resetAll);
-
-      seedInitialState();
       render();
     })();
   </script>

@@ -171,6 +171,7 @@ export default function AdminPage() {
         : webhookStatus?.state === 'offline'
           ? 'Webhook Offline'
           : 'No Webhook Signal';
+  const displayNowMs = lastRefreshAt ? new Date(lastRefreshAt).getTime() : 0;
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -240,19 +241,36 @@ export default function AdminPage() {
                   </div>
                   <span
                     className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      conversation.status === 'active'
+                      conversation.bot_paused
+                        ? 'bg-red-100 text-red-800'
+                        : conversation.handoff_until && new Date(conversation.handoff_until).getTime() > displayNowMs
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : conversation.status === 'active'
                         ? 'bg-green-100 text-green-800'
                         : conversation.status === 'closed'
                           ? 'bg-gray-100 text-gray-800'
                           : 'bg-yellow-100 text-yellow-800'
                     }`}
                   >
-                    {conversation.status}
+                    {conversation.bot_paused
+                      ? 'bot paused'
+                      : conversation.handoff_until && new Date(conversation.handoff_until).getTime() > displayNowMs
+                        ? 'human active'
+                        : conversation.status}
                   </span>
                 </div>
 
                 <div className="mb-4 text-sm text-gray-600">
                   <p>Last message: {new Date(conversation.last_message_at).toLocaleString()}</p>
+                  {(conversation.handoff_reason || conversation.handoff_until) && (
+                    <p className="mt-1">
+                      Handoff:{' '}
+                      {conversation.handoff_reason || 'Active'}
+                      {conversation.handoff_until
+                        ? ` until ${new Date(conversation.handoff_until).toLocaleString()}`
+                        : ''}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2 bg-gray-50 rounded p-4 max-h-40 overflow-y-auto">
@@ -264,7 +282,11 @@ export default function AdminPage() {
                             msg.direction === 'inbound' ? 'text-blue-600' : 'text-green-600'
                           }`}
                         >
-                          {msg.direction === 'inbound' ? '← Inbound' : '→ Outbound'}
+                          {msg.direction === 'inbound'
+                            ? '← Inbound'
+                            : msg.sender_type === 'human'
+                              ? '→ Human'
+                              : '→ Bot'}
                         </span>
                         : <span className="text-gray-700">{msg.content}</span>
                       </div>

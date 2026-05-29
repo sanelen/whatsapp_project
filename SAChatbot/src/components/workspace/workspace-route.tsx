@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type ChangeEvent, FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   createSeedWorkspace,
   getPropertiesForOrganization,
@@ -16,11 +16,78 @@ import { organizationPath, propertyPath } from '@/lib/workspace-routes';
 
 type RouteView = 'organizations' | 'organization' | 'property' | 'chatbot';
 type SettingsTab = 'llm' | 'instructions' | 'knowledge' | 'templates';
+type WorkspaceSection =
+  | 'Overview'
+  | 'Chatbot'
+  | 'Agents'
+  | 'Conversations'
+  | 'Knowledge Base'
+  | 'Analytics'
+  | 'Usage'
+  | 'Settings'
+  | 'Deploy';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
 };
+
+type LegacyKnowledgeEntry = {
+  id: string;
+  category: string;
+  title: string;
+  content: string;
+  created_at: string;
+};
+
+type LegacyKnowledgeDraft = Pick<LegacyKnowledgeEntry, 'id' | 'category' | 'title' | 'content'>;
+
+const llmProviders = [
+  {
+    value: 'openai',
+    label: 'OpenAI GPT',
+    models: [
+      { value: 'gpt-5.5', label: 'GPT-5.5 (Flagship)' },
+      { value: 'gpt-5.5-instant', label: 'GPT-5.5 Instant' },
+      { value: 'gpt-5.5-mini', label: 'GPT-5.5 Mini' },
+      { value: 'gpt-5.4', label: 'GPT-5.4' },
+      { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+    ],
+  },
+  {
+    value: 'gemini',
+    label: 'Google Gemini',
+    models: [
+      { value: 'gemini-3.5-pro', label: 'Gemini 3.5 Pro' },
+      { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+      { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+      { value: 'gemini-3.5-mini', label: 'Gemini 3.5 Mini' },
+      { value: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
+      { value: 'gemini-3.1-flash', label: 'Gemini 3.1 Flash' },
+      { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
+      { value: 'gemini-3.1-mini', label: 'Gemini 3.1 Mini' },
+    ],
+  },
+  {
+    value: 'deepseek',
+    label: 'DeepSeek',
+    models: [
+      { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+      { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+    ],
+  },
+] as const;
+
+function getProviderOption(provider: string) {
+  return llmProviders.find((option) => option.value === provider) ?? llmProviders[0];
+}
+
+function getModelValue(provider: string, model: string) {
+  const providerOption = getProviderOption(provider);
+  return providerOption.models.some((option) => option.value === model)
+    ? model
+    : providerOption.models[0].value;
+}
 
 export function WorkspaceRoute({
   view,
@@ -51,6 +118,8 @@ export function WorkspaceRoute({
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('llm');
   const [isCreateOrganizationOpen, setIsCreateOrganizationOpen] = useState(false);
   const [editingOrganization, setEditingOrganization] = useState<OrganizationWorkspace | null>(null);
+  const [isCreatePropertyOpen, setIsCreatePropertyOpen] = useState(false);
+  const [editingProperty, setEditingProperty] = useState<PropertyWorkspace | null>(null);
   const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
@@ -192,6 +261,17 @@ export function WorkspaceRoute({
     event.preventDefault();
     if (!selectedOrganization) return;
 
+    if (editingProperty) {
+      await handleUpdateProperty(editingProperty, {
+        name: propertyName,
+        location: propertyLocation,
+        icon: propertyIcon,
+        imageUrl: propertyImageUrl,
+      });
+      closePropertyModal();
+      return;
+    }
+
     const next = await saveWorkspaceAction({
       action: 'createProperty',
       payload: {
@@ -203,11 +283,46 @@ export function WorkspaceRoute({
       },
     });
     const created = next.properties[next.properties.length - 1];
+    closePropertyModal();
+    router.push(propertyPath(created.id));
+  }
+
+  function openCreatePropertyModal() {
     setPropertyName('');
     setPropertyLocation('');
     setPropertyIcon('');
     setPropertyImageUrl('');
-    router.push(propertyPath(created.id));
+    setEditingProperty(null);
+    setIsCreatePropertyOpen(true);
+  }
+
+  function openEditPropertyModal(property: PropertyWorkspace) {
+    setPropertyName(property.name);
+    setPropertyLocation(property.location);
+    setPropertyIcon(property.icon);
+    setPropertyImageUrl(property.imageUrl);
+    setEditingProperty(property);
+    setIsCreatePropertyOpen(true);
+  }
+
+  function closePropertyModal() {
+    setIsCreatePropertyOpen(false);
+    setEditingProperty(null);
+    setPropertyName('');
+    setPropertyLocation('');
+    setPropertyIcon('');
+    setPropertyImageUrl('');
+  }
+
+  function handlePropertyImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') setPropertyImageUrl(reader.result);
+    };
+    reader.readAsDataURL(file);
   }
 
   async function handleUpdateProperty(property: PropertyWorkspace, updates: Pick<PropertyWorkspace, 'name' | 'location' | 'icon' | 'imageUrl'>) {
@@ -257,6 +372,20 @@ export function WorkspaceRoute({
     await saveWorkspaceAction({
       action: 'updateChatbot',
       payload: { propertyId: selectedProperty.id, chatbot: selectedProperty.chatbot },
+    });
+  }
+
+  async function persistSelectedKnowledgeBase(knowledgeText: string) {
+    if (!selectedProperty) return;
+
+    const knowledgeSources = knowledgeText.trim() ? [knowledgeText.trim()] : [];
+    setWorkspace((current) => updatePropertyChatbot(current, selectedProperty.id, { knowledgeSources }));
+    await saveWorkspaceAction({
+      action: 'updateChatbot',
+      payload: {
+        propertyId: selectedProperty.id,
+        chatbot: { knowledgeSources },
+      },
     });
   }
 
@@ -355,16 +484,43 @@ export function WorkspaceRoute({
             propertyIcon={propertyIcon}
             propertyImageUrl={propertyImageUrl}
             isSavingWorkspace={isSavingWorkspace}
+            isCreateOpen={isCreatePropertyOpen}
+            editingProperty={editingProperty}
             onPropertyNameChange={setPropertyName}
             onPropertyLocationChange={setPropertyLocation}
             onPropertyIconChange={setPropertyIcon}
             onPropertyImageUrlChange={setPropertyImageUrl}
             onSubmit={handleCreateProperty}
-            onUpdate={handleUpdateProperty}
+            onOpenCreate={openCreatePropertyModal}
+            onOpenEdit={openEditPropertyModal}
+            onCloseCreate={closePropertyModal}
+            onPropertyImageChange={handlePropertyImageChange}
             onDelete={handleDeleteProperty}
           />
         </div>
       </main>
+    );
+  }
+
+  if ((view === 'property' || view === 'chatbot') && selectedProperty && selectedOrganization) {
+    return (
+      <PropertyChatbotWorkspaceView
+        organization={selectedOrganization}
+        property={selectedProperty}
+        chatInput={chatInput}
+        chatMessages={chatMessages}
+        chatError={chatError}
+        isSending={isSending}
+        isSavingWorkspace={isSavingWorkspace}
+        activeSettingsTab={activeSettingsTab}
+        onChatInputChange={setChatInput}
+        onSendTestMessage={sendTestMessage}
+        onChatbotUpdate={updateSelectedChatbot}
+        onPersistChatbot={persistSelectedChatbot}
+        onPersistKnowledgeBase={persistSelectedKnowledgeBase}
+        onDelete={handleDeleteProperty}
+        onSettingsTabChange={setActiveSettingsTab}
+      />
     );
   }
 
@@ -435,12 +591,17 @@ export function WorkspaceRoute({
               propertyIcon={propertyIcon}
               propertyImageUrl={propertyImageUrl}
               isSavingWorkspace={isSavingWorkspace}
+              isCreateOpen={isCreatePropertyOpen}
+              editingProperty={editingProperty}
               onPropertyNameChange={setPropertyName}
               onPropertyLocationChange={setPropertyLocation}
               onPropertyIconChange={setPropertyIcon}
               onPropertyImageUrlChange={setPropertyImageUrl}
               onSubmit={handleCreateProperty}
-              onUpdate={handleUpdateProperty}
+              onOpenCreate={openCreatePropertyModal}
+              onOpenEdit={openEditPropertyModal}
+              onCloseCreate={closePropertyModal}
+              onPropertyImageChange={handlePropertyImageChange}
               onDelete={handleDeleteProperty}
             />
           )}
@@ -458,6 +619,7 @@ export function WorkspaceRoute({
               onSendTestMessage={sendTestMessage}
               onChatbotUpdate={updateSelectedChatbot}
               onPersistChatbot={persistSelectedChatbot}
+              onPersistKnowledgeBase={persistSelectedKnowledgeBase}
               onDelete={handleDeleteProperty}
               onSettingsTabChange={setActiveSettingsTab}
             />
@@ -643,21 +805,6 @@ function PageHeading({
   );
 }
 
-function CreatePanel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="min-h-36 rounded-lg border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-      <div className="mb-4 flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white/70 px-4 py-6 text-center">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-400 text-lg font-semibold text-slate-600">
-          +
-        </div>
-        <h3 className="mt-2 text-sm font-bold text-blue-700">{title}</h3>
-        <p className="text-xs font-semibold text-slate-400">Add another card to this page.</p>
-      </div>
-      {children}
-    </div>
-  );
-}
-
 function CreateTile({ title, onClick }: { title: string; onClick: () => void }) {
   return (
     <button
@@ -766,6 +913,107 @@ function CreateOrganizationModal({
           <button
             type="button"
             onClick={() => onOrganizationIconChange('')}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
+          >
+            Clear picture
+          </button>
+          <button
+            disabled={isSavingWorkspace}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSavingWorkspace ? 'Saving...' : mode === 'edit' ? 'Save changes' : 'Create and open'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CreatePropertyModal({
+  open,
+  mode,
+  propertyName,
+  propertyLocation,
+  propertyIcon,
+  propertyImageUrl,
+  isSavingWorkspace,
+  onPropertyNameChange,
+  onPropertyLocationChange,
+  onPropertyIconChange,
+  onPropertyImageUrlChange,
+  onPropertyImageChange,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  mode: 'create' | 'edit';
+  propertyName: string;
+  propertyLocation: string;
+  propertyIcon: string;
+  propertyImageUrl: string;
+  isSavingWorkspace: boolean;
+  onPropertyNameChange: (value: string) => void;
+  onPropertyLocationChange: (value: string) => void;
+  onPropertyIconChange: (value: string) => void;
+  onPropertyImageUrlChange: (value: string) => void;
+  onPropertyImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-4">
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.18)]"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              {mode === 'edit' ? 'Edit property' : 'New property'}
+            </p>
+            <h3 className="mt-1 text-lg font-bold text-slate-900">
+              {mode === 'edit' ? 'Edit property' : 'Create property'}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
+          >
+            Close
+          </button>
+        </div>
+
+        <label className="mx-auto mt-5 flex w-32 cursor-pointer flex-col items-center text-center">
+          <span className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-3xl font-light text-slate-400 transition hover:border-blue-300 hover:bg-blue-50">
+            {propertyImageUrl ? <ImageIcon value={propertyImageUrl} label={propertyName || 'Property image'} /> : '+'}
+          </span>
+          <span className="mt-2 text-xs font-semibold text-blue-700">Add picture</span>
+          <input type="file" accept="image/*" onChange={onPropertyImageChange} className="sr-only" />
+        </label>
+
+        <div className="mt-5 space-y-4">
+          <Field
+            label="Property name"
+            value={propertyName}
+            onChange={onPropertyNameChange}
+            placeholder="Property name"
+          />
+          <Field
+            label="Location"
+            value={propertyLocation}
+            onChange={onPropertyLocationChange}
+            placeholder="City, area"
+          />
+          <Field label="Icon label" value={propertyIcon} onChange={onPropertyIconChange} placeholder="P1" />
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => onPropertyImageUrlChange('')}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
           >
             Clear picture
@@ -904,12 +1152,17 @@ function OrganizationPropertiesView({
   propertyIcon,
   propertyImageUrl,
   isSavingWorkspace,
+  isCreateOpen,
+  editingProperty,
   onPropertyNameChange,
   onPropertyLocationChange,
   onPropertyIconChange,
   onPropertyImageUrlChange,
   onSubmit,
-  onUpdate,
+  onOpenCreate,
+  onOpenEdit,
+  onCloseCreate,
+  onPropertyImageChange,
   onDelete,
 }: {
   organization: OrganizationWorkspace;
@@ -919,12 +1172,17 @@ function OrganizationPropertiesView({
   propertyIcon: string;
   propertyImageUrl: string;
   isSavingWorkspace: boolean;
+  isCreateOpen: boolean;
+  editingProperty: PropertyWorkspace | null;
   onPropertyNameChange: (value: string) => void;
   onPropertyLocationChange: (value: string) => void;
   onPropertyIconChange: (value: string) => void;
   onPropertyImageUrlChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onUpdate: (property: PropertyWorkspace, updates: Pick<PropertyWorkspace, 'name' | 'location' | 'icon' | 'imageUrl'>) => void;
+  onOpenCreate: () => void;
+  onOpenEdit: (property: PropertyWorkspace) => void;
+  onCloseCreate: () => void;
+  onPropertyImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onDelete: (property: PropertyWorkspace) => void;
 }) {
   return (
@@ -934,102 +1192,89 @@ function OrganizationPropertiesView({
         context={organization.name}
         countLabel={`${properties.length} / ${properties.length} properties`}
       />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div
+        className={`grid gap-4 ${
+          properties.length === 0
+            ? 'mx-auto max-w-xl md:grid-cols-1'
+            : 'md:grid-cols-2 xl:grid-cols-3'
+        }`}
+      >
         {properties.map((property) => (
           <PropertyCard
             key={property.id}
             property={property}
-            isSavingWorkspace={isSavingWorkspace}
-            onUpdate={onUpdate}
+            onOpenEdit={onOpenEdit}
             onDelete={onDelete}
           />
         ))}
 
-        <CreatePanel title="Create property">
-          <form onSubmit={onSubmit} className="space-y-3">
-            <Field label="Name" value={propertyName} onChange={onPropertyNameChange} placeholder="Property name" />
-            <Field label="Location" value={propertyLocation} onChange={onPropertyLocationChange} placeholder="City, area" />
-            <Field label="Icon" value={propertyIcon} onChange={onPropertyIconChange} placeholder="P1" />
-            <Field label="Image URL" value={propertyImageUrl} onChange={onPropertyImageUrlChange} placeholder="Optional image URL" />
-            <button className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500">
-              Create property
-            </button>
-          </form>
-        </CreatePanel>
+        <CreateTile title="Create property" onClick={onOpenCreate} />
       </div>
+      <CreatePropertyModal
+        open={isCreateOpen}
+        mode={editingProperty ? 'edit' : 'create'}
+        propertyName={propertyName}
+        propertyLocation={propertyLocation}
+        propertyIcon={propertyIcon}
+        propertyImageUrl={propertyImageUrl}
+        isSavingWorkspace={isSavingWorkspace}
+        onPropertyNameChange={onPropertyNameChange}
+        onPropertyLocationChange={onPropertyLocationChange}
+        onPropertyIconChange={onPropertyIconChange}
+        onPropertyImageUrlChange={onPropertyImageUrlChange}
+        onPropertyImageChange={onPropertyImageChange}
+        onClose={onCloseCreate}
+        onSubmit={onSubmit}
+      />
     </section>
   );
 }
 
 function PropertyCard({
   property,
-  isSavingWorkspace,
-  onUpdate,
+  onOpenEdit,
   onDelete,
 }: {
   property: PropertyWorkspace;
-  isSavingWorkspace: boolean;
-  onUpdate: (property: PropertyWorkspace, updates: Pick<PropertyWorkspace, 'name' | 'location' | 'icon' | 'imageUrl'>) => void;
+  onOpenEdit: (property: PropertyWorkspace) => void;
   onDelete: (property: PropertyWorkspace) => void;
 }) {
-  const [draftName, setDraftName] = useState(property.name);
-  const [draftLocation, setDraftLocation] = useState(property.location);
-  const [draftIcon, setDraftIcon] = useState(property.icon);
-  const [draftImageUrl, setDraftImageUrl] = useState(property.imageUrl);
-
-  function saveProperty(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    onUpdate(property, {
-      name: draftName,
-      location: draftLocation,
-      icon: draftIcon,
-      imageUrl: draftImageUrl,
-    });
-  }
-
   return (
-    <form
-      onSubmit={saveProperty}
-      className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-blue-100 hover:shadow-[0_14px_34px_rgba(15,23,42,0.10)]"
-    >
-      <Link href={propertyPath(property.id)} className="block text-left">
-        <div className="flex h-28 items-center justify-center bg-slate-50 text-2xl font-semibold text-slate-400">
-          {property.imageUrl ? property.imageUrl : property.icon}
+    <div className="relative min-h-36 rounded-lg border border-slate-200 bg-white p-5 text-left shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition hover:-translate-y-0.5 hover:border-blue-100 hover:shadow-[0_14px_34px_rgba(15,23,42,0.10)]">
+      <button
+        type="button"
+        onClick={() => onOpenEdit(property)}
+        className="absolute right-4 top-4 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+      >
+        Edit
+      </button>
+
+      <Link href={propertyPath(property.id)} className="block pr-16">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-blue-50 text-sm font-semibold text-blue-700 ring-1 ring-blue-100">
+            {property.imageUrl ? <ImageIcon value={property.imageUrl} label={property.name} /> : property.icon}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-semibold text-blue-700">{property.name}</h3>
+            <p className="mt-1 line-clamp-2 text-sm text-slate-500">{property.location}</p>
+          </div>
         </div>
-        <div className="p-4">
-          <h3 className="text-base font-semibold text-blue-700">{property.name}</h3>
-          <p className="mt-1 text-sm text-slate-500">{property.location}</p>
+
+        <div className="mt-5 flex items-center gap-2">
+          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+            Workspace ready
+          </span>
         </div>
       </Link>
-      <div className="space-y-3 px-4 pb-4">
-        <Field label="Name" value={draftName} onChange={setDraftName} placeholder="Property name" />
-        <Field label="Location" value={draftLocation} onChange={setDraftLocation} placeholder="City, area" />
-        <Field label="Icon" value={draftIcon} onChange={setDraftIcon} placeholder="P1" />
-        <Field label="Image URL" value={draftImageUrl} onChange={setDraftImageUrl} placeholder="Optional image URL" />
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            type="submit"
-            disabled={isSavingWorkspace}
-            className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSavingWorkspace ? 'Saving...' : 'Save details'}
-          </button>
-          <Link
-            href={propertyPath(property.id)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-          >
-            Open
-          </Link>
-        </div>
-        <button
-          type="button"
-          onClick={() => onDelete(property)}
-          className="rounded-lg border border-red-100 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50"
-        >
-          Delete property
-        </button>
-      </div>
-    </form>
+
+      <button
+        type="button"
+        onClick={() => onDelete(property)}
+        className="mt-5 rounded-lg border border-red-100 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+      >
+        Delete property
+      </button>
+    </div>
   );
 }
 
@@ -1046,6 +1291,7 @@ function PropertyChatbotWorkspaceView({
   onSendTestMessage,
   onChatbotUpdate,
   onPersistChatbot,
+  onPersistKnowledgeBase,
   onDelete,
   onSettingsTabChange,
 }: {
@@ -1061,175 +1307,735 @@ function PropertyChatbotWorkspaceView({
   onSendTestMessage: (event: FormEvent<HTMLFormElement>) => void;
   onChatbotUpdate: (updates: Parameters<typeof updatePropertyChatbot>[2]) => void;
   onPersistChatbot: () => void;
+  onPersistKnowledgeBase: (knowledgeText: string) => Promise<void>;
   onDelete: (property: PropertyWorkspace) => void;
   onSettingsTabChange: (tab: SettingsTab) => void;
 }) {
+  const [isAppNavCollapsed, setIsAppNavCollapsed] = useState(false);
+  const [isThreadsCollapsed, setIsThreadsCollapsed] = useState(false);
+  const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(false);
+  const [activeWorkspaceSection, setActiveWorkspaceSection] = useState<WorkspaceSection>('Chatbot');
+  const workspaceNavItems: WorkspaceSection[] = ['Overview', 'Chatbot', 'Agents', 'Conversations', 'Knowledge Base', 'Analytics', 'Usage', 'Settings', 'Deploy'];
+  const providerOption = getProviderOption(property.chatbot.provider);
+  const selectedModel = getModelValue(providerOption.value, property.chatbot.model);
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <section className="flex min-h-[680px] flex-col rounded-lg border border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-        <div className="border-b border-slate-200 p-4">
-          <div className="flex items-start justify-between gap-4">
+    <main className="flex h-screen overflow-hidden bg-white text-slate-950">
+      <aside className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-all ${isAppNavCollapsed ? 'w-16' : 'w-64'}`}>
+        <div className={`flex h-16 items-center border-b border-slate-100 px-3 ${isAppNavCollapsed ? 'justify-center' : 'gap-3'}`}>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 text-xs font-bold">PA</div>
+          {!isAppNavCollapsed && (
             <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{organization.name}</p>
-              <h3 className="mt-1 text-lg font-semibold text-slate-950">{property.name} assistant</h3>
-              <p className="mt-1 text-xs text-slate-500">{property.location}</p>
+              <p className="text-base font-semibold">Property Assistants</p>
+              <p className="text-xs text-slate-500">Workspace</p>
             </div>
-            <span className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{property.icon}</span>
-          </div>
+          )}
         </div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-          {chatMessages.map((message, index) => (
-            <div
-              key={`${message.role}-${index}`}
-              className={`rounded-lg px-3 py-2 text-sm ${
-                message.role === 'user'
-                  ? 'ml-10 bg-blue-600 text-white'
-                  : 'mr-10 bg-slate-100 text-slate-700'
-              }`}
-            >
-              {message.content}
+        <div className={`border-b border-slate-200 px-3 py-5 ${isAppNavCollapsed ? 'text-center' : ''}`}>
+          {!isAppNavCollapsed && (
+            <>
+              <p className="text-sm font-semibold">{property.name}</p>
+              <p className="text-xs text-slate-500">{organization.name}</p>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setIsAppNavCollapsed((current) => !current)}
+            className={`rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 ${
+              isAppNavCollapsed ? 'mt-0' : 'mt-4'
+            }`}
+            aria-label={isAppNavCollapsed ? 'Expand workspace navigation' : 'Collapse workspace navigation'}
+          >
+            {isAppNavCollapsed ? '>' : '<'}
+          </button>
+        </div>
+        <nav className="flex flex-1 flex-col gap-1 p-2">
+          {workspaceNavItems.map((item) => (
+            <div key={item}>
+              <button
+                type="button"
+                title={item}
+                onClick={() => setActiveWorkspaceSection(item)}
+                className={`flex w-full items-center rounded-lg py-3 text-left text-sm font-medium transition ${
+                  item === activeWorkspaceSection
+                    ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+                } ${isAppNavCollapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-[10px]">
+                  {item.slice(0, 1)}
+                </span>
+                {!isAppNavCollapsed && item}
+              </button>
             </div>
           ))}
-          {chatError && (
-            <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
-              {chatError}
-            </div>
-          )}
-        </div>
-        <form onSubmit={onSendTestMessage} className="border-t border-slate-200 p-4">
-          <textarea
-            value={chatInput}
-            onChange={(event) => onChatInputChange(event.target.value)}
-            placeholder="Ask this property assistant a question"
-            rows={3}
-            className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
-          />
-          <button
-            disabled={isSending}
-            className="mt-3 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isSending ? 'Sending...' : 'Send test message'}
-          </button>
-        </form>
-      </section>
-
-      <aside className="space-y-4">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Settings</p>
-              <h3 className="mt-1 text-sm font-semibold text-slate-950">Chatbot configuration</h3>
-            </div>
-            <button
-              type="button"
-              onClick={onPersistChatbot}
-              disabled={isSavingWorkspace}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSavingWorkspace ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <SettingsTabButton active={activeSettingsTab === 'llm'} onClick={() => onSettingsTabChange('llm')} label="LLM" />
-            <SettingsTabButton active={activeSettingsTab === 'instructions'} onClick={() => onSettingsTabChange('instructions')} label="Instructions" />
-            <SettingsTabButton active={activeSettingsTab === 'knowledge'} onClick={() => onSettingsTabChange('knowledge')} label="Knowledge" />
-            <SettingsTabButton active={activeSettingsTab === 'templates'} onClick={() => onSettingsTabChange('templates')} label="Templates" />
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-          {activeSettingsTab === 'llm' && (
-            <div className="space-y-3">
-              <Field label="Provider" value={property.chatbot.provider} onChange={(provider) => onChatbotUpdate({ provider })} placeholder="openai" />
-              <Field label="Model" value={property.chatbot.model} onChange={(model) => onChatbotUpdate({ model })} placeholder="gpt-5.4" />
-              <label className="block">
-                <span className="text-xs font-medium text-slate-500">Temperature</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="2"
-                  step="0.1"
-                  value={property.chatbot.temperature}
-                  onChange={(event) => onChatbotUpdate({ temperature: Number(event.target.value) })}
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
-                />
-              </label>
-            </div>
-          )}
-
-          {activeSettingsTab === 'instructions' && (
-            <Field
-              label="System instructions"
-              value={property.chatbot.systemPrompt}
-              onChange={(systemPrompt) => onChatbotUpdate({ systemPrompt })}
-              placeholder="How should this property assistant behave?"
-              multiline
-            />
-          )}
-
-          {activeSettingsTab === 'knowledge' && (
-            <div className="space-y-4">
-              <StudioList title="Knowledge base" items={property.chatbot.knowledgeSources} />
-              <StudioList title="Quick replies" items={property.chatbot.quickReplies} />
-            </div>
-          )}
-
-          {activeSettingsTab === 'templates' && (
-            <StudioList title="WhatsApp templates" items={property.chatbot.whatsappTemplates} />
-          )}
-        </section>
-
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Property record</p>
-          <p className="mt-2 font-mono text-xs text-slate-500">{property.id}</p>
+        </nav>
+        <div className="border-t border-slate-200 p-3">
           <button
             type="button"
             onClick={() => onDelete(property)}
-            className="mt-4 w-full rounded-lg border border-red-100 px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+            title="Delete"
+            className={`w-full rounded-lg border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 ${
+              isAppNavCollapsed ? 'text-center' : 'text-left'
+            }`}
           >
-            Delete property
+            {isAppNavCollapsed ? 'D' : 'Delete'}
           </button>
-        </section>
+        </div>
       </aside>
-    </div>
-  );
-}
 
-function SettingsTabButton({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
-        active
-          ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
-          : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-900'
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function StudioList({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-      <div className="mt-3 space-y-2">
-        {items.map((item) => (
-          <div key={item} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-            {item}
+      <section className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-6">
+          <div>
+            <p className="text-xs text-slate-500">Organization</p>
+            <p className="text-sm font-semibold">{organization.name}</p>
           </div>
-        ))}
+          <div className="flex items-center gap-4">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-sm font-semibold text-slate-600">
+              Free Plan
+            </span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-700 text-sm font-bold text-white">
+              {organization.name.slice(0, 1).toUpperCase()}
+            </span>
+          </div>
+        </header>
+
+        {activeWorkspaceSection === 'Knowledge Base' ? (
+          <KnowledgeBaseWorkspaceView
+            key={property.id}
+            initialKnowledgeText={property.chatbot.knowledgeSources.join('\n\n')}
+            systemPrompt={property.chatbot.systemPrompt}
+            isSavingWorkspace={isSavingWorkspace}
+            onPersistKnowledgeBase={onPersistKnowledgeBase}
+          />
+        ) : activeWorkspaceSection === 'Chatbot' ? (
+        <div className="flex min-h-0 flex-1">
+          {isThreadsCollapsed ? (
+            <section className="flex w-12 shrink-0 flex-col items-center border-r border-slate-200 bg-slate-50/70 py-4">
+              <button
+                type="button"
+                onClick={() => setIsThreadsCollapsed(false)}
+                className="rounded-lg px-3 py-2 text-lg font-semibold text-slate-700 transition hover:bg-white"
+                aria-label="Expand threads panel"
+                >
+                  {'>'}
+              </button>
+              <button className="mt-8 rounded-lg px-3 py-2 text-xl text-slate-700 transition hover:bg-white" title="New thread">+</button>
+              <span className="mt-4 text-xs text-slate-500">1</span>
+            </section>
+          ) : (
+            <section className="w-80 shrink-0 border-r border-slate-200 bg-slate-50/60">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+                <h3 className="text-lg font-bold">Threads <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-500">1</span></h3>
+                <div className="flex items-center gap-2">
+                  <button className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700">+ New</button>
+                  <button
+                    type="button"
+                    onClick={() => setIsThreadsCollapsed(true)}
+                    className="rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-600 transition hover:bg-white"
+                    aria-label="Collapse threads panel"
+                  >
+                    {'<'}
+                  </button>
+                </div>
+              </div>
+              <div className="border-b border-slate-200 p-4">
+                <input
+                  placeholder="Search threads..."
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+                />
+              </div>
+              <div className="p-3">
+                <div className="rounded-lg border-l-4 border-blue-600 bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">New Conversation</p>
+                    <span className="text-xs text-slate-400">Edit</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">{chatMessages.filter((message) => message.role === 'user').length} messages</p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
+            <div className="flex h-20 items-center justify-between border-b border-slate-200 px-4">
+              <div>
+                <h1 className="text-2xl font-bold">Chatbot</h1>
+                <p className="text-sm text-slate-500">Online <span className="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" /></p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onDelete(property)}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-50"
+              >
+                Delete
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+              <div className="mr-auto max-w-md rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-700">
+                Welcome! How can I assist you today?
+              </div>
+              {chatMessages.map((message, index) => (
+                <div key={`${message.role}-${index}`}>
+                  <div
+                    className={`max-w-[80%] rounded-lg px-4 py-3 text-sm ${
+                      message.role === 'user'
+                        ? 'ml-auto bg-blue-600 text-white'
+                        : 'mr-auto bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                  <p className={`mt-1 text-xs italic text-slate-400 ${message.role === 'user' ? 'text-right' : ''}`}>Just now</p>
+                </div>
+              ))}
+              {chatError && (
+                <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
+                  {chatError}
+                </div>
+              )}
+            </div>
+            <form onSubmit={onSendTestMessage} className="border-t border-slate-200 p-4">
+              <div className="flex items-center gap-3">
+                <input
+                  value={chatInput}
+                  onChange={(event) => onChatInputChange(event.target.value)}
+                  placeholder="Type your message..."
+                  className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+                />
+                <button
+                  disabled={isSending}
+                  className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSending ? 'Sending' : 'Send'}
+                </button>
+              </div>
+            </form>
+          </section>
+
+          {isSettingsCollapsed ? (
+            <aside className="flex w-12 shrink-0 flex-col items-center border-l border-slate-200 bg-white py-4">
+              <button
+                type="button"
+                onClick={() => setIsSettingsCollapsed(false)}
+                className="rounded-lg px-3 py-2 text-lg font-semibold text-slate-700 transition hover:bg-slate-50"
+                aria-label="Expand settings panel"
+              >
+                {'<'}
+              </button>
+              <span className="mt-8 rotate-90 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-500">Settings</span>
+            </aside>
+          ) : (
+          <aside className="w-[420px] shrink-0 overflow-y-auto bg-white p-6">
+            <div className="mb-5 flex items-center gap-8 border-b border-slate-200">
+              <button
+                type="button"
+                onClick={() => onSettingsTabChange('instructions')}
+                className={`border-b-2 px-1 pb-3 text-sm font-semibold ${
+                  activeSettingsTab === 'instructions'
+                    ? 'border-blue-600 text-blue-700'
+                    : 'border-transparent text-slate-500'
+                }`}
+              >
+                Instructions
+              </button>
+              <button
+                type="button"
+                onClick={() => onSettingsTabChange('llm')}
+                className={`border-b-2 px-1 pb-3 text-sm font-semibold ${
+                  activeSettingsTab !== 'instructions'
+                    ? 'border-blue-600 text-blue-700'
+                    : 'border-transparent text-slate-500'
+                }`}
+              >
+                Settings
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSettingsCollapsed(true)}
+                className="ml-auto rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
+                aria-label="Collapse settings panel"
+              >
+                {'>'}
+              </button>
+            </div>
+
+            {activeSettingsTab === 'instructions' ? (
+              <div>
+                <h2 className="text-lg font-bold">Instructions</h2>
+                <p className="mt-2 text-sm text-slate-500">Set how this property chatbot should behave.</p>
+                <div className="mt-5">
+                  <Field
+                    label="System instructions"
+                    value={property.chatbot.systemPrompt}
+                    onChange={(systemPrompt) => onChatbotUpdate({ systemPrompt })}
+                    placeholder="How should this property assistant behave?"
+                    multiline
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={onPersistChatbot}
+                  disabled={isSavingWorkspace}
+                  className="mt-5 w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSavingWorkspace ? 'Saving...' : 'Save instructions'}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-7">
+                <div>
+                  <h2 className="text-lg font-bold">LLM Settings</h2>
+                </div>
+                <label className="block">
+                  <span className="text-base font-semibold">Language Model</span>
+                  <p className="mt-2 text-sm text-slate-500">Select the language model for natural language understanding and response generation.</p>
+                  <select
+                    value={providerOption.value}
+                    onChange={(event) => {
+                      const nextProvider = getProviderOption(event.target.value);
+                      onChatbotUpdate({
+                        provider: nextProvider.value,
+                        model: nextProvider.models[0].value,
+                      });
+                    }}
+                    className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+                  >
+                    {llmProviders.map((provider) => (
+                      <option key={provider.value} value={provider.value}>
+                        {provider.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-base font-semibold">Temperature: <span className="text-blue-700">{property.chatbot.temperature}</span></span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={property.chatbot.temperature}
+                    onChange={(event) => onChatbotUpdate({ temperature: Number(event.target.value) })}
+                    className="mt-4 w-full accent-blue-600"
+                  />
+                  <div className="mt-2 flex justify-between text-xs text-slate-500">
+                    <span>0.0 Focused</span>
+                    <span>1.0 Balanced</span>
+                    <span>2.0 Creative</span>
+                  </div>
+                </label>
+                <label className="block">
+                  <span className="text-base font-semibold">Top-K: <span className="text-blue-700">10</span></span>
+                  <input type="range" min="1" max="100" defaultValue="10" className="mt-4 w-full accent-blue-600" />
+                  <div className="mt-2 flex justify-between text-xs text-slate-500">
+                    <span>1 Restrictive</span>
+                    <span>50 Balanced</span>
+                    <span>100 Diverse</span>
+                  </div>
+                </label>
+                <label className="block">
+                  <span className="text-base font-semibold">Model</span>
+                  <select
+                    value={selectedModel}
+                    onChange={(event) => onChatbotUpdate({ model: event.target.value })}
+                    className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+                  >
+                    {providerOption.models.map((model) => (
+                      <option key={model.value} value={model.value}>
+                        {model.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={onPersistChatbot}
+                  disabled={isSavingWorkspace}
+                  className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSavingWorkspace ? 'Saving...' : 'Save settings'}
+                </button>
+              </div>
+            )}
+          </aside>
+          )}
+        </div>
+        ) : (
+          <WorkspaceSectionPlaceholder section={activeWorkspaceSection} />
+        )}
+      </section>
+    </main>
+  );
+}
+
+function KnowledgeBaseWorkspaceView({
+  initialKnowledgeText,
+  systemPrompt,
+  isSavingWorkspace,
+  onPersistKnowledgeBase,
+}: {
+  initialKnowledgeText: string;
+  systemPrompt: string;
+  isSavingWorkspace: boolean;
+  onPersistKnowledgeBase: (knowledgeText: string) => Promise<void>;
+}) {
+  const [knowledgeText, setKnowledgeText] = useState(initialKnowledgeText);
+  const [legacyKnowledgeEntries, setLegacyKnowledgeEntries] = useState<LegacyKnowledgeEntry[]>([]);
+  const [legacyKnowledgeError, setLegacyKnowledgeError] = useState<string | null>(null);
+  const [legacyDraft, setLegacyDraft] = useState<LegacyKnowledgeDraft | null>(null);
+  const [legacySavingId, setLegacySavingId] = useState<string | null>(null);
+  const [legacyDeletingId, setLegacyDeletingId] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const characterCount = knowledgeText.length;
+  const approximateTokens = Math.ceil(characterCount / 4);
+  const knowledgeTabs = ['Overview', 'File', 'Text', 'Website', 'API', 'Database', 'Tools'];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLegacyKnowledgeBase() {
+      try {
+        const response = await fetch('/api/kb/list', { cache: 'no-store' });
+        const payload = (await response.json()) as {
+          success: boolean;
+          data?: LegacyKnowledgeEntry[];
+          error?: string;
+        };
+        if (!response.ok || !payload.success) throw new Error(payload.error || 'Failed to load app knowledge base');
+        if (!cancelled) {
+          setLegacyKnowledgeEntries(payload.data || []);
+          setLegacyKnowledgeError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLegacyKnowledgeError(error instanceof Error ? error.message : 'Failed to load app knowledge base');
+        }
+      }
+    }
+
+    loadLegacyKnowledgeBase();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleLegacyKnowledgeUpdate() {
+    if (!legacyDraft) return;
+
+    setLegacySavingId(legacyDraft.id);
+    setStatus(null);
+    try {
+      const response = await fetch('/api/kb/update', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(legacyDraft),
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        data?: LegacyKnowledgeEntry;
+        error?: string;
+      };
+      if (!response.ok || !payload.success || !payload.data) {
+        throw new Error(payload.error || 'Failed to update live knowledge base');
+      }
+      setLegacyKnowledgeEntries((current) =>
+        current.map((entry) => (entry.id === payload.data?.id ? { ...entry, ...payload.data } : entry))
+      );
+      setLegacyDraft(null);
+      setStatus('Live knowledge base entry updated.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to update live knowledge base.');
+    } finally {
+      setLegacySavingId(null);
+    }
+  }
+
+  async function handleLegacyKnowledgeDelete(entry: LegacyKnowledgeEntry) {
+    const confirmed = window.confirm(`Delete "${entry.title}" from the live app knowledge base?`);
+    if (!confirmed) return;
+
+    setLegacyDeletingId(entry.id);
+    setStatus(null);
+    try {
+      const response = await fetch('/api/kb/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: entry.id }),
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: string;
+      };
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Failed to delete live knowledge base entry');
+      setLegacyKnowledgeEntries((current) => current.filter((item) => item.id !== entry.id));
+      if (legacyDraft?.id === entry.id) setLegacyDraft(null);
+      setStatus('Live knowledge base entry deleted.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to delete live knowledge base entry.');
+    } finally {
+      setLegacyDeletingId(null);
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStatus(null);
+    try {
+      await onPersistKnowledgeBase(knowledgeText);
+      setStatus('Knowledge base updated.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to update knowledge base.');
+    }
+  }
+
+  return (
+    <section className="min-w-0 flex-1 overflow-y-auto bg-white p-8">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-8 flex items-center gap-3">
+          <span className="h-8 w-1 bg-cyan-400" />
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-950">Knowledge Base</h1>
+            <p className="mt-1 text-sm text-slate-500">Store the context this property assistant should use.</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-white p-6 shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
+          <div className="border-b border-slate-200">
+            <div className="flex flex-wrap gap-6">
+              {knowledgeTabs.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  className={`border-b-2 px-1 pb-4 text-sm font-semibold ${
+                    tab === 'Text'
+                      ? 'border-blue-600 text-blue-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-950'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <section className="mt-5 rounded-lg border border-blue-100 bg-blue-50/60 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-950">Current system prompt</h2>
+                <p className="mt-1 text-xs font-semibold text-slate-500">This is the instruction context saved for this property chatbot.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setKnowledgeText((current) => {
+                    const trimmedPrompt = systemPrompt.trim();
+                    if (!trimmedPrompt) return current;
+                    if (!current.trim()) return trimmedPrompt;
+                    if (current.includes(trimmedPrompt)) return current;
+                    return `${current.trim()}\n\n${trimmedPrompt}`;
+                  });
+                  setStatus('System prompt added to the editor.');
+                }}
+                className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-50"
+              >
+                Add to text
+              </button>
+            </div>
+            <p className="mt-3 whitespace-pre-wrap rounded-lg border border-blue-100 bg-white p-3 text-sm leading-6 text-slate-700">
+              {systemPrompt || 'No system prompt saved yet.'}
+            </p>
+          </section>
+
+          <section className="mt-5 rounded-lg border border-amber-100 bg-amber-50/70 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-950">Live app knowledge base</h2>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  This is the older global `knowledge_base` table that the chatbot currently searches during chat.
+                </p>
+              </div>
+              {legacyKnowledgeEntries[0] && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setKnowledgeText(legacyKnowledgeEntries[0].content);
+                    setStatus('Live knowledge base text loaded into the editor.');
+                  }}
+                  className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-50"
+                >
+                  Use latest KB text
+                </button>
+              )}
+            </div>
+
+            {legacyKnowledgeError && (
+              <p className="mt-3 rounded-lg border border-red-100 bg-white p-3 text-sm text-red-600">{legacyKnowledgeError}</p>
+            )}
+
+            {!legacyKnowledgeError && legacyKnowledgeEntries.length === 0 && (
+              <p className="mt-3 rounded-lg border border-amber-100 bg-white p-3 text-sm text-slate-500">
+                No active app knowledge base rows found.
+              </p>
+            )}
+
+            <div className="mt-3 space-y-3">
+              {legacyKnowledgeEntries.map((entry) => (
+                <details key={entry.id} className="rounded-lg border border-amber-100 bg-white p-3" open={legacyKnowledgeEntries.length === 1}>
+                  <summary className="cursor-pointer text-sm font-bold text-slate-900">
+                    {entry.title} <span className="font-medium text-slate-500">({entry.category})</span>
+                  </summary>
+                  <p className="mt-1 text-xs text-slate-400">{new Date(entry.created_at).toLocaleString()}</p>
+                  {legacyDraft?.id === entry.id ? (
+                    <div className="mt-3 space-y-3">
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-500">Title</span>
+                        <input
+                          value={legacyDraft.title}
+                          onChange={(event) => setLegacyDraft({ ...legacyDraft, title: event.target.value })}
+                          className="mt-1 w-full rounded-lg border border-amber-100 px-3 py-2 text-sm outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-500">Category</span>
+                        <input
+                          value={legacyDraft.category}
+                          onChange={(event) => setLegacyDraft({ ...legacyDraft, category: event.target.value })}
+                          className="mt-1 w-full rounded-lg border border-amber-100 px-3 py-2 text-sm outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-slate-500">Content</span>
+                        <textarea
+                          value={legacyDraft.content}
+                          onChange={(event) => setLegacyDraft({ ...legacyDraft, content: event.target.value })}
+                          className="mt-1 min-h-72 w-full resize-y rounded-lg border border-amber-100 px-3 py-2 text-sm leading-6 outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50"
+                        />
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={handleLegacyKnowledgeUpdate}
+                          disabled={legacySavingId === entry.id}
+                          className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {legacySavingId === entry.id ? 'Saving...' : 'Save KB entry'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLegacyDraft(null)}
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setLegacyDraft({
+                            id: entry.id,
+                            title: entry.title,
+                            category: entry.category,
+                            content: entry.content,
+                          })}
+                          className="rounded-lg border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setKnowledgeText(entry.content);
+                            setStatus(`Loaded "${entry.title}" into the editor.`);
+                          }}
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                        >
+                          Use this text
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleLegacyKnowledgeDelete(entry)}
+                          disabled={legacyDeletingId === entry.id}
+                          className="rounded-lg border border-red-100 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {legacyDeletingId === entry.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
+                      <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+                        {entry.content}
+                      </pre>
+                    </>
+                  )}
+                </details>
+              ))}
+            </div>
+          </section>
+
+          <label className="mt-5 block">
+            <span className="sr-only">Knowledge base text</span>
+            <textarea
+              value={knowledgeText}
+              onChange={(event) => {
+                setKnowledgeText(event.target.value);
+                setStatus(null);
+              }}
+              placeholder="Paste property details, FAQs, policies, pricing, service rules, or any other context this chatbot should know."
+              className="min-h-[340px] w-full resize-y rounded-lg border border-slate-200 bg-slate-100 px-4 py-4 text-sm leading-6 text-slate-950 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-50"
+            />
+          </label>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+              <span className="rounded-full bg-slate-100 px-3 py-1">{characterCount.toLocaleString()} characters</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1">{approximateTokens.toLocaleString()} approx. tokens</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1">{knowledgeText.trim() ? '1 text block' : 'No text saved'}</span>
+            </div>
+            {status && <p className="text-sm font-semibold text-slate-500">{status}</p>}
+          </div>
+
+          <div className="mt-5 flex items-center gap-4">
+            <button
+              type="submit"
+              disabled={isSavingWorkspace}
+              className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSavingWorkspace ? 'Updating...' : 'Update chatbot'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setKnowledgeText(systemPrompt.trim())}
+              className="rounded-lg border border-blue-100 px-5 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
+            >
+              Use system prompt
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setKnowledgeText('');
+                setStatus(null);
+              }}
+              className="rounded-lg border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Clear text
+            </button>
+          </div>
+        </form>
       </div>
-    </div>
+    </section>
+  );
+}
+
+function WorkspaceSectionPlaceholder({ section }: { section: WorkspaceSection }) {
+  return (
+    <section className="flex min-w-0 flex-1 items-center justify-center bg-white p-8">
+      <div className="max-w-md rounded-lg border border-slate-200 bg-slate-50 p-6 text-center">
+        <h1 className="text-2xl font-bold text-slate-950">{section}</h1>
+        <p className="mt-2 text-sm text-slate-500">This workspace section is ready for its next page design.</p>
+      </div>
+    </section>
   );
 }
