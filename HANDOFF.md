@@ -1,6 +1,6 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
-**Last updated:** 2026-05-30
+**Last updated:** 2026-05-30, end-of-session handoff
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`
 **Working branch:** `sanelengcobo/aut-9-extend-supabase-schema-for-tenant-register-and-assistant`
@@ -134,6 +134,7 @@ Created/updated this session (project: WhatsApp Tenant Assistant Guardrails):
 | **AUT-13** | ✅ Done | Record of this session's deploy fix + env + DeepSeek/Node config. |
 | **AUT-14** | Todo (Urgent) | **Set Vercel production env vars** — next concrete action. |
 | **AUT-15** | Todo (High) | **Reconcile removed `SAWhatsApp/platform`** vs AUT-5/7/8/12 (decision needed). |
+| **AUT-16** | ✅ Done | Supabase Auth shipped and dashboard wiring completed; follow-up logout/auth-test UX added locally. |
 
 Pre-existing, now affected by the flatten (referenced in AUT-15):
 - AUT-5 (analyze/stabilize WhatsApp platform), AUT-7 (greeting/intake),
@@ -179,23 +180,25 @@ Pre-existing, now affected by the flatten (referenced in AUT-15):
 ## 8. Pick up here (fastest resume path)
 
 1. `cd /Users/macdaddy/Documents/DEV/HambaCustomerService` — confirm branch + clean tree.
-2. **Do AUT-14 first:** add the 8 env vars from `.env.local` to Vercel (Production),
+2. **Commit/push the current auth UX follow-up if desired:** files changed after the last
+   commit are listed in §10 below (`/auth-test`, login messages, tests, and this handoff).
+3. **Do AUT-14 next:** add the 8 env vars from `.env.local` to Vercel (Production),
    then redeploy and verify chat/KB/workspace work in prod.
-3. **Resolve AUT-15:** confirm with the owner whether `SAWhatsApp/platform` was meant
+4. **Resolve AUT-15:** confirm with the owner whether `SAWhatsApp/platform` was meant
    to be dropped; update AUT-5/7/8/12 accordingly.
-4. **Then AUT-9:** apply/verify the tenant-register migration on live Supabase and
+5. **Then AUT-9:** apply/verify the tenant-register migration on live Supabase and
    unify the two schema files.
-5. Reference key files: `src/app/api/chat/route.ts` (provider routing + KB grounding),
+6. Reference key files: `src/app/api/chat/route.ts` (provider routing + KB grounding),
    `src/lib/supabase.ts` (client + settings), `supabase/*.sql` (schema).
 
 ---
 
-## 9. Authentication (added 2026-05-30, AUT-16)
+## 9. Authentication (added/completed 2026-05-30, AUT-16)
 
 Supabase Auth — **Google OAuth + email/password**, open sign-up, gating everything
-except `/login` and `/auth/*`. Built, typechecked, built, smoke-tested (18/18 unit
-tests pass). **Code works; Supabase dashboard config is required before sign-in
-functions** (see below).
+except `/login` and `/auth/*`. Code shipped to `main` in earlier AUT-16 work; dashboard
+OAuth wiring was completed this session; a follow-up auth test/logout page and clearer
+login-failure UX are currently local/uncommitted.
 
 ### Architecture (Next 16 `proxy`, NOT `middleware`)
 - `src/proxy.ts` — refreshes the Supabase session each request; unauthenticated →
@@ -208,72 +211,153 @@ functions** (see below).
   sign-up toggle).
 - `src/app/auth/callback/route.ts` — OAuth/email code → session exchange.
 - `src/app/auth/signout/route.ts` — POST sign-out.
+- `src/app/auth-test/page.tsx` — protected smoke-test page that displays signed-in email
+  and posts to `/auth/signout`.
+- `src/lib/auth/login-messages.ts` — normalized user-facing login/OAuth failure messages.
 - `workspace-route.tsx` — top-nav shows signed-in email + Sign out.
 
-### Verified locally
-`/` → 307 `/login` · `/login` → 200 · `/api/*` unauthenticated → 401 · protected
-deep links redirect with `?redirect=`.
+### Dashboard setup completed
+- Google Cloud project: `Hamba Customer Service` (`hamba-customer-service`).
+- Google Auth Platform: External, app name `Hamba Customer Service`, support/developer
+  contact `info.hambatrading@gmail.com`.
+- Google OAuth web client: `Hamba Web`; authorized redirect URI exactly:
+  `https://ddlykzackuehdexldazv.supabase.co/auth/v1/callback`.
+- Google Auth Platform remains in **Testing**; test user added:
+  `info.hambatrading@gmail.com`.
+- Supabase Auth → Sign In / Providers → Google: enabled with the OAuth client ID/secret.
+  **Do not print or commit the client secret.**
+- Supabase Auth → URL Configuration:
+  - Site URL: `https://hambatrading.co.za`
+  - Redirect allow-list:
+    - `http://localhost:3000/**`
+    - `https://hambatrading.co.za/**`
+    - `https://whatsapp-project-kappa.vercel.app/**`
 
-### REQUIRED manual dashboard config (cannot be coded)
-1. **Google OAuth** — Supabase → Auth → Providers → Google:
-   https://supabase.com/dashboard/project/ddlykzackuehdexldazv/auth/providers
-   - In Google Cloud Console (https://console.cloud.google.com/apis/credentials) create
-     an OAuth 2.0 Client (Web). Authorized redirect URI:
-     `https://ddlykzackuehdexldazv.supabase.co/auth/v1/callback`
-   - Paste the Google Client ID + Secret into Supabase, enable the provider.
-2. **URL configuration** — Supabase → Auth → URL Configuration:
-   https://supabase.com/dashboard/project/ddlykzackuehdexldazv/auth/url-configuration
-   - Site URL: the production URL (e.g. `https://whatsapp-project-kappa.vercel.app`).
-   - Redirect allow-list: add `http://localhost:3000/**` and `https://<prod>/**`.
-   - (App OAuth callback route is `/auth/callback`.)
-3. Email/password is enabled by default; "Confirm email" on → the form shows a
-   "check your email" notice and creates no session until confirmed.
+### Login/logout UX follow-up (local, uncommitted)
+- Failed email/password or OAuth attempts stay on `/login` and show a clear user-facing
+  message. Unknown/unregistered users are directed to use **Sign up**.
+- The login form now uses `method="post"` as the no-JS/pre-hydration fallback so dummy
+  or real passwords are not leaked into the URL if React has not hydrated yet.
+- We intentionally do **not** auto-create a user after failed sign-in; that would be a
+  surprising/security-sensitive UX. The explicit Sign up path creates the Supabase user.
+- New protected `/auth-test` page verifies session + logout without touching workspace data.
+
+### Verified locally this session
+- Supabase connector: project `hambatrading` / `ddlykzackuehdexldazv` is `ACTIVE_HEALTHY`.
+- Supabase dashboard: Google provider shows `Enabled`.
+- Supabase dashboard: Site URL + all 3 redirect URLs are present.
+- Local smoke:
+  - `/` → 307 `/login`
+  - `/login` → 200
+  - unauthenticated `/api/models` → 401
+  - Google sign-in as `info.hambatrading@gmail.com` → Supabase callback → authenticated
+    workspace → Sign out → `/login`
+- Manual browser visual walkthrough completed in Chrome:
+  - Opened `http://localhost:3000/auth-test` while signed out → redirected to
+    `/login?redirect=%2Fauth-test`.
+  - Submitted dummy email/password (`not-registered@example.com` / fake password) →
+    stayed on `/login?redirect=%2Fauth-test`; displayed the red
+    "Login failed... choose Sign up" message; password did **not** appear in the URL
+    after the `method="post"` fallback patch.
+  - Clicked "Continue with Google" → Google account chooser → selected
+    `info.hambatrading@gmail.com` → returned to `/auth-test`.
+  - `/auth-test` showed `You are signed in` and signed-in email
+    `info.hambatrading@gmail.com`.
+  - Clicked "Sign out and return to login" → returned to `/login`.
+- Local environment note from visual testing:
+  - A Hermes gateway/WhatsApp bridge was auto-binding `127.0.0.1:3000` and serving
+    `Cannot GET ...`, which intercepted Chrome's `localhost:3000` requests while Next was
+    only reachable on the IPv6/all-interface listener. It was stopped for the visual test.
+    At handoff, `launchctl list | grep -i hermes` and `lsof -nP -iTCP:3000 -sTCP:LISTEN`
+    returned no entries.
+- Final checks rerun at end of session:
+  - `npm run typecheck` passed (rerun alone after a parallel build/typecheck race touched
+    `.next/types`)
+  - `npm test` passed, **23/23** (0 fail, 0 skipped)
+  - `npm run build` passed; Next.js generated 18 static pages and includes dynamic
+    `/auth-test`, `/auth/callback`, `/auth/signout`, and API routes.
+
+### Remaining auth dependency
+Production auth still depends on **AUT-14**: add the required Vercel production env vars
+from `.env.local`, then redeploy. OAuth/dashboard wiring is done; prod still needs its
+runtime environment before Supabase/LLM-backed features are reliable.
 
 ### Trade-off noted
-Each API request runs its own `auth.getUser()` in addition to the proxy's (defense in
-depth). Can be reduced to proxy-only `/api/*` gating if latency matters.
+Each API request runs its own `auth.getUser()` in addition to the proxy's check (defense
+in depth). Can be reduced to proxy-only `/api/*` gating later if latency matters.
 
-### Google OAuth dashboard setup — WHERE WE STOPPED (2026-05-30 browser session)
-Status: **NOT done.** Code is shipped; the Google + Supabase dashboard wiring is the
-only remaining work for Google sign-in. (Email/password already works with no setup.)
+---
 
-Observed during the browser session:
-- Signed into Google Cloud Console; signed into Supabase dashboard.
-- Console opened with project **"Hermes Gmail"** (`hermes-gmail-497620`) in the URL, but
-  header showed "Select a project". **Per AUT-12, Hermes is a separate personal setup —
-  do NOT reuse it.** Decision pending: create a dedicated project (e.g. "hamba" /
-  "whatsapp-project") for these OAuth credentials.
-- Stopped at the project picker (page was mid-load) before creating anything. **Nothing
-  was created or changed in Google Cloud or Supabase.**
+## 10. End-of-session local changes (not committed yet)
 
-DO THIS to finish (≈5 min, all dashboard — cannot be done from code):
+Current dirty tree at handoff:
+```
+ M HANDOFF.md
+ M src/app/login/login-form.tsx
+ M src/app/workspace-pages.test.tsx
+?? src/app/auth-test/
+?? src/lib/auth/login-messages.test.ts
+?? src/lib/auth/login-messages.ts
+```
 
-STEP 1 — Google Cloud Console → create OAuth client
-  a. https://console.cloud.google.com/  → top bar → **select/create a project**
-     (recommend a NEW project, not "Hermes Gmail").
-  b. APIs & Services → **OAuth consent screen** (if not configured): User type
-     **External** → app name e.g. "Hamba" → user support email = your email →
-     developer contact = your email → Save. (Test mode is fine; add yourself as a
-     Test user if it stays in "Testing".)
-  c. APIs & Services → **Credentials** → Create Credentials → **OAuth client ID** →
-     Application type **Web application** → name e.g. "Hamba Web".
-  d. **Authorized redirect URIs → Add URI**, paste EXACTLY:
-        https://ddlykzackuehdexldazv.supabase.co/auth/v1/callback
-  e. Create → copy the **Client ID** and **Client secret**.
+What those changes do:
+- `src/app/auth-test/page.tsx` — protected standalone auth/logout smoke page.
+- `src/lib/auth/login-messages.ts` — maps Supabase/OAuth errors to friendlier login UX.
+- `src/lib/auth/login-messages.test.ts` — unit coverage for login error messages.
+- `src/app/login/login-form.tsx` — uses friendly error mapping and tells first-time users
+  to use Sign up.
+- `src/app/workspace-pages.test.tsx` — adds a route contract test for `/auth-test` without
+  importing server-only auth code.
+- `HANDOFF.md` — this updated handoff.
 
-STEP 2 — Supabase → enable Google
-  https://supabase.com/dashboard/project/ddlykzackuehdexldazv/auth/providers
-  → Google → toggle Enable → paste Client ID + Client secret → Save.
+Suggested commit message:
+```
+Add auth smoke page and login failure messaging
+```
 
-STEP 3 — Supabase → URL configuration
-  https://supabase.com/dashboard/project/ddlykzackuehdexldazv/auth/url-configuration
-  → Site URL = prod URL (e.g. https://whatsapp-project-kappa.vercel.app)
-  → Redirect URLs: add  http://localhost:3000/**  and  https://<prod-domain>/**
+---
 
-STEP 4 — Test
-  - Local: `npm run dev` → http://localhost:3000 → redirected to /login →
-    "Continue with Google" should complete and land back in the app.
-  - Email/password works already (no setup needed).
+## 11. Next scoped work — AUT-17 (created 2026-05-30)
 
-Tracking: Linear **AUT-16** (In Review) holds this same checklist. Depends on
-**AUT-14** (Vercel prod env vars) for Google sign-in to work on the deployed site.
+Created Linear issue **AUT-17**:
+`Wire document upload to 768-dim vector retrieval and harden assistant pipeline`
+
+Why it exists:
+- Current chat route already passes `temperature` to providers and fetches KB context.
+- Current KB upload/search still uses plain `knowledge_base` rows and `ilike` text search.
+- Supabase schema does **not** yet include pgvector, `vector(768)`, document chunks,
+  embedding metadata, or a vector-match RPC.
+- The next milestone is to make document upload -> chunking -> 768-dim embedding ->
+  vector retrieval -> grounded chat work end-to-end.
+
+Reference UI inspected in Chrome:
+- ChatNexus chatbot overview/test page:
+  `https://app.chatnexus.io/dashboard/chatbots/chatbot/overview/7e5c1268-b42e-44e6-9fb9-5dc30b0d4d88`
+- Useful patterns: left chatbot navigation, chatbot test panel, right-side
+  Instructions/Settings drawer, temperature/top-k/model controls, and Knowledge Base
+  tabs for Overview, File, Text, Website, API, Database, and Tools.
+
+Implementation notes for AUT-17:
+- Audit race conditions around duplicate saves/uploads, stale React state, slow network
+  retries, streaming cancellation, and rapid tab changes.
+- Add Supabase migration for pgvector + 768-dim chunk embeddings, scoped by
+  organization/property/chatbot as appropriate.
+- Replace `/api/kb/search` text matching with vector similarity retrieval.
+- Wire `/api/chat` to retrieved chunks with top-k/context limits and safe fallback.
+- Add UI for upload/indexing status and retrieval-preview testing.
+- Verify with `npm run typecheck`, `npm test`, and `npm run build`.
+
+### AUT-17 implementation started
+
+- Added `knowledge_vectors` pgvector migration with `embedding vector(768)`, metadata,
+  source type/id/name, chunk fields, HNSW cosine index, RLS, and `match_knowledge_vectors`.
+- Applied the migration to live Supabase project `hambatrading` / `ddlykzackuehdexldazv`.
+- Added OpenAI `text-embedding-3-small` indexing with `dimensions: 768`.
+- `/api/kb/upload` and `/api/kb/update` now save KB rows and attempt vector indexing.
+- `/api/kb/search` now tries vector retrieval first and falls back to existing text search.
+- `/api/chat` labels retrieved KB context as vector vs text fallback.
+- Knowledge Base UI now has ChatNexus-style tabs, overview cards, file/text indexing,
+  retrieval preview, and placeholder metadata-ready tabs for Website/API/Database/Tools.
+- Verified live vector smoke test: 1 chunk indexed at 768 dims; vector query returned the
+  smoke source with similarity `0.517`; smoke KB row and test auth user were cleaned up.
+- Checks passed: `npm test` 26/26, `npm run typecheck`, `npm run lint`, `npm run build`.

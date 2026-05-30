@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { ReactElement } from 'react';
 import OrganizationsPage from './page';
@@ -40,4 +41,11 @@ test('legacy chatbot URL renders the same property chatbot workspace', async () 
 
   assert.equal(element.props.view, 'chatbot');
   assert.equal(element.props.propertyId, 'prop-123');
+});
+
+test('auth test page exposes a logout form without importing server-only code', () => {
+  const source = readFileSync('src/app/auth-test/page.tsx', 'utf8');
+
+  assert.match(source, /requireUser/);
+  assert.match(source, /action="\/auth\/signout"/);
 });

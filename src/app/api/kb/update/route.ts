@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import type { ApiResponse, KnowledgeBase } from '@/lib/types';
+import type { ApiResponse, KnowledgeBase, KnowledgeIndexingStatus } from '@/lib/types';
 import { requireApiAuth } from '@/lib/auth/api-guard';
+import { indexKnowledgeEntry, resolveOpenAiEmbeddingKey } from '@/lib/kb/vector';
 
 export async function PATCH(request: NextRequest) {
   const denied = await requireApiAuth();
@@ -42,8 +43,22 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    return NextResponse.json<ApiResponse<KnowledgeBase>>(
-      { success: true, data, timestamp: new Date().toISOString() },
+    const indexing = await indexKnowledgeEntry({
+      admin,
+      apiKey: resolveOpenAiEmbeddingKey(),
+      knowledgeBaseId: data.id,
+      sourceType: 'text',
+      sourceId: data.id,
+      sourceName: data.title,
+      category: data.category,
+      title: data.title,
+      content: data.content,
+      tags: data.tags || [],
+      metadata: { reindexedFrom: 'kb-update' },
+    });
+
+    return NextResponse.json<ApiResponse<KnowledgeBase> & { indexing: KnowledgeIndexingStatus }>(
+      { success: true, data, indexing, timestamp: new Date().toISOString() },
       { status: 200 }
     );
   } catch (err) {

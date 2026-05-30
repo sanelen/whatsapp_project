@@ -33,6 +33,27 @@ CREATE TABLE public.knowledge_base (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT knowledge_base_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.knowledge_vectors (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  knowledge_base_id uuid,
+  source_type text NOT NULL CHECK (source_type = ANY (ARRAY['file'::text, 'text'::text, 'website'::text, 'api'::text, 'database'::text, 'tool'::text, 'legacy'::text])),
+  source_id text NOT NULL,
+  source_name text NOT NULL DEFAULT ''::text,
+  title text NOT NULL,
+  content text NOT NULL,
+  chunk_index integer NOT NULL DEFAULT 0 CHECK (chunk_index >= 0),
+  chunk_count integer NOT NULL DEFAULT 1 CHECK (chunk_count > 0),
+  embedding_model text NOT NULL DEFAULT 'text-embedding-3-small'::text,
+  embedding_dimensions integer NOT NULL DEFAULT 768 CHECK (embedding_dimensions = 768),
+  embedding extensions.vector(768) NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT knowledge_vectors_pkey PRIMARY KEY (id),
+  CONSTRAINT knowledge_vectors_source_chunk_key UNIQUE (source_type, source_id, chunk_index),
+  CONSTRAINT knowledge_vectors_knowledge_base_id_fkey FOREIGN KEY (knowledge_base_id) REFERENCES public.knowledge_base(id) ON DELETE CASCADE
+);
 CREATE TABLE public.messages (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   conversation_id uuid NOT NULL,

@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
+import { getLoginErrorMessage } from '@/lib/auth/login-messages';
 import { createClient } from '@/lib/supabase/client';
 
 type Mode = 'signin' | 'signup';
@@ -16,7 +17,7 @@ export function LoginForm() {
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(
-    searchParams.get('error') ? 'Sign-in failed. Please try again.' : null
+    getLoginErrorMessage(searchParams.get('error'))
   );
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -32,7 +33,7 @@ export function LoginForm() {
       options: { redirectTo: callback.toString() },
     });
     if (error) {
-      setError(error.message);
+      setError(getLoginErrorMessage(error.message));
       setPending(false);
     }
     // On success the browser is redirected to Google; nothing else to do.
@@ -70,7 +71,7 @@ export function LoginForm() {
       router.replace(redirectTo);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.');
+      setError(getLoginErrorMessage(err instanceof Error ? err.message : null));
     } finally {
       setPending(false);
     }
@@ -85,7 +86,7 @@ export function LoginForm() {
         <p className="mt-1 text-sm text-slate-500">
           {mode === 'signin'
             ? 'Access the property assistant workspace.'
-            : 'Sign up with email or Google.'}
+            : 'Create a user with email/password, or use Google.'}
         </p>
       </div>
 
@@ -105,7 +106,7 @@ export function LoginForm() {
         <span className="h-px flex-1 bg-slate-200" />
       </div>
 
-      <form onSubmit={handleEmailSubmit} className="space-y-3">
+      <form method="post" onSubmit={handleEmailSubmit} className="space-y-3">
         <label className="block">
           <span className="text-xs font-medium text-slate-500">Email</span>
           <input
@@ -168,6 +169,12 @@ export function LoginForm() {
           {mode === 'signin' ? 'Sign up' : 'Sign in'}
         </button>
       </p>
+      {mode === 'signin' && (
+        <p className="mt-3 text-center text-xs leading-5 text-slate-500">
+          First time here? Use <span className="font-semibold text-slate-700">Sign up</span> so
+          Supabase can create your user before you sign in.
+        </p>
+      )}
     </div>
   );
 }

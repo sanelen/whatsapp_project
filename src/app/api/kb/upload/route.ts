@@ -1,14 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import type { ApiResponse, KnowledgeBase } from '@/lib/types';
+import type { ApiResponse, KnowledgeBase, KnowledgeIndexingStatus } from '@/lib/types';
 import { requireApiAuth } from '@/lib/auth/api-guard';
+import {
+  indexKnowledgeEntry,
+  resolveOpenAiEmbeddingKey,
+  type KnowledgeSourceType,
+} from '@/lib/kb/vector';
 
 export async function POST(request: NextRequest) {
   const denied = await requireApiAuth();
   if (denied) return denied;
   try {
     const body = await request.json();
-    const { category, title, content, tags } = body;
+    const {
+      category,
+      title,
+      content,
+      tags,
+      sourceType = 'text',
+      sourceId,
+      sourceName,
+      metadata,
+    } = body as {
+      category?: string;
+      title?: string;
+      content?: string;
+      tags?: string[];
+      sourceType?: KnowledgeSourceType;
+      sourceId?: string;
+      sourceName?: string;
+      metadata?: Record<string, string | number | boolean | string[] | null | undefined>;
+    };
 
     if (!category || !title || !content) {
       return NextResponse.json<ApiResponse>(
@@ -60,8 +83,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json<ApiResponse<KnowledgeBase>>(
-      { success: true, data, timestamp: new Date().toISOString() },
+    const indexing = await indexKnowledgeEntry({
+      admin,
+      apiKey: resolveOpenAiEmbeddingKey(),
+      knowledgeBaseId: data.id,
+      sourceType,
+      sourceId: typeof sourceId === 'string' && sourceId.trim() ? sourceId.trim() : data.id,
+      sourceName: typeof sourceName === 'string' && sourceName.trim() ? sourceName.trim() : title,
+      category,
+      title,
+      content,
+      tags: tags || [],
+      metadata,
+    });
+
+    return NextResponse.json<ApiResponse<KnowledgeBase> & { indexing: KnowledgeIndexingStatus }>(
+      { success: true, data, indexing, timestamp: new Date().toISOString() },
       { status: 201 }
     );
   } catch (err) {

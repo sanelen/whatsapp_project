@@ -52,11 +52,11 @@ export async function POST(request: NextRequest) {
 
     // Load persisted settings from DB directly (avoids an internal HTTP round-trip)
     const settings = await getPromptSettings();
-    let dbSystemPrompt = settings.system_prompt || DEFAULT_SYSTEM_PROMPT;
-    let temperature = typeof settings.temperature === 'number' ? settings.temperature : 0.4;
-    let llmProvider = settings.llm_provider || 'openai';
-    let llmModel = settings.llm_model || 'gpt-4o';
-    let llmApiKey = settings.llm_api_key || '';
+    const dbSystemPrompt = settings.system_prompt || DEFAULT_SYSTEM_PROMPT;
+    const temperature = typeof settings.temperature === 'number' ? settings.temperature : 0.4;
+    const llmProvider = settings.llm_provider || 'openai';
+    const llmModel = settings.llm_model || 'gpt-4o';
+    const llmApiKey = settings.llm_api_key || '';
     let llmBaseUrl = settings.llm_base_url || '';
 
     const resolvedApiKey = resolveApiKey(llmProvider, llmApiKey);
@@ -100,10 +100,25 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify({ query: lastUserMessage }),
         });
         if (kbRes.ok) {
-          const kbData = await kbRes.json() as { data?: Array<{ category: string; title: string; content: string }> };
+          const kbData = await kbRes.json() as {
+            retrieval?: 'vector' | 'text';
+            data?: Array<{
+              category: string;
+              title: string;
+              content: string;
+              source_type?: string;
+              source_name?: string;
+              similarity?: number;
+            }>;
+          };
           if (Array.isArray(kbData.data) && kbData.data.length > 0) {
-            kbContext = '\n\n--- Relevant Knowledge Base ---\n' +
-              kbData.data.map((kb) => `[${kb.category}] ${kb.title}\n${kb.content}`).join('\n---\n');
+            const retrievalLabel = kbData.retrieval === 'vector' ? 'Vector-retrieved' : 'Text-matched';
+            kbContext = `\n\n--- Relevant Knowledge Base (${retrievalLabel}) ---\n` +
+              kbData.data.map((kb) => {
+                const source = kb.source_name || kb.category;
+                const score = typeof kb.similarity === 'number' ? ` score=${kb.similarity.toFixed(3)}` : '';
+                return `[${source}] ${kb.title}${score}\n${kb.content}`;
+              }).join('\n---\n');
           }
         }
       } catch (err) {

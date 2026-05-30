@@ -10,6 +10,26 @@ export interface KnowledgeBase {
   updated_at: string;
 }
 
+export interface KnowledgeIndexingStatus {
+  status: 'indexed' | 'skipped' | 'failed';
+  chunkCount: number;
+  model: string;
+  dimensions: number;
+  error?: string;
+}
+
+export interface KnowledgeSearchResult {
+  id: string;
+  category: string;
+  title: string;
+  content: string;
+  source_type?: string;
+  source_name?: string;
+  chunk_index?: number;
+  metadata?: Record<string, unknown>;
+  similarity?: number;
+}
+
 // Prompt settings
 export interface PromptSettings {
   id: string;

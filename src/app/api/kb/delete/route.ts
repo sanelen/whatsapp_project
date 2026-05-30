@@ -18,6 +18,11 @@ export async function DELETE(request: NextRequest) {
     }
 
     const admin = getSupabaseAdmin();
+    await admin
+      .from('knowledge_vectors')
+      .delete()
+      .eq('knowledge_base_id', id);
+
     const { error } = await admin
       .from('knowledge_base')
       .delete()

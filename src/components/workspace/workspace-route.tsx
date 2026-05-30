@@ -43,6 +43,23 @@ type LegacyKnowledgeEntry = {
 
 type LegacyKnowledgeDraft = Pick<LegacyKnowledgeEntry, 'id' | 'category' | 'title' | 'content'>;
 
+type KnowledgeIndexingStatus = {
+  status: 'indexed' | 'skipped' | 'failed';
+  chunkCount: number;
+  model: string;
+  dimensions: number;
+  error?: string;
+};
+
+type KnowledgeSearchPreview = {
+  id: string;
+  title: string;
+  content: string;
+  source_type?: string;
+  source_name?: string;
+  similarity?: number;
+};
+
 const llmProviders = [
   {
     value: 'openai',
@@ -1724,6 +1741,13 @@ function KnowledgeBaseWorkspaceView({
   const [legacySavingId, setLegacySavingId] = useState<string | null>(null);
   const [legacyDeletingId, setLegacyDeletingId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [activeKnowledgeTab, setActiveKnowledgeTab] = useState('Overview');
+  const [indexingStatus, setIndexingStatus] = useState<KnowledgeIndexingStatus | null>(null);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [retrievalQuery, setRetrievalQuery] = useState('');
+  const [retrievalResults, setRetrievalResults] = useState<KnowledgeSearchPreview[]>([]);
+  const [retrievalMode, setRetrievalMode] = useState<'vector' | 'text' | null>(null);
+  const [isRetrieving, setIsRetrieving] = useState(false);
   const characterCount = knowledgeText.length;
   const approximateTokens = Math.ceil(characterCount / 4);
   const knowledgeTabs = ['Overview', 'File', 'Text', 'Website', 'API', 'Database', 'Tools'];
@@ -1827,6 +1851,121 @@ function KnowledgeBaseWorkspaceView({
     }
   }
 
+  async function uploadKnowledgeSource({
+    sourceType,
+    title,
+    content,
+    sourceName,
+    metadata,
+  }: {
+    sourceType: string;
+    title: string;
+    content: string;
+    sourceName?: string;
+    metadata?: Record<string, string | number | boolean | string[]>;
+  }) {
+    setIsIndexing(true);
+    setStatus(null);
+    setIndexingStatus(null);
+    try {
+      const response = await fetch('/api/kb/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: sourceType,
+          title,
+          content,
+          sourceType,
+          sourceName: sourceName || title,
+          metadata,
+          tags: ['workspace', sourceType],
+        }),
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: string;
+        indexing?: KnowledgeIndexingStatus;
+        data?: LegacyKnowledgeEntry;
+      };
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Failed to index knowledge source');
+      if (payload.data) setLegacyKnowledgeEntries((current) => [payload.data as LegacyKnowledgeEntry, ...current]);
+      if (payload.indexing) setIndexingStatus(payload.indexing);
+      setStatus(payload.indexing?.status === 'indexed'
+        ? `Vector indexed ${payload.indexing.chunkCount} chunk${payload.indexing.chunkCount === 1 ? '' : 's'}.`
+        : payload.indexing?.error || 'Knowledge source saved; vector indexing was skipped.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to index knowledge source.');
+    } finally {
+      setIsIndexing(false);
+    }
+  }
+
+  async function handleTextIndex() {
+    if (!knowledgeText.trim()) {
+      setStatus('Add text before indexing.');
+      return;
+    }
+
+    await uploadKnowledgeSource({
+      sourceType: 'text',
+      title: `Workspace text source ${new Date().toLocaleDateString()}`,
+      content: knowledgeText,
+      metadata: {
+        origin: 'workspace-text-tab',
+        characterCount,
+        approximateTokens,
+      },
+    });
+  }
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const text = await file.text();
+    await uploadKnowledgeSource({
+      sourceType: 'file',
+      title: file.name,
+      sourceName: file.name,
+      content: text,
+      metadata: {
+        origin: 'workspace-file-tab',
+        fileName: file.name,
+        fileType: file.type || 'unknown',
+        fileSize: file.size,
+      },
+    });
+    event.target.value = '';
+  }
+
+  async function handleRetrievalPreview() {
+    if (!retrievalQuery.trim()) return;
+
+    setIsRetrieving(true);
+    setRetrievalResults([]);
+    setRetrievalMode(null);
+    try {
+      const response = await fetch('/api/kb/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: retrievalQuery, matchCount: 5 }),
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        retrieval?: 'vector' | 'text';
+        data?: KnowledgeSearchPreview[];
+        error?: string;
+      };
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Retrieval preview failed');
+      setRetrievalMode(payload.retrieval || 'text');
+      setRetrievalResults(payload.data || []);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Retrieval preview failed.');
+    } finally {
+      setIsRetrieving(false);
+    }
+  }
+
   return (
     <section className="min-w-0 flex-1 overflow-y-auto bg-white p-8">
       <div className="mx-auto max-w-5xl">
@@ -1845,8 +1984,9 @@ function KnowledgeBaseWorkspaceView({
                 <button
                   key={tab}
                   type="button"
+                  onClick={() => setActiveKnowledgeTab(tab)}
                   className={`border-b-2 px-1 pb-4 text-sm font-semibold ${
-                    tab === 'Text'
+                    tab === activeKnowledgeTab
                       ? 'border-blue-600 text-blue-700'
                       : 'border-transparent text-slate-500 hover:text-slate-950'
                   }`}
@@ -1857,7 +1997,74 @@ function KnowledgeBaseWorkspaceView({
             </div>
           </div>
 
-          <section className="mt-5 rounded-lg border border-blue-100 bg-blue-50/60 p-4">
+          {activeKnowledgeTab === 'Overview' && (
+            <section className="mt-5 space-y-5">
+              <div className="grid gap-4 md:grid-cols-4">
+                <KbMetric label="Active sources" value={legacyKnowledgeEntries.length.toString()} />
+                <KbMetric label="Vector model" value="text-embedding-3" />
+                <KbMetric label="Dimensions" value="768" />
+                <KbMetric label="Retrieval" value={indexingStatus?.status === 'indexed' ? 'Vector ready' : 'Fallback ready'} />
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="min-w-0 flex-1">
+                    <span className="text-sm font-bold text-slate-900">Retrieval preview</span>
+                    <input
+                      value={retrievalQuery}
+                      onChange={(event) => setRetrievalQuery(event.target.value)}
+                      placeholder="Ask something the uploaded knowledge should answer..."
+                      className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRetrievalPreview}
+                    disabled={isRetrieving || !retrievalQuery.trim()}
+                    className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isRetrieving ? 'Searching...' : 'Test retrieval'}
+                  </button>
+                </div>
+                {retrievalMode && (
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Mode: {retrievalMode === 'vector' ? 'Vector similarity' : 'Text fallback'}
+                  </p>
+                )}
+                {retrievalResults.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {retrievalResults.map((result) => (
+                      <article key={result.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-bold text-slate-900">{result.title}</p>
+                          {typeof result.similarity === 'number' && (
+                            <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                              {result.similarity.toFixed(3)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">{result.source_name || result.source_type || 'Knowledge source'}</p>
+                        <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">{result.content}</p>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {activeKnowledgeTab === 'File' && (
+            <section className="mt-5 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">+</div>
+              <h2 className="mt-4 text-lg font-bold text-slate-950">Upload a file source</h2>
+              <p className="mt-2 text-sm text-slate-500">TXT, CSV, Markdown, and other text-readable files can be indexed now. PDF/DOC parsing can be added next.</p>
+              <label className="mt-5 inline-flex cursor-pointer rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500">
+                {isIndexing ? 'Indexing...' : 'Choose file'}
+                <input type="file" className="sr-only" onChange={handleFileChange} disabled={isIndexing} />
+              </label>
+            </section>
+          )}
+
+          {activeKnowledgeTab === 'Text' && <section className="mt-5 rounded-lg border border-blue-100 bg-blue-50/60 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold text-slate-950">Current system prompt</h2>
@@ -1883,9 +2090,9 @@ function KnowledgeBaseWorkspaceView({
             <p className="mt-3 whitespace-pre-wrap rounded-lg border border-blue-100 bg-white p-3 text-sm leading-6 text-slate-700">
               {systemPrompt || 'No system prompt saved yet.'}
             </p>
-          </section>
+          </section>}
 
-          <section className="mt-5 rounded-lg border border-amber-100 bg-amber-50/70 p-4">
+          {(activeKnowledgeTab === 'Overview' || activeKnowledgeTab === 'Text') && <section className="mt-5 rounded-lg border border-amber-100 bg-amber-50/70 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold text-slate-950">Live app knowledge base</h2>
@@ -2010,9 +2217,9 @@ function KnowledgeBaseWorkspaceView({
                 </details>
               ))}
             </div>
-          </section>
+          </section>}
 
-          <label className="mt-5 block">
+          {activeKnowledgeTab === 'Text' && <label className="mt-5 block">
             <span className="sr-only">Knowledge base text</span>
             <textarea
               value={knowledgeText}
@@ -2023,7 +2230,17 @@ function KnowledgeBaseWorkspaceView({
               placeholder="Paste property details, FAQs, policies, pricing, service rules, or any other context this chatbot should know."
               className="min-h-[340px] w-full resize-y rounded-lg border border-slate-200 bg-slate-100 px-4 py-4 text-sm leading-6 text-slate-950 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-50"
             />
-          </label>
+          </label>}
+
+          {['Website', 'API', 'Database', 'Tools'].includes(activeKnowledgeTab) && (
+            <section className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-8">
+              <h2 className="text-lg font-bold text-slate-950">{activeKnowledgeTab} sources</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Metadata support is wired for this source type in the vector table. The next slice is the connector-specific
+                ingestion form for {activeKnowledgeTab.toLowerCase()} content.
+              </p>
+            </section>
+          )}
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
@@ -2042,6 +2259,16 @@ function KnowledgeBaseWorkspaceView({
             >
               {isSavingWorkspace ? 'Updating...' : 'Update chatbot'}
             </button>
+            {activeKnowledgeTab === 'Text' && (
+              <button
+                type="button"
+                onClick={handleTextIndex}
+                disabled={isIndexing || !knowledgeText.trim()}
+                className="rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isIndexing ? 'Indexing...' : 'Index to vectors'}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setKnowledgeText(systemPrompt.trim())}
@@ -2063,6 +2290,15 @@ function KnowledgeBaseWorkspaceView({
         </form>
       </div>
     </section>
+  );
+}
+
+function KbMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-3 text-lg font-bold text-slate-950">{value}</p>
+    </div>
   );
 }
 
