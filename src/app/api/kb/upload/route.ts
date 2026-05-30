@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import type { ApiResponse, KnowledgeBase } from '@/lib/types';
+import { requireApiAuth } from '@/lib/auth/api-guard';
 
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { category, title, content, tags } = body;

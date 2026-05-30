@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireApiAuth } from '@/lib/auth/api-guard';
 
 // ---------------------------------------------------------------------------
 // Curated catalog — latest 2-3 major model generations per provider only.
@@ -91,6 +92,8 @@ const MODEL_CATALOG: Record<string, ModelCatalogEntry> = {
 // GET /api/models?provider=openai&apiKey=sk-...&baseUrl=...
 // ---------------------------------------------------------------------------
 export async function GET(req: NextRequest) {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const provider = searchParams.get('provider') ?? 'openai';
   const apiKey =

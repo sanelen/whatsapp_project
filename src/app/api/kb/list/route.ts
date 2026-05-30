@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import type { ApiResponse, KnowledgeBase } from '@/lib/types';
+import { requireApiAuth } from '@/lib/auth/api-guard';
 
 export async function GET() {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   try {
     const admin = getSupabaseAdmin();
     const { data, error } = await admin

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { requireApiAuth } from '@/lib/auth/api-guard';
 
 type MessageUsage = {
   prompt_tokens: number;
@@ -67,10 +68,14 @@ function writeHistory(threads: Thread[]) {
 }
 
 export async function GET() {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   return NextResponse.json({ threads: readHistory() });
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as { threads?: Thread[] };
     const threads = Array.isArray(body?.threads) ? body.threads : [];
@@ -82,6 +87,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE() {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   try {
     writeHistory([]);
     return NextResponse.json({ ok: true });

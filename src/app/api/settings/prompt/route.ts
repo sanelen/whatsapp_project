@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import type { ApiResponse, PromptSettings } from '@/lib/types';
+import { requireApiAuth } from '@/lib/auth/api-guard';
 
 const SETTINGS_NAME = 'default';
 
 // GET /api/settings/prompt — fetch current prompt settings
 export async function GET() {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   try {
     const admin = getSupabaseAdmin();
     const { data, error } = await admin
@@ -56,6 +59,8 @@ export async function GET() {
 
 // PUT /api/settings/prompt — upsert prompt settings
 export async function PUT(request: NextRequest) {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   try {
     const body = await request.json() as Partial<{
       system_prompt: string;

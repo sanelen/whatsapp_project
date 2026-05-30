@@ -13,6 +13,7 @@ import {
   type WorkspaceState,
 } from '@/lib/workspace';
 import { organizationPath, propertyPath } from '@/lib/workspace-routes';
+import { createClient } from '@/lib/supabase/client';
 
 type RouteView = 'organizations' | 'organization' | 'property' | 'chatbot';
 type SettingsTab = 'llm' | 'instructions' | 'knowledge' | 'templates';
@@ -671,9 +672,45 @@ function TopNav({
         />
       </nav>
 
-      <div className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-        {isLoadingWorkspace ? 'Loading...' : isSavingWorkspace ? 'Saving...' : 'Connected'}
+      <div className="flex items-center gap-2">
+        <div className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+          {isLoadingWorkspace ? 'Loading...' : isSavingWorkspace ? 'Saving...' : 'Connected'}
+        </div>
+        <UserMenu />
       </div>
+    </div>
+  );
+}
+
+function UserMenu() {
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (!cancelled) setEmail(data.user?.email ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2">
+      {email && (
+        <span className="hidden max-w-[12rem] truncate text-xs font-medium text-slate-500 sm:inline">
+          {email}
+        </span>
+      )}
+      <form action="/auth/signout" method="post">
+        <button
+          type="submit"
+          className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+        >
+          Sign out
+        </button>
+      </form>
     </div>
   );
 }

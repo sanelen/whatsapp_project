@@ -187,3 +187,48 @@ Pre-existing, now affected by the flatten (referenced in AUT-15):
    unify the two schema files.
 5. Reference key files: `src/app/api/chat/route.ts` (provider routing + KB grounding),
    `src/lib/supabase.ts` (client + settings), `supabase/*.sql` (schema).
+
+---
+
+## 9. Authentication (added 2026-05-30, AUT-16)
+
+Supabase Auth — **Google OAuth + email/password**, open sign-up, gating everything
+except `/login` and `/auth/*`. Built, typechecked, built, smoke-tested (18/18 unit
+tests pass). **Code works; Supabase dashboard config is required before sign-in
+functions** (see below).
+
+### Architecture (Next 16 `proxy`, NOT `middleware`)
+- `src/proxy.ts` — refreshes the Supabase session each request; unauthenticated →
+  `/login?redirect=…` for pages, `401` for `/api/*`; logged-in users on `/login` → `/`.
+- `src/lib/supabase/{env,client,server,proxy}.ts` — SSR clients (`@supabase/ssr` added).
+- `src/lib/auth/dal.ts` — `getUser()` (cached), `requireUser()`, `getApiUser()`.
+- `src/lib/auth/api-guard.ts` — `requireApiAuth()` 401 helper; applied to all 10 API
+  route files (14 handlers).
+- `src/app/login/{page,login-form}.tsx` — the login form (Google + email/password +
+  sign-up toggle).
+- `src/app/auth/callback/route.ts` — OAuth/email code → session exchange.
+- `src/app/auth/signout/route.ts` — POST sign-out.
+- `workspace-route.tsx` — top-nav shows signed-in email + Sign out.
+
+### Verified locally
+`/` → 307 `/login` · `/login` → 200 · `/api/*` unauthenticated → 401 · protected
+deep links redirect with `?redirect=`.
+
+### REQUIRED manual dashboard config (cannot be coded)
+1. **Google OAuth** — Supabase → Auth → Providers → Google:
+   https://supabase.com/dashboard/project/ddlykzackuehdexldazv/auth/providers
+   - In Google Cloud Console (https://console.cloud.google.com/apis/credentials) create
+     an OAuth 2.0 Client (Web). Authorized redirect URI:
+     `https://ddlykzackuehdexldazv.supabase.co/auth/v1/callback`
+   - Paste the Google Client ID + Secret into Supabase, enable the provider.
+2. **URL configuration** — Supabase → Auth → URL Configuration:
+   https://supabase.com/dashboard/project/ddlykzackuehdexldazv/auth/url-configuration
+   - Site URL: the production URL (e.g. `https://whatsapp-project-kappa.vercel.app`).
+   - Redirect allow-list: add `http://localhost:3000/**` and `https://<prod>/**`.
+   - (App OAuth callback route is `/auth/callback`.)
+3. Email/password is enabled by default; "Confirm email" on → the form shows a
+   "check your email" notice and creates no session until confirmed.
+
+### Trade-off noted
+Each API request runs its own `auth.getUser()` in addition to the proxy's (defense in
+depth). Can be reduced to proxy-only `/api/*` gating if latency matters.

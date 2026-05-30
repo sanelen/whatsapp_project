@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { getPromptSettings } from '@/lib/supabase';
+import { requireApiAuth } from '@/lib/auth/api-guard';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -43,6 +44,8 @@ function resolveApiKey(provider: string, dbKey: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as ChatRequest;
     const messages = Array.isArray(body?.messages) ? body.messages : [];

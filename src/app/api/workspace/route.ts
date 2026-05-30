@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { requireApiAuth } from '@/lib/auth/api-guard';
 import {
   createDefaultChatbotSettings,
   mapWorkspaceRows,
@@ -87,6 +88,8 @@ async function readWorkspace() {
 }
 
 export async function GET() {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   try {
     const workspace = await readWorkspace();
     return NextResponse.json({ success: true, data: workspace, timestamp: new Date().toISOString() });
@@ -103,6 +106,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireApiAuth();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as WorkspaceAction;
     const admin = getSupabaseAdmin();
