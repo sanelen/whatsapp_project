@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
   const apiKey =
     searchParams.get('apiKey') ||
     (provider === 'openai' ? process.env.OPENAI_API_KEY : '') ||
+    (provider === 'deepseek' ? process.env.DEEPSEEK_API_KEY : '') ||
     '';
   const baseUrl =
     searchParams.get('baseUrl') ||

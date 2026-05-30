@@ -38,6 +38,7 @@ function calculateCost(usage: UsageShape): number {
 function resolveApiKey(provider: string, dbKey: string): string {
   if (dbKey) return dbKey;
   if (provider === 'anthropic') return process.env.ANTHROPIC_API_KEY ?? '';
+  if (provider === 'deepseek') return process.env.DEEPSEEK_API_KEY ?? '';
   return process.env.OPENAI_API_KEY ?? '';
 }
 
