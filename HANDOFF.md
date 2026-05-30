@@ -232,3 +232,48 @@ deep links redirect with `?redirect=`.
 ### Trade-off noted
 Each API request runs its own `auth.getUser()` in addition to the proxy's (defense in
 depth). Can be reduced to proxy-only `/api/*` gating if latency matters.
+
+### Google OAuth dashboard setup — WHERE WE STOPPED (2026-05-30 browser session)
+Status: **NOT done.** Code is shipped; the Google + Supabase dashboard wiring is the
+only remaining work for Google sign-in. (Email/password already works with no setup.)
+
+Observed during the browser session:
+- Signed into Google Cloud Console; signed into Supabase dashboard.
+- Console opened with project **"Hermes Gmail"** (`hermes-gmail-497620`) in the URL, but
+  header showed "Select a project". **Per AUT-12, Hermes is a separate personal setup —
+  do NOT reuse it.** Decision pending: create a dedicated project (e.g. "hamba" /
+  "whatsapp-project") for these OAuth credentials.
+- Stopped at the project picker (page was mid-load) before creating anything. **Nothing
+  was created or changed in Google Cloud or Supabase.**
+
+DO THIS to finish (≈5 min, all dashboard — cannot be done from code):
+
+STEP 1 — Google Cloud Console → create OAuth client
+  a. https://console.cloud.google.com/  → top bar → **select/create a project**
+     (recommend a NEW project, not "Hermes Gmail").
+  b. APIs & Services → **OAuth consent screen** (if not configured): User type
+     **External** → app name e.g. "Hamba" → user support email = your email →
+     developer contact = your email → Save. (Test mode is fine; add yourself as a
+     Test user if it stays in "Testing".)
+  c. APIs & Services → **Credentials** → Create Credentials → **OAuth client ID** →
+     Application type **Web application** → name e.g. "Hamba Web".
+  d. **Authorized redirect URIs → Add URI**, paste EXACTLY:
+        https://ddlykzackuehdexldazv.supabase.co/auth/v1/callback
+  e. Create → copy the **Client ID** and **Client secret**.
+
+STEP 2 — Supabase → enable Google
+  https://supabase.com/dashboard/project/ddlykzackuehdexldazv/auth/providers
+  → Google → toggle Enable → paste Client ID + Client secret → Save.
+
+STEP 3 — Supabase → URL configuration
+  https://supabase.com/dashboard/project/ddlykzackuehdexldazv/auth/url-configuration
+  → Site URL = prod URL (e.g. https://whatsapp-project-kappa.vercel.app)
+  → Redirect URLs: add  http://localhost:3000/**  and  https://<prod-domain>/**
+
+STEP 4 — Test
+  - Local: `npm run dev` → http://localhost:3000 → redirected to /login →
+    "Continue with Google" should complete and land back in the app.
+  - Email/password works already (no setup needed).
+
+Tracking: Linear **AUT-16** (In Review) holds this same checklist. Depends on
+**AUT-14** (Vercel prod env vars) for Google sign-in to work on the deployed site.
