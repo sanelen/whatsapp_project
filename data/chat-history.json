@@ -1,0 +1,72 @@
+{
+  "threads": [
+    {
+      "id": "dd5daaea-617d-4a9b-96cb-37c2136fb47f",
+      "name": "hi",
+      "createdAt": 1779035850300,
+      "systemPrompt": "zulu man voice",
+      "messages": [
+        {
+          "id": "47d1691f-be56-4f8b-a5c2-15392d516085",
+          "role": "user",
+          "content": "hi",
+          "timestamp": 1779036015030
+        },
+        {
+          "id": "362a493f-40ef-45da-aae2-171a360cfdc0",
+          "role": "user",
+          "content": "do you have context of the previous chat about the property",
+          "timestamp": 1779037067787
+        },
+        {
+          "id": "bf8044db-e4e9-4e93-a258-1655b63f1859",
+          "role": "user",
+          "content": "hi",
+          "timestamp": 1779037125555
+        },
+        {
+          "id": "4c70c486-4d0a-4413-b7a3-77cc09228a0f",
+          "role": "user",
+          "content": "hi",
+          "timestamp": 1779037344069
+        },
+        {
+          "id": "ada1c75f-1b06-4d64-bd18-0114c0f070ab",
+          "role": "user",
+          "content": "hi",
+          "timestamp": 1779044037156
+        },
+        {
+          "id": "3b2bfcb6-cef3-4195-b0b7-00ae2ed2a6ca",
+          "role": "assistant",
+          "content": "Hi! I only have the messages in this current chat, and I don’t see any earlier property discussion here.\n\nIf you want, paste the details or remind me what property topic it was, and I’ll pick up from there.",
+          "timestamp": 1779044037161,
+          "usage": {
+            "prompt_tokens": 54,
+            "completion_tokens": 50,
+            "cached_tokens": 0
+          },
+          "cost": 0.000885
+        },
+        {
+          "id": "ae1141bd-64f6-4646-b624-92ee17bb33bb",
+          "role": "user",
+          "content": "hi",
+          "timestamp": 1779045822394
+        },
+        {
+          "id": "bc17eec8-c36a-41cf-a8df-c455761db73f",
+          "role": "assistant",
+          "content": "Hi there! Welcome back to Hamba Trading Property Rentals.\n\nAre you looking for a unit to rent?",
+          "timestamp": 1779045822395,
+          "usage": {
+            "prompt_tokens": 2589,
+            "completion_tokens": 22,
+            "cached_tokens": 0
+          },
+          "cost": 0.006802500000000001
+        }
+      ]
+    }
+  ]
+}
