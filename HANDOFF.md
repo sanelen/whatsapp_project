@@ -410,6 +410,12 @@ Implementation notes for AUT-17:
     - keep `fingerprintId` on analytics events from the start
     - ensure filter inputs stay DB-ready (`propertyId`, `window`, `channel`)
     - preserve automated coverage for aggregation and filter logic
+- Replaced the legacy inline workspace refresh loaders with a single centered page loader.
+  - Removed the old top-right / header `Loading...` pill states during initial workspace refresh.
+  - `WorkspaceRoute` now blocks on the initial workspace fetch and shows a centered
+    circular spinner (`LoaderCircle`) with `Loading workspace...` copy.
+  - Result: refreshes transition through one intentional loading state instead of
+    briefly rendering stale shell UI plus intermittent header loaders.
 - After flipping the env var, restart `npm run dev`.
 
 ### Skills / connectors used in this phase

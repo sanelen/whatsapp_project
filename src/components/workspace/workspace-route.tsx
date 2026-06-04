@@ -475,6 +475,14 @@ export function WorkspaceRoute({
     }
   }
 
+  if (isLoadingWorkspace) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-white p-6 text-slate-950">
+        <CenteredPageLoader />
+      </main>
+    );
+  }
+
   if (view === 'organizations') {
     return (
       <main className="min-h-screen bg-white p-4 text-slate-950 sm:p-6">
@@ -483,7 +491,6 @@ export function WorkspaceRoute({
             view={view}
             organization={selectedOrganization}
             property={selectedProperty}
-            isLoadingWorkspace={isLoadingWorkspace}
             isSavingWorkspace={isSavingWorkspace}
           />
           {workspaceError && (
@@ -523,7 +530,6 @@ export function WorkspaceRoute({
             view={view}
             organization={selectedOrganization}
             property={selectedProperty}
-            isLoadingWorkspace={isLoadingWorkspace}
             isSavingWorkspace={isSavingWorkspace}
           />
           {workspaceError && (
@@ -617,7 +623,6 @@ export function WorkspaceRoute({
             view={view}
             organization={selectedOrganization}
             property={selectedProperty}
-            isLoadingWorkspace={isLoadingWorkspace}
             isSavingWorkspace={isSavingWorkspace}
           />
         </div>
@@ -627,7 +632,7 @@ export function WorkspaceRoute({
             <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{routeTitle(view, selectedOrganization, selectedProperty)}</h2>
           </div>
           <div className="rounded-full bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-600">
-            {isLoadingWorkspace ? 'Loading workspace...' : isSavingWorkspace ? 'Saving...' : 'Supabase workspace connected'}
+            {isSavingWorkspace ? 'Saving...' : 'Supabase workspace connected'}
           </div>
         </header>
 
@@ -689,13 +694,11 @@ function TopNav({
   view,
   organization,
   property,
-  isLoadingWorkspace,
   isSavingWorkspace,
 }: {
   view: RouteView;
   organization: OrganizationWorkspace | null;
   property: PropertyWorkspace | null;
-  isLoadingWorkspace: boolean;
   isSavingWorkspace: boolean;
 }) {
   return (
@@ -728,10 +731,21 @@ function TopNav({
 
       <div className="flex items-center gap-2">
         <div className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-          {isLoadingWorkspace ? 'Loading...' : isSavingWorkspace ? 'Saving...' : 'Connected'}
+          {isSavingWorkspace ? 'Saving...' : 'Connected'}
         </div>
         <UserMenu />
       </div>
+    </div>
+  );
+}
+
+function CenteredPageLoader() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full border border-slate-200 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+        <LoaderCircle className="h-7 w-7 animate-spin text-blue-600" strokeWidth={2.2} />
+      </div>
+      <p className="text-sm font-medium text-slate-500">Loading workspace...</p>
     </div>
   );
 }
