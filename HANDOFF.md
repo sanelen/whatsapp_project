@@ -380,7 +380,7 @@ Implementation notes for AUT-17:
   `src/components/workspace/workspace-route.tsx`.
   - Icon mapping: Overview=`LayoutDashboard`, Chatbot=`Bot`, Agents=`Users`,
     Conversations=`MessageSquareText`, Knowledge Base=`BriefcaseBusiness`,
-    Analytics=`BarChart3`, Usage=`Gauge`, Settings=`Settings2`, Deploy=`Rocket`.
+    Analytics=`BarChart3`, Usage=`Gauge`, Settings=`Settings2`.
   - Styling uses `currentColor` and neutral container states so a future dark-mode
     pass can theme the nav without changing the icon structure.
 - Added an **Overview analytics scaffold** for the property chatbot workspace.

@@ -11,7 +11,6 @@ import {
   LoaderCircle,
   type LucideIcon,
   MessageSquareText,
-  Rocket,
   Settings2,
   Users,
 } from 'lucide-react';
@@ -49,8 +48,7 @@ type WorkspaceSection =
   | 'Knowledge Base'
   | 'Analytics'
   | 'Usage'
-  | 'Settings'
-  | 'Deploy';
+  | 'Settings';
 
 const workspaceSectionIcons: Record<WorkspaceSection, LucideIcon> = {
   Overview: LayoutDashboard,
@@ -61,7 +59,6 @@ const workspaceSectionIcons: Record<WorkspaceSection, LucideIcon> = {
   Analytics: BarChart3,
   Usage: Gauge,
   Settings: Settings2,
-  Deploy: Rocket,
 };
 
 type ChatMessage = {
@@ -1431,7 +1428,7 @@ function PropertyChatbotWorkspaceView({
   const [isThreadsCollapsed, setIsThreadsCollapsed] = useState(false);
   const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(false);
   const [activeWorkspaceSection, setActiveWorkspaceSection] = useState<WorkspaceSection>('Chatbot');
-  const workspaceNavItems: WorkspaceSection[] = ['Overview', 'Chatbot', 'Agents', 'Conversations', 'Knowledge Base', 'Analytics', 'Usage', 'Settings', 'Deploy'];
+  const workspaceNavItems: WorkspaceSection[] = ['Overview', 'Chatbot', 'Agents', 'Conversations', 'Knowledge Base', 'Analytics', 'Usage', 'Settings'];
   const providerOption = getProviderOption(property.chatbot.provider);
   const selectedModel = getModelValue(providerOption.value, property.chatbot.model);
 
@@ -1448,22 +1445,22 @@ function PropertyChatbotWorkspaceView({
           )}
         </div>
         <div className={`border-b border-slate-200 px-3 py-5 ${isAppNavCollapsed ? 'text-center' : ''}`}>
-          {!isAppNavCollapsed && (
-            <>
-              <p className="text-sm font-semibold">{property.name}</p>
-              <p className="text-xs text-slate-500">{organization.name}</p>
-            </>
-          )}
-          <button
-            type="button"
-            onClick={() => setIsAppNavCollapsed((current) => !current)}
-            className={`rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 ${
-              isAppNavCollapsed ? 'mt-0' : 'mt-4'
-            }`}
-            aria-label={isAppNavCollapsed ? 'Expand workspace navigation' : 'Collapse workspace navigation'}
-          >
-            {isAppNavCollapsed ? '>' : '<'}
-          </button>
+          <div className={`flex ${isAppNavCollapsed ? 'justify-center' : 'items-center justify-between gap-3'}`}>
+            {!isAppNavCollapsed && (
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{property.name}</p>
+                <p className="truncate text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{organization.name}</p>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsAppNavCollapsed((current) => !current)}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+              aria-label={isAppNavCollapsed ? 'Expand workspace navigation' : 'Collapse workspace navigation'}
+            >
+              {isAppNavCollapsed ? '>' : '<'}
+            </button>
+          </div>
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-2">
           {workspaceNavItems.map((item) => {
