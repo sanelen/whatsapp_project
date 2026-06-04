@@ -29,6 +29,10 @@ CREATE TABLE public.knowledge_base (
   content text NOT NULL,
   tags ARRAY,
   is_active boolean DEFAULT true,
+  source_type text NOT NULL DEFAULT 'legacy'::text CHECK (source_type = ANY (ARRAY['file'::text, 'text'::text, 'website'::text, 'api'::text, 'database'::text, 'tool'::text, 'legacy'::text])),
+  source_id text,
+  source_name text NOT NULL DEFAULT ''::text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT knowledge_base_pkey PRIMARY KEY (id)

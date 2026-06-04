@@ -38,10 +38,11 @@ type LegacyKnowledgeEntry = {
   category: string;
   title: string;
   content: string;
+  source_id?: string | null;
+  source_name?: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
 };
-
-type LegacyKnowledgeDraft = Pick<LegacyKnowledgeEntry, 'id' | 'category' | 'title' | 'content'>;
 
 type KnowledgeIndexingStatus = {
   status: 'indexed' | 'skipped' | 'failed';
@@ -1457,6 +1458,8 @@ function PropertyChatbotWorkspaceView({
         {activeWorkspaceSection === 'Knowledge Base' ? (
           <KnowledgeBaseWorkspaceView
             key={property.id}
+            organization={organization}
+            property={property}
             initialKnowledgeText={property.chatbot.knowledgeSources.join('\n\n')}
             systemPrompt={property.chatbot.systemPrompt}
             isSavingWorkspace={isSavingWorkspace}
@@ -1724,25 +1727,25 @@ function PropertyChatbotWorkspaceView({
 }
 
 function KnowledgeBaseWorkspaceView({
+  organization,
+  property,
   initialKnowledgeText,
   systemPrompt,
   isSavingWorkspace,
   onPersistKnowledgeBase,
 }: {
+  organization: OrganizationWorkspace;
+  property: PropertyWorkspace;
   initialKnowledgeText: string;
   systemPrompt: string;
   isSavingWorkspace: boolean;
   onPersistKnowledgeBase: (knowledgeText: string) => Promise<void>;
 }) {
   const [knowledgeText, setKnowledgeText] = useState(initialKnowledgeText);
-  const [legacyKnowledgeEntries, setLegacyKnowledgeEntries] = useState<LegacyKnowledgeEntry[]>([]);
-  const [legacyKnowledgeError, setLegacyKnowledgeError] = useState<string | null>(null);
-  const [legacyDraft, setLegacyDraft] = useState<LegacyKnowledgeDraft | null>(null);
-  const [legacySavingId, setLegacySavingId] = useState<string | null>(null);
-  const [legacyDeletingId, setLegacyDeletingId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [activeKnowledgeTab, setActiveKnowledgeTab] = useState('Overview');
   const [indexingStatus, setIndexingStatus] = useState<KnowledgeIndexingStatus | null>(null);
+  const [sourceCount, setSourceCount] = useState(0);
   const [isIndexing, setIsIndexing] = useState(false);
   const [retrievalQuery, setRetrievalQuery] = useState('');
   const [retrievalResults, setRetrievalResults] = useState<KnowledgeSearchPreview[]>([]);
@@ -1751,94 +1754,6 @@ function KnowledgeBaseWorkspaceView({
   const characterCount = knowledgeText.length;
   const approximateTokens = Math.ceil(characterCount / 4);
   const knowledgeTabs = ['Overview', 'File', 'Text', 'Website', 'API', 'Database', 'Tools'];
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadLegacyKnowledgeBase() {
-      try {
-        const response = await fetch('/api/kb/list', { cache: 'no-store' });
-        const payload = (await response.json()) as {
-          success: boolean;
-          data?: LegacyKnowledgeEntry[];
-          error?: string;
-        };
-        if (!response.ok || !payload.success) throw new Error(payload.error || 'Failed to load app knowledge base');
-        if (!cancelled) {
-          setLegacyKnowledgeEntries(payload.data || []);
-          setLegacyKnowledgeError(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setLegacyKnowledgeError(error instanceof Error ? error.message : 'Failed to load app knowledge base');
-        }
-      }
-    }
-
-    loadLegacyKnowledgeBase();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function handleLegacyKnowledgeUpdate() {
-    if (!legacyDraft) return;
-
-    setLegacySavingId(legacyDraft.id);
-    setStatus(null);
-    try {
-      const response = await fetch('/api/kb/update', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(legacyDraft),
-      });
-      const payload = (await response.json()) as {
-        success: boolean;
-        data?: LegacyKnowledgeEntry;
-        error?: string;
-      };
-      if (!response.ok || !payload.success || !payload.data) {
-        throw new Error(payload.error || 'Failed to update live knowledge base');
-      }
-      setLegacyKnowledgeEntries((current) =>
-        current.map((entry) => (entry.id === payload.data?.id ? { ...entry, ...payload.data } : entry))
-      );
-      setLegacyDraft(null);
-      setStatus('Live knowledge base entry updated.');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Failed to update live knowledge base.');
-    } finally {
-      setLegacySavingId(null);
-    }
-  }
-
-  async function handleLegacyKnowledgeDelete(entry: LegacyKnowledgeEntry) {
-    const confirmed = window.confirm(`Delete "${entry.title}" from the live app knowledge base?`);
-    if (!confirmed) return;
-
-    setLegacyDeletingId(entry.id);
-    setStatus(null);
-    try {
-      const response = await fetch('/api/kb/delete', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: entry.id }),
-      });
-      const payload = (await response.json()) as {
-        success: boolean;
-        error?: string;
-      };
-      if (!response.ok || !payload.success) throw new Error(payload.error || 'Failed to delete live knowledge base entry');
-      setLegacyKnowledgeEntries((current) => current.filter((item) => item.id !== entry.id));
-      if (legacyDraft?.id === entry.id) setLegacyDraft(null);
-      setStatus('Live knowledge base entry deleted.');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Failed to delete live knowledge base entry.');
-    } finally {
-      setLegacyDeletingId(null);
-    }
-  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1853,16 +1768,20 @@ function KnowledgeBaseWorkspaceView({
 
   async function uploadKnowledgeSource({
     sourceType,
+    sourceId,
     title,
     content,
     sourceName,
     metadata,
+    overwrite,
   }: {
     sourceType: string;
+    sourceId?: string;
     title: string;
     content: string;
     sourceName?: string;
     metadata?: Record<string, string | number | boolean | string[]>;
+    overwrite?: boolean;
   }) {
     setIsIndexing(true);
     setStatus(null);
@@ -1876,8 +1795,10 @@ function KnowledgeBaseWorkspaceView({
           title,
           content,
           sourceType,
+          sourceId,
           sourceName: sourceName || title,
           metadata,
+          overwrite,
           tags: ['workspace', sourceType],
         }),
       });
@@ -1888,7 +1809,7 @@ function KnowledgeBaseWorkspaceView({
         data?: LegacyKnowledgeEntry;
       };
       if (!response.ok || !payload.success) throw new Error(payload.error || 'Failed to index knowledge source');
-      if (payload.data) setLegacyKnowledgeEntries((current) => [payload.data as LegacyKnowledgeEntry, ...current]);
+      if (payload.data) setSourceCount((current) => Math.max(current, 1));
       if (payload.indexing) setIndexingStatus(payload.indexing);
       setStatus(payload.indexing?.status === 'indexed'
         ? `Vector indexed ${payload.indexing.chunkCount} chunk${payload.indexing.chunkCount === 1 ? '' : 's'}.`
@@ -1908,10 +1829,17 @@ function KnowledgeBaseWorkspaceView({
 
     await uploadKnowledgeSource({
       sourceType: 'text',
-      title: `Workspace text source ${new Date().toLocaleDateString()}`,
+      sourceId: `property:${property.id}:text`,
+      title: `${property.name} text knowledge`,
+      sourceName: `${property.name} Text`,
       content: knowledgeText,
+      overwrite: true,
       metadata: {
         origin: 'workspace-text-tab',
+        organizationId: organization.id,
+        organizationName: organization.name,
+        propertyId: property.id,
+        propertyName: property.name,
         characterCount,
         approximateTokens,
       },
@@ -1925,6 +1853,7 @@ function KnowledgeBaseWorkspaceView({
     const text = await file.text();
     await uploadKnowledgeSource({
       sourceType: 'file',
+      sourceId: `property:${property.id}:file:${file.name}`,
       title: file.name,
       sourceName: file.name,
       content: text,
@@ -2000,7 +1929,7 @@ function KnowledgeBaseWorkspaceView({
           {activeKnowledgeTab === 'Overview' && (
             <section className="mt-5 space-y-5">
               <div className="grid gap-4 md:grid-cols-4">
-                <KbMetric label="Active sources" value={legacyKnowledgeEntries.length.toString()} />
+                <KbMetric label="Session sources" value={sourceCount.toString()} />
                 <KbMetric label="Vector model" value="text-embedding-3" />
                 <KbMetric label="Dimensions" value="768" />
                 <KbMetric label="Retrieval" value={indexingStatus?.status === 'indexed' ? 'Vector ready' : 'Fallback ready'} />
@@ -2090,133 +2019,6 @@ function KnowledgeBaseWorkspaceView({
             <p className="mt-3 whitespace-pre-wrap rounded-lg border border-blue-100 bg-white p-3 text-sm leading-6 text-slate-700">
               {systemPrompt || 'No system prompt saved yet.'}
             </p>
-          </section>}
-
-          {(activeKnowledgeTab === 'Overview' || activeKnowledgeTab === 'Text') && <section className="mt-5 rounded-lg border border-amber-100 bg-amber-50/70 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-bold text-slate-950">Live app knowledge base</h2>
-                <p className="mt-1 text-xs font-semibold text-slate-500">
-                  This is the older global `knowledge_base` table that the chatbot currently searches during chat.
-                </p>
-              </div>
-              {legacyKnowledgeEntries[0] && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setKnowledgeText(legacyKnowledgeEntries[0].content);
-                    setStatus('Live knowledge base text loaded into the editor.');
-                  }}
-                  className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-50"
-                >
-                  Use latest KB text
-                </button>
-              )}
-            </div>
-
-            {legacyKnowledgeError && (
-              <p className="mt-3 rounded-lg border border-red-100 bg-white p-3 text-sm text-red-600">{legacyKnowledgeError}</p>
-            )}
-
-            {!legacyKnowledgeError && legacyKnowledgeEntries.length === 0 && (
-              <p className="mt-3 rounded-lg border border-amber-100 bg-white p-3 text-sm text-slate-500">
-                No active app knowledge base rows found.
-              </p>
-            )}
-
-            <div className="mt-3 space-y-3">
-              {legacyKnowledgeEntries.map((entry) => (
-                <details key={entry.id} className="rounded-lg border border-amber-100 bg-white p-3" open={legacyKnowledgeEntries.length === 1}>
-                  <summary className="cursor-pointer text-sm font-bold text-slate-900">
-                    {entry.title} <span className="font-medium text-slate-500">({entry.category})</span>
-                  </summary>
-                  <p className="mt-1 text-xs text-slate-400">{new Date(entry.created_at).toLocaleString()}</p>
-                  {legacyDraft?.id === entry.id ? (
-                    <div className="mt-3 space-y-3">
-                      <label className="block">
-                        <span className="text-xs font-semibold text-slate-500">Title</span>
-                        <input
-                          value={legacyDraft.title}
-                          onChange={(event) => setLegacyDraft({ ...legacyDraft, title: event.target.value })}
-                          className="mt-1 w-full rounded-lg border border-amber-100 px-3 py-2 text-sm outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="text-xs font-semibold text-slate-500">Category</span>
-                        <input
-                          value={legacyDraft.category}
-                          onChange={(event) => setLegacyDraft({ ...legacyDraft, category: event.target.value })}
-                          className="mt-1 w-full rounded-lg border border-amber-100 px-3 py-2 text-sm outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="text-xs font-semibold text-slate-500">Content</span>
-                        <textarea
-                          value={legacyDraft.content}
-                          onChange={(event) => setLegacyDraft({ ...legacyDraft, content: event.target.value })}
-                          className="mt-1 min-h-72 w-full resize-y rounded-lg border border-amber-100 px-3 py-2 text-sm leading-6 outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50"
-                        />
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={handleLegacyKnowledgeUpdate}
-                          disabled={legacySavingId === entry.id}
-                          className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {legacySavingId === entry.id ? 'Saving...' : 'Save KB entry'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLegacyDraft(null)}
-                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setLegacyDraft({
-                            id: entry.id,
-                            title: entry.title,
-                            category: entry.category,
-                            content: entry.content,
-                          })}
-                          className="rounded-lg border border-amber-200 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-50"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setKnowledgeText(entry.content);
-                            setStatus(`Loaded "${entry.title}" into the editor.`);
-                          }}
-                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-                        >
-                          Use this text
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleLegacyKnowledgeDelete(entry)}
-                          disabled={legacyDeletingId === entry.id}
-                          className="rounded-lg border border-red-100 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {legacyDeletingId === entry.id ? 'Deleting...' : 'Delete'}
-                        </button>
-                      </div>
-                      <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-700">
-                        {entry.content}
-                      </pre>
-                    </>
-                  )}
-                </details>
-              ))}
-            </div>
           </section>}
 
           {activeKnowledgeTab === 'Text' && <label className="mt-5 block">

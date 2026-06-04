@@ -6,6 +6,10 @@ export interface KnowledgeBase {
   content: string;
   tags?: string[];
   is_active: boolean;
+  source_type?: string;
+  source_id?: string | null;
+  source_name?: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
