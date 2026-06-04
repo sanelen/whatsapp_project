@@ -1789,7 +1789,6 @@ const overviewChannelLabels: Record<OverviewChannel, string> = {
   all: 'All channels',
   web: 'Web widget',
   whatsapp: 'WhatsApp',
-  api: 'API',
 };
 
 function OverviewWorkspaceView({

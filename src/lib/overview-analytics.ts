@@ -3,7 +3,7 @@ import { unstable_cache } from 'next/cache';
 export const overviewWindows = ['24h', '7d', '30d', 'lifetime'] as const;
 export type OverviewWindow = (typeof overviewWindows)[number];
 
-export const overviewChannels = ['all', 'web', 'whatsapp', 'api'] as const;
+export const overviewChannels = ['all', 'web', 'whatsapp'] as const;
 export type OverviewChannel = (typeof overviewChannels)[number];
 
 export type AnalyticsEvent = {
@@ -101,10 +101,10 @@ function createMockAnalyticsEvents(propertyId: string, now = new Date()): Analyt
   const templates = [
     { hoursAgo: 2, channel: 'web', messages: 8, characters: 1940, prompt: 630, completion: 420, cached: 90, fingerprintOffset: 0 },
     { hoursAgo: 9, channel: 'whatsapp', messages: 5, characters: 1160, prompt: 380, completion: 250, cached: 40, fingerprintOffset: 1 },
-    { hoursAgo: 20, channel: 'api', messages: 4, characters: 780, prompt: 260, completion: 170, cached: 0, fingerprintOffset: 2 },
+    { hoursAgo: 20, channel: 'web', messages: 4, characters: 780, prompt: 260, completion: 170, cached: 0, fingerprintOffset: 2 },
     { hoursAgo: 34, channel: 'web', messages: 7, characters: 1620, prompt: 520, completion: 330, cached: 60, fingerprintOffset: 0 },
     { hoursAgo: 70, channel: 'whatsapp', messages: 6, characters: 1480, prompt: 470, completion: 290, cached: 55, fingerprintOffset: 3 },
-    { hoursAgo: 140, channel: 'api', messages: 3, characters: 620, prompt: 210, completion: 120, cached: 0, fingerprintOffset: 4 },
+    { hoursAgo: 140, channel: 'whatsapp', messages: 3, characters: 620, prompt: 210, completion: 120, cached: 0, fingerprintOffset: 4 },
     { hoursAgo: 410, channel: 'web', messages: 10, characters: 2480, prompt: 790, completion: 520, cached: 140, fingerprintOffset: 5 },
     { hoursAgo: 980, channel: 'whatsapp', messages: 11, characters: 2860, prompt: 910, completion: 610, cached: 160, fingerprintOffset: 6 },
   ] as const;

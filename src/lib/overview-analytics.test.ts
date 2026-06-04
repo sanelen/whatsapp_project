@@ -40,7 +40,7 @@ const events: AnalyticsEvent[] = [
     id: 'evt-3',
     propertyId: 'prop-1',
     fingerprintId: 'fp-2',
-    channel: 'api',
+    channel: 'web',
     messageCount: 4,
     characterCount: 500,
     promptTokens: 140,
@@ -76,6 +76,7 @@ test('overview helpers validate supported filters', () => {
   assert.equal(isOverviewWindow('30d'), true);
   assert.equal(isOverviewWindow('90d'), false);
   assert.equal(isOverviewChannel('whatsapp'), true);
+  assert.equal(isOverviewChannel('api'), false);
   assert.equal(isOverviewChannel('email'), false);
   assert.equal(getOverviewWindowLabel('24h'), '24 Hours');
 });

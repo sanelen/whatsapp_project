@@ -390,7 +390,7 @@ Implementation notes for AUT-17:
   - UI now includes:
     - ChatNexus-style Overview header and two 3-card metric rows
     - filter dropdown for `24 Hours`, `7 Days`, `30 Days`, `Lifetime`
-    - channel toggles for `All channels`, `Web widget`, `WhatsApp`, `API`
+    - channel toggles for `All channels`, `Web widget`, `WhatsApp`
   - Metric mapping for the real system:
     - `Users` = unique `fingerprintId` count
     - `Tokens` = prompt + completion + cached token totals
