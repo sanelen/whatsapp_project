@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { getLocalAuthBypassEmail, isLocalAuthBypassEnabled } from '@/lib/auth/local-testing';
 import {
   createSeedWorkspace,
   getPropertiesForOrganization,
@@ -701,9 +702,14 @@ function TopNav({
 }
 
 function UserMenu() {
-  const [email, setEmail] = useState<string | null>(null);
+  const authBypassEnabled = isLocalAuthBypassEnabled();
+  const [email, setEmail] = useState<string | null>(
+    authBypassEnabled ? getLocalAuthBypassEmail() : null
+  );
 
   useEffect(() => {
+    if (authBypassEnabled) return;
+
     let cancelled = false;
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => {
@@ -712,7 +718,7 @@ function UserMenu() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authBypassEnabled]);
 
   return (
     <div className="flex items-center gap-2">
@@ -721,14 +727,20 @@ function UserMenu() {
           {email}
         </span>
       )}
-      <form action="/auth/signout" method="post">
-        <button
-          type="submit"
-          className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-        >
-          Sign out
-        </button>
-      </form>
+      {authBypassEnabled ? (
+        <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+          Auth bypass on
+        </span>
+      ) : (
+        <form action="/auth/signout" method="post">
+          <button
+            type="submit"
+            className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Sign out
+          </button>
+        </form>
+      )}
     </div>
   );
 }

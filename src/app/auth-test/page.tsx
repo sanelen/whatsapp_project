@@ -1,4 +1,5 @@
 import { requireUser } from '@/lib/auth/dal';
+import { isLocalAuthBypassEnabled } from '@/lib/auth/local-testing';
 
 export const metadata = {
   title: 'Auth test — Hamba',
@@ -6,6 +7,7 @@ export const metadata = {
 
 export default async function AuthTestPage() {
   const user = await requireUser();
+  const isBypassEnabled = isLocalAuthBypassEnabled();
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4 text-slate-950">
@@ -18,6 +20,11 @@ export default async function AuthTestPage() {
           Use this page to verify that protected routes, session display, and logout all work without
           touching workspace data.
         </p>
+        {isBypassEnabled && (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Local auth bypass is enabled, so browser tests can enter protected pages without a real Supabase session.
+          </p>
+        )}
 
         <dl className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
           <div>
@@ -28,14 +35,20 @@ export default async function AuthTestPage() {
           </div>
         </dl>
 
-        <form action="/auth/signout" method="post" className="mt-6">
-          <button
-            type="submit"
-            className="w-full rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-          >
-            Sign out and return to login
-          </button>
-        </form>
+        {isBypassEnabled ? (
+          <p className="mt-6 text-sm font-medium text-slate-500">
+            Sign-out is skipped while local auth bypass is enabled.
+          </p>
+        ) : (
+          <form action="/auth/signout" method="post" className="mt-6">
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              Sign out and return to login
+            </button>
+          </form>
+        )}
       </section>
     </main>
   );

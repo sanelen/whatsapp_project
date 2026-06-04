@@ -1,6 +1,6 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
-**Last updated:** 2026-05-30, end-of-session handoff
+**Last updated:** 2026-06-04, local auth bypass + KB text-source cleanup
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`
 **Working branch:** `sanelengcobo/aut-9-extend-supabase-schema-for-tenant-register-and-assistant`
@@ -361,3 +361,25 @@ Implementation notes for AUT-17:
 - Verified live vector smoke test: 1 chunk indexed at 768 dims; vector query returned the
   smoke source with similarity `0.517`; smoke KB row and test auth user were cleaned up.
 - Checks passed: `npm test` 26/26, `npm run typecheck`, `npm run lint`, `npm run build`.
+
+### AUT-17 update — 2026-06-04
+
+- Removed the legacy Knowledge Base block from the UI and switched the Text tab to a
+  stable overwrite flow keyed by `property:<propertyId>:text`.
+- `knowledge_base` now stores `source_type`, `source_id`, `source_name`, and `metadata`
+  alongside the content; vector rows are refreshed when Text overwrite is used.
+- Added a **local browser-testing auth bypass** controlled by
+  `NEXT_PUBLIC_LOCAL_AUTH_BYPASS=true` in `.env.local`.
+  - Safety: it only activates outside production builds.
+  - Behavior: `src/proxy.ts`, `src/lib/auth/dal.ts`, and the API auth guard all treat
+    requests as signed in with a local mock user.
+  - UI: workspace/auth-test show the bypass state and suppress real sign-out flows.
+  - Use case: lets Browser/in-app automation test protected routes on `localhost`
+    without getting trapped at `/login`.
+- After flipping the env var, restart `npm run dev`.
+
+### Skills / connectors used in this phase
+
+- Next.js local docs (`node_modules/next/dist/docs/...`) for `proxy` + auth guidance.
+- Supabase connector for live schema confirmation/migration application.
+- Linear connector for AUT-17 status tracking and requirement logging.

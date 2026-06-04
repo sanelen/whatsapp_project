@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { isLocalAuthBypassEnabled } from '@/lib/auth/local-testing';
 import { getProxySession } from '@/lib/supabase/proxy';
 
 // Next.js 16: this is the `proxy` convention (formerly `middleware`).
@@ -12,6 +13,14 @@ function isPublicPath(pathname: string): boolean {
 }
 
 export async function proxy(request: NextRequest) {
+  if (isLocalAuthBypassEnabled()) {
+    if (request.nextUrl.pathname === '/login') {
+      const destination = request.nextUrl.searchParams.get('redirect') || '/';
+      return NextResponse.redirect(new URL(destination, request.url));
+    }
+    return NextResponse.next();
+  }
+
   const { user, response } = await getProxySession(request);
   const { pathname, search } = request.nextUrl;
 
