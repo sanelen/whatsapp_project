@@ -376,6 +376,13 @@ Implementation notes for AUT-17:
   - UI: workspace/auth-test show the bypass state and suppress real sign-out flows.
   - Use case: lets Browser/in-app automation test protected routes on `localhost`
     without getting trapped at `/login`.
+- Replaced the property-workspace sidebar letter badges with **Lucide** icons in
+  `src/components/workspace/workspace-route.tsx`.
+  - Icon mapping: Overview=`LayoutDashboard`, Chatbot=`Bot`, Agents=`Users`,
+    Conversations=`MessageSquareText`, Knowledge Base=`BriefcaseBusiness`,
+    Analytics=`BarChart3`, Usage=`Gauge`, Settings=`Settings2`, Deploy=`Rocket`.
+  - Styling uses `currentColor` and neutral container states so a future dark-mode
+    pass can theme the nav without changing the icon structure.
 - After flipping the env var, restart `npm run dev`.
 
 ### Skills / connectors used in this phase

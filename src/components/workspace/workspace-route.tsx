@@ -1,5 +1,17 @@
 'use client';
 
+import {
+  BarChart3,
+  Bot,
+  BriefcaseBusiness,
+  Gauge,
+  LayoutDashboard,
+  type LucideIcon,
+  MessageSquareText,
+  Rocket,
+  Settings2,
+  Users,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
@@ -28,6 +40,18 @@ type WorkspaceSection =
   | 'Usage'
   | 'Settings'
   | 'Deploy';
+
+const workspaceSectionIcons: Record<WorkspaceSection, LucideIcon> = {
+  Overview: LayoutDashboard,
+  Chatbot: Bot,
+  Agents: Users,
+  Conversations: MessageSquareText,
+  'Knowledge Base': BriefcaseBusiness,
+  Analytics: BarChart3,
+  Usage: Gauge,
+  Settings: Settings2,
+  Deploy: Rocket,
+};
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -1417,25 +1441,35 @@ function PropertyChatbotWorkspaceView({
           </button>
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-2">
-          {workspaceNavItems.map((item) => (
-            <div key={item}>
-              <button
-                type="button"
-                title={item}
-                onClick={() => setActiveWorkspaceSection(item)}
-                className={`flex w-full items-center rounded-lg py-3 text-left text-sm font-medium transition ${
-                  item === activeWorkspaceSection
-                    ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
-                } ${isAppNavCollapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}
-              >
-                <span className="flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-[10px]">
-                  {item.slice(0, 1)}
-                </span>
-                {!isAppNavCollapsed && item}
-              </button>
-            </div>
-          ))}
+          {workspaceNavItems.map((item) => {
+            const ItemIcon = workspaceSectionIcons[item];
+
+            return (
+              <div key={item}>
+                <button
+                  type="button"
+                  title={item}
+                  onClick={() => setActiveWorkspaceSection(item)}
+                  className={`flex w-full items-center rounded-lg py-3 text-left text-sm font-medium transition ${
+                    item === activeWorkspaceSection
+                      ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+                  } ${isAppNavCollapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}
+                >
+                  <span
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition ${
+                      item === activeWorkspaceSection
+                        ? 'border-blue-200 bg-white/80 text-blue-700'
+                        : 'border-slate-200 bg-slate-50 text-slate-500'
+                    }`}
+                  >
+                    <ItemIcon className="h-4 w-4" strokeWidth={2} />
+                  </span>
+                  {!isAppNavCollapsed && item}
+                </button>
+              </div>
+            );
+          })}
         </nav>
         <div className="border-t border-slate-200 p-3">
           <button
