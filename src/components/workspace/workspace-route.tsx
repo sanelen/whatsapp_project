@@ -4,8 +4,11 @@ import {
   BarChart3,
   Bot,
   BriefcaseBusiness,
+  Check,
+  ChevronDown,
   Gauge,
   LayoutDashboard,
+  LoaderCircle,
   type LucideIcon,
   MessageSquareText,
   Rocket,
@@ -16,6 +19,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { getLocalAuthBypassEmail, isLocalAuthBypassEnabled } from '@/lib/auth/local-testing';
+import {
+  getOverviewWindowLabel,
+  overviewChannels,
+  overviewWindows,
+  type OverviewAnalyticsSummary,
+  type OverviewChannel,
+  type OverviewWindow,
+} from '@/lib/overview-analytics';
 import {
   createSeedWorkspace,
   getPropertiesForOrganization,
@@ -1511,6 +1522,8 @@ function PropertyChatbotWorkspaceView({
             isSavingWorkspace={isSavingWorkspace}
             onPersistKnowledgeBase={onPersistKnowledgeBase}
           />
+        ) : activeWorkspaceSection === 'Overview' ? (
+          <OverviewWorkspaceView organization={organization} property={property} />
         ) : activeWorkspaceSection === 'Chatbot' ? (
         <div className="flex min-h-0 flex-1">
           {isThreadsCollapsed ? (
@@ -1769,6 +1782,225 @@ function PropertyChatbotWorkspaceView({
         )}
       </section>
     </main>
+  );
+}
+
+const overviewChannelLabels: Record<OverviewChannel, string> = {
+  all: 'All channels',
+  web: 'Web widget',
+  whatsapp: 'WhatsApp',
+  api: 'API',
+};
+
+function OverviewWorkspaceView({
+  organization,
+  property,
+}: {
+  organization: OrganizationWorkspace;
+  property: PropertyWorkspace;
+}) {
+  const [selectedWindow, setSelectedWindow] = useState<OverviewWindow>('30d');
+  const [selectedChannel, setSelectedChannel] = useState<OverviewChannel>('all');
+  const [isWindowMenuOpen, setIsWindowMenuOpen] = useState(false);
+  const [cache, setCache] = useState<Record<string, OverviewAnalyticsSummary>>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const cacheKey = `${property.id}:${selectedWindow}:${selectedChannel}`;
+  const summary = cache[cacheKey] ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOverview() {
+      if (cache[cacheKey]) return;
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(
+          `/api/analytics/overview?propertyId=${encodeURIComponent(property.id)}&window=${selectedWindow}&channel=${selectedChannel}`,
+          { cache: 'force-cache' }
+        );
+        const payload = (await response.json()) as {
+          success: boolean;
+          data?: OverviewAnalyticsSummary;
+          error?: string;
+        };
+
+        if (!response.ok || !payload.success || !payload.data) {
+          throw new Error(payload.error || 'Failed to load overview analytics');
+        }
+
+        if (!cancelled) {
+          setCache((current) => ({ ...current, [cacheKey]: payload.data as OverviewAnalyticsSummary }));
+        }
+      } catch (nextError) {
+        if (!cancelled) {
+          setError(nextError instanceof Error ? nextError.message : 'Failed to load overview analytics');
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    loadOverview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cache, cacheKey, property.id, selectedChannel, selectedWindow]);
+
+  return (
+    <section className="min-w-0 flex-1 overflow-y-auto bg-[#f7f8fc] px-8 py-8">
+      <div className="mx-auto max-w-7xl rounded-[2rem] bg-white p-10 shadow-[0_28px_90px_rgba(15,23,42,0.08)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="h-10 w-1 rounded-full bg-emerald-400" />
+              <div>
+                <h1 className="text-4xl font-bold tracking-tight text-slate-950">Overview</h1>
+                <p className="mt-2 text-sm text-slate-500">
+                  Cached analytics scaffold for {property.name}, ready for fingerprint-based user tracking.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-full border border-sky-100 bg-sky-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
+            Phase 1 mock analytics
+          </div>
+        </div>
+
+        <div className="mt-10 flex flex-wrap items-start gap-4">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsWindowMenuOpen((current) => !current)}
+              className="flex min-w-56 items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-left text-2xl font-semibold text-slate-900 shadow-sm transition hover:border-slate-300"
+            >
+              <span>{getOverviewWindowLabel(selectedWindow)}</span>
+              <ChevronDown className={`h-5 w-5 text-slate-500 transition ${isWindowMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isWindowMenuOpen && (
+              <div className="absolute left-0 top-[calc(100%+0.75rem)] z-20 min-w-56 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white p-3 shadow-[0_20px_60px_rgba(15,23,42,0.15)]">
+                {overviewWindows.map((windowOption) => (
+                  <button
+                    key={windowOption}
+                    type="button"
+                    onClick={() => {
+                      setSelectedWindow(windowOption);
+                      setIsWindowMenuOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-xl transition ${
+                      selectedWindow === windowOption
+                        ? 'bg-slate-100 font-semibold text-slate-950'
+                        : 'text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{getOverviewWindowLabel(windowOption)}</span>
+                    {selectedWindow === windowOption && <Check className="h-5 w-5 text-slate-700" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {overviewChannels.map((channelOption) => (
+              <button
+                key={channelOption}
+                type="button"
+                onClick={() => setSelectedChannel(channelOption)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  selectedChannel === channelOption
+                    ? 'bg-slate-950 text-white'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {overviewChannelLabels[channelOption]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+          <span className="rounded-full bg-slate-100 px-3 py-1 font-medium">
+            {organization.name}
+          </span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 font-medium">
+            Filter: {overviewChannelLabels[selectedChannel]}
+          </span>
+          <span className="rounded-full bg-slate-100 px-3 py-1 font-medium">
+            Source mode: cached mock data
+          </span>
+        </div>
+
+        {error && (
+          <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {isLoading && !summary && (
+          <div className="mt-6 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+            Loading overview analytics...
+          </div>
+        )}
+
+        {summary && (
+          <>
+            <OverviewSectionTitle title={`Activity in the past ${summary.windowLabel}`} />
+            <div className="mt-6 grid gap-5 lg:grid-cols-3">
+              <OverviewMetricCard metric={summary.metrics.users} />
+              <OverviewMetricCard metric={summary.metrics.tokens} />
+              <OverviewMetricCard metric={summary.metrics.messages} />
+            </div>
+
+            <OverviewSectionTitle title={`Usage for the past ${summary.windowLabel}`} className="mt-10" />
+            <div className="mt-6 grid gap-5 lg:grid-cols-3">
+              <OverviewUsageCard usage={summary.usage.characters} />
+              <OverviewUsageCard usage={summary.usage.tokens} />
+              <OverviewUsageCard usage={summary.usage.messages} />
+            </div>
+
+            <div className="mt-8 rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-600">
+              The current scaffold tracks unique users by fingerprint ID, channel, character volume, token volume, and message counts.
+              Phase 2 can swap the mock event reader for a real Supabase query without changing the UI filter contract.
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function OverviewSectionTitle({ title, className = '' }: { title: string; className?: string }) {
+  return <h2 className={`mt-10 text-2xl font-bold tracking-tight text-slate-950 ${className}`.trim()}>{title}</h2>;
+}
+
+function OverviewMetricCard({ metric }: { metric: OverviewAnalyticsSummary['metrics'][keyof OverviewAnalyticsSummary['metrics']] }) {
+  return (
+    <article className="flex min-h-48 flex-col justify-between rounded-[1.75rem] bg-[linear-gradient(135deg,#428df8_0%,#7e59f7_100%)] px-8 py-7 text-white shadow-[0_18px_40px_rgba(84,104,242,0.24)]">
+      <p className="text-center text-5xl font-bold tracking-tight">{metric.value}</p>
+      <div className="text-center">
+        <p className="text-3xl font-semibold">{metric.label}</p>
+        <p className="mt-2 text-sm text-white/80">{metric.detail}</p>
+      </div>
+    </article>
+  );
+}
+
+function OverviewUsageCard({ usage }: { usage: OverviewAnalyticsSummary['usage'][keyof OverviewAnalyticsSummary['usage']] }) {
+  return (
+    <article className="flex min-h-56 flex-col items-center justify-center rounded-[1.75rem] bg-[linear-gradient(135deg,#428df8_0%,#7e59f7_100%)] px-8 py-7 text-white shadow-[0_18px_40px_rgba(84,104,242,0.24)]">
+      <div className="flex h-28 w-28 items-center justify-center rounded-full border border-white/15 bg-white/5 text-4xl font-bold">
+        {usage.percent}%
+      </div>
+      <p className="mt-6 text-3xl font-semibold">{usage.label}</p>
+      <p className="mt-2 text-lg text-white/90">{usage.detail}</p>
+    </article>
   );
 }
 

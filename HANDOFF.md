@@ -383,6 +383,33 @@ Implementation notes for AUT-17:
     Analytics=`BarChart3`, Usage=`Gauge`, Settings=`Settings2`, Deploy=`Rocket`.
   - Styling uses `currentColor` and neutral container states so a future dark-mode
     pass can theme the nav without changing the icon structure.
+- Added an **Overview analytics scaffold** for the property chatbot workspace.
+  - New route: `src/app/api/analytics/overview/route.ts`
+  - New analytics contract: `src/lib/overview-analytics.ts`
+  - New tests: `src/lib/overview-analytics.test.ts`
+  - UI now includes:
+    - ChatNexus-style Overview header and two 3-card metric rows
+    - filter dropdown for `24 Hours`, `7 Days`, `30 Days`, `Lifetime`
+    - channel toggles for `All channels`, `Web widget`, `WhatsApp`, `API`
+  - Metric mapping for the real system:
+    - `Users` = unique `fingerprintId` count
+    - `Tokens` = prompt + completion + cached token totals
+    - `Messages` = tracked interaction/message totals
+    - usage row = characters/tokens/messages against plan caps
+  - Phase plan:
+    - **Phase 1 (done):** cached mock data scaffold, fingerprint-ready schema contract,
+      browser-visible UI.
+    - **Phase 2:** replace the mock event reader with real Supabase reads using the same
+      `propertyId + window + channel` filter contract.
+    - **Phase 3:** seed/live backfill, then revalidate cached analytics on writes.
+  - Caching:
+    - Uses a cached server helper (`unstable_cache`) for the summary layer.
+    - Client keeps per-filter results in local state so tab/filter revisits do not
+      re-fetch the same overview payload during the session.
+  - Application/test requirements captured:
+    - keep `fingerprintId` on analytics events from the start
+    - ensure filter inputs stay DB-ready (`propertyId`, `window`, `channel`)
+    - preserve automated coverage for aggregation and filter logic
 - After flipping the env var, restart `npm run dev`.
 
 ### Skills / connectors used in this phase
