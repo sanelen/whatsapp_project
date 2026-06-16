@@ -11,12 +11,14 @@ import {
   LoaderCircle,
   type LucideIcon,
   MessageSquareText,
+  SlidersHorizontal,
   Settings2,
   Users,
 } from 'lucide-react';
+import { Button, Input, Label, TextArea, TextField } from '@heroui/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { getLocalAuthBypassEmail, isLocalAuthBypassEnabled } from '@/lib/auth/local-testing';
 import {
   getOverviewWindowLabel,
@@ -39,7 +41,7 @@ import { organizationPath, propertyPath } from '@/lib/workspace-routes';
 import { createClient } from '@/lib/supabase/client';
 
 type RouteView = 'organizations' | 'organization' | 'property' | 'chatbot';
-type SettingsTab = 'llm' | 'instructions' | 'knowledge' | 'templates';
+type SettingsTab = 'llm' | 'instructions' | 'retrieval' | 'knowledge' | 'templates';
 type WorkspaceSection =
   | 'Overview'
   | 'Chatbot'
@@ -61,9 +63,41 @@ const workspaceSectionIcons: Record<WorkspaceSection, LucideIcon> = {
   Settings: Settings2,
 };
 
+const selectedOrganizationStorageKey = 'hamba.workspace.selectedOrganizationId';
+const selectedPropertyStorageKey = 'hamba.workspace.selectedPropertyId';
+
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
+};
+
+type ChatRetrievalResult = {
+  category: string;
+  title: string;
+  source_type?: string;
+  source_id?: string;
+  source_name?: string;
+  similarity?: number;
+  chunk_index?: number;
+  chunk_count?: number;
+};
+
+type ChatRetrievalLog = {
+  retrieval?: 'vector' | 'text';
+  propertyId?: string;
+  memoryMode: string;
+  topK: number;
+  similarityThreshold: number;
+  historyWindow: number;
+  results: ChatRetrievalResult[];
+};
+
+type ChunkStrategy = 'recursive_character' | 'sentence' | 'latex' | 'markdown';
+
+type ChunkSettings = {
+  strategy: ChunkStrategy;
+  chunkSize: number;
+  chunkOverlap: number;
 };
 
 type LegacyKnowledgeEntry = {
@@ -75,6 +109,12 @@ type LegacyKnowledgeEntry = {
   source_name?: string;
   metadata?: Record<string, unknown>;
   created_at: string;
+};
+
+type KnowledgeSourceEntry = LegacyKnowledgeEntry & {
+  source_type?: string;
+  source_id?: string | null;
+  updated_at?: string;
 };
 
 type KnowledgeIndexingStatus = {
@@ -92,6 +132,12 @@ type KnowledgeSearchPreview = {
   source_type?: string;
   source_name?: string;
   similarity?: number;
+};
+
+const defaultChunkSettings: ChunkSettings = {
+  strategy: 'recursive_character',
+  chunkSize: 2000,
+  chunkOverlap: 250,
 };
 
 const llmProviders = [
@@ -141,6 +187,45 @@ function getModelValue(provider: string, model: string) {
     : providerOption.models[0].value;
 }
 
+function getKnowledgeChunkSettingsStorageKey(propertyId: string) {
+  return `hamba.kb.textChunkSettings.${propertyId}`;
+}
+
+function getChunkStrategyLabel(strategy: ChunkStrategy) {
+  switch (strategy) {
+    case 'sentence':
+      return 'Sentence Splitter';
+    case 'latex':
+      return 'LaTeX Splitter';
+    case 'markdown':
+      return 'Markdown Splitter';
+    case 'recursive_character':
+    default:
+      return 'Recursive Character Splitter';
+  }
+}
+
+function parseChunkSettings(value: unknown): ChunkSettings {
+  if (!value || typeof value !== 'object') {
+    return defaultChunkSettings;
+  }
+
+  const candidate = value as Partial<ChunkSettings>;
+  const strategy = candidate.strategy;
+  const chunkSize = Number(candidate.chunkSize);
+  const chunkOverlap = Number(candidate.chunkOverlap);
+
+  return {
+    strategy:
+      strategy === 'sentence' || strategy === 'latex' || strategy === 'markdown' || strategy === 'recursive_character'
+        ? strategy
+        : defaultChunkSettings.strategy,
+    chunkSize: Number.isFinite(chunkSize) && chunkSize > 0 ? Math.round(chunkSize) : defaultChunkSettings.chunkSize,
+    chunkOverlap:
+      Number.isFinite(chunkOverlap) && chunkOverlap >= 0 ? Math.round(chunkOverlap) : defaultChunkSettings.chunkOverlap,
+  };
+}
+
 export function WorkspaceRoute({
   view,
   organizationId,
@@ -167,12 +252,24 @@ export function WorkspaceRoute({
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [lastRetrievalLog, setLastRetrievalLog] = useState<ChatRetrievalLog | null>(null);
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('llm');
   const [isCreateOrganizationOpen, setIsCreateOrganizationOpen] = useState(false);
   const [editingOrganization, setEditingOrganization] = useState<OrganizationWorkspace | null>(null);
   const [isCreatePropertyOpen, setIsCreatePropertyOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<PropertyWorkspace | null>(null);
+  const [storedOrganizationId, setStoredOrganizationId] = useState<string | null>(null);
+  const [storedPropertyId, setStoredPropertyId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setStoredOrganizationId(window.localStorage.getItem(selectedOrganizationStorageKey));
+      setStoredPropertyId(window.localStorage.getItem(selectedPropertyStorageKey));
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -210,14 +307,19 @@ export function WorkspaceRoute({
       const property = workspace.properties.find((item) => item.id === propertyId);
       return workspace.organizations.find((organization) => organization.id === property?.organizationId) ?? null;
     }
+    if (storedOrganizationId) {
+      const storedOrganization = workspace.organizations.find((organization) => organization.id === storedOrganizationId);
+      if (storedOrganization) return storedOrganization;
+    }
     return workspace.organizations[0] ?? null;
-  }, [organizationId, propertyId, workspace]);
+  }, [organizationId, propertyId, storedOrganizationId, workspace]);
 
   const selectedProperty = useMemo(() => {
     if (propertyId) return workspace.properties.find((property) => property.id === propertyId) ?? null;
-    if (!selectedOrganization) return null;
-    return getPropertiesForOrganization(workspace, selectedOrganization.id)[0] ?? null;
-  }, [propertyId, selectedOrganization, workspace]);
+    if (!selectedOrganization || !storedPropertyId) return null;
+    const storedProperty = workspace.properties.find((property) => property.id === storedPropertyId);
+    return storedProperty?.organizationId === selectedOrganization.id ? storedProperty : null;
+  }, [propertyId, selectedOrganization, storedPropertyId, workspace]);
 
   const organizationProperties = useMemo(
     () => selectedOrganization ? getPropertiesForOrganization(workspace, selectedOrganization.id) : [],
@@ -225,6 +327,16 @@ export function WorkspaceRoute({
   );
 
   const summary = useMemo(() => getWorkspaceSummary(workspace), [workspace]);
+
+  useEffect(() => {
+    if (!selectedOrganization) return;
+    window.localStorage.setItem(selectedOrganizationStorageKey, selectedOrganization.id);
+  }, [selectedOrganization]);
+
+  useEffect(() => {
+    if (!selectedProperty) return;
+    window.localStorage.setItem(selectedPropertyStorageKey, selectedProperty.id);
+  }, [selectedProperty]);
 
   async function saveWorkspaceAction(body: unknown) {
     setIsSavingWorkspace(true);
@@ -458,12 +570,36 @@ export function WorkspaceRoute({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           stream: false,
+          propertyId: selectedProperty.id,
           systemPrompt: selectedProperty.chatbot.systemPrompt,
+          retrieval: {
+            topK: selectedProperty.chatbot.retrievalTopK,
+            similarityThreshold: selectedProperty.chatbot.retrievalSimilarityThreshold,
+            memoryMode: selectedProperty.chatbot.retrievalMemoryMode,
+            historyWindow: selectedProperty.chatbot.retrievalHistoryWindow,
+          },
           messages: [...chatMessages.filter((message) => message.role !== 'assistant' || message.content), userMessage],
         }),
       });
-      const payload = (await response.json()) as { reply?: string; error?: string };
+      const payload = (await response.json()) as {
+        reply?: string;
+        error?: string;
+        retrieval?: {
+          retrieval?: 'vector' | 'text';
+          propertyId?: string;
+          results?: ChatRetrievalResult[];
+        };
+      };
       if (!response.ok || payload.error) throw new Error(payload.error || 'Failed to send message');
+      setLastRetrievalLog({
+        retrieval: payload.retrieval?.retrieval,
+        propertyId: payload.retrieval?.propertyId,
+        memoryMode: selectedProperty.chatbot.retrievalMemoryMode,
+        topK: selectedProperty.chatbot.retrievalTopK,
+        similarityThreshold: selectedProperty.chatbot.retrievalSimilarityThreshold,
+        historyWindow: selectedProperty.chatbot.retrievalHistoryWindow,
+        results: payload.retrieval?.results || [],
+      });
       setChatMessages((current) => [...current, { role: 'assistant', content: payload.reply || 'No response returned.' }]);
     } catch (error) {
       setChatError(error instanceof Error ? error.message : 'Unexpected chat error');
@@ -485,10 +621,13 @@ export function WorkspaceRoute({
       <main className="min-h-screen bg-white p-4 text-slate-950 sm:p-6">
         <div className="mx-auto max-w-6xl">
           <TopNav
-            view={view}
+            organizations={workspace.organizations}
+            properties={workspace.properties}
             organization={selectedOrganization}
             property={selectedProperty}
             isSavingWorkspace={isSavingWorkspace}
+            showChatbotSelect={false}
+            className="mb-6"
           />
           {workspaceError && (
             <div className="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -524,10 +663,13 @@ export function WorkspaceRoute({
       <main className="min-h-screen bg-white p-4 text-slate-950 sm:p-6">
         <div className="mx-auto max-w-7xl">
           <TopNav
-            view={view}
+            organizations={workspace.organizations}
+            properties={workspace.properties}
             organization={selectedOrganization}
             property={selectedProperty}
             isSavingWorkspace={isSavingWorkspace}
+            showChatbotSelect={false}
+            className="mb-6"
           />
           {workspaceError && (
             <div className="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -562,12 +704,15 @@ export function WorkspaceRoute({
 
   if ((view === 'property' || view === 'chatbot') && selectedProperty && selectedOrganization) {
     return (
-      <PropertyChatbotWorkspaceView
+        <PropertyChatbotWorkspaceView
+        organizations={workspace.organizations}
+        properties={workspace.properties}
         organization={selectedOrganization}
         property={selectedProperty}
         chatInput={chatInput}
-        chatMessages={chatMessages}
-        chatError={chatError}
+          chatMessages={chatMessages}
+          chatError={chatError}
+          lastRetrievalLog={lastRetrievalLog}
         isSending={isSending}
         isSavingWorkspace={isSavingWorkspace}
         activeSettingsTab={activeSettingsTab}
@@ -617,10 +762,13 @@ export function WorkspaceRoute({
       <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="border-b border-slate-200 bg-white px-6 py-4">
           <TopNav
-            view={view}
+            organizations={workspace.organizations}
+            properties={workspace.properties}
             organization={selectedOrganization}
             property={selectedProperty}
             isSavingWorkspace={isSavingWorkspace}
+            showChatbotSelect={view === 'property' || view === 'chatbot'}
+            className="mb-6"
           />
         </div>
         <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
@@ -664,11 +812,14 @@ export function WorkspaceRoute({
           )}
           {(view === 'property' || view === 'chatbot') && selectedProperty && selectedOrganization && (
             <PropertyChatbotWorkspaceView
+              organizations={workspace.organizations}
+              properties={workspace.properties}
               organization={selectedOrganization}
               property={selectedProperty}
               chatInput={chatInput}
               chatMessages={chatMessages}
               chatError={chatError}
+              lastRetrievalLog={lastRetrievalLog}
               isSending={isSending}
               isSavingWorkspace={isSavingWorkspace}
               activeSettingsTab={activeSettingsTab}
@@ -688,18 +839,48 @@ export function WorkspaceRoute({
 }
 
 function TopNav({
-  view,
+  organizations,
+  properties,
   organization,
   property,
   isSavingWorkspace,
+  showChatbotSelect,
+  className = '',
 }: {
-  view: RouteView;
+  organizations: OrganizationWorkspace[];
+  properties: PropertyWorkspace[];
   organization: OrganizationWorkspace | null;
   property: PropertyWorkspace | null;
   isSavingWorkspace: boolean;
+  showChatbotSelect: boolean;
+  className?: string;
 }) {
+  const router = useRouter();
+  const organizationProperties = organization
+    ? properties.filter((item) => item.organizationId === organization.id)
+    : [];
+
+  function handleOrganizationChange(event: ChangeEvent<HTMLSelectElement>) {
+    const organizationId = event.target.value;
+    if (!organizationId) return;
+    window.localStorage.setItem(selectedOrganizationStorageKey, organizationId);
+    window.localStorage.removeItem(selectedPropertyStorageKey);
+    router.push(organizationPath(organizationId));
+  }
+
+  function handlePropertyChange(event: ChangeEvent<HTMLSelectElement>) {
+    const propertyId = event.target.value;
+    if (!propertyId) return;
+    const nextProperty = properties.find((item) => item.id === propertyId);
+    if (nextProperty) {
+      window.localStorage.setItem(selectedOrganizationStorageKey, nextProperty.organizationId);
+    }
+    window.localStorage.setItem(selectedPropertyStorageKey, propertyId);
+    router.push(propertyPath(propertyId));
+  }
+
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white pb-4">
+    <div className={`flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white pb-4 ${className}`.trim()}>
       <Link href="/" className="flex items-center gap-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-sm">
           PA
@@ -710,21 +891,43 @@ function TopNav({
         </div>
       </Link>
 
-      <nav className="flex flex-wrap items-center gap-2">
-        <TopNavLink href="/" active={view === 'organizations'} label="Organizations" />
-        <TopNavLink
-          href={organization ? organizationPath(organization.id) : '/'}
-          active={view === 'organization'}
-          label="Properties"
-          disabled={!organization}
-        />
-        <TopNavLink
-          href={property ? propertyPath(property.id) : organization ? organizationPath(organization.id) : '/'}
-          active={view === 'property' || view === 'chatbot'}
-          label="Workspace"
-          disabled={!property}
-        />
-      </nav>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-4 md:justify-center">
+        <TopNavSelect
+          label="Organization"
+          value={organization?.id ?? ''}
+          disabled={organizations.length === 0}
+          onChange={handleOrganizationChange}
+        >
+          {organizations.length === 0 ? (
+            <option value="">No organizations</option>
+          ) : (
+            organizations.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))
+          )}
+        </TopNavSelect>
+
+        {showChatbotSelect && (
+          <TopNavSelect
+            label="Chatbot"
+            value={property?.id ?? ''}
+            disabled={organizationProperties.length === 0}
+            onChange={handlePropertyChange}
+          >
+            {organizationProperties.length === 0 ? (
+              <option value="">No chatbots</option>
+            ) : (
+              organizationProperties.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))
+            )}
+          </TopNavSelect>
+        )}
+      </div>
 
       <div className="flex items-center gap-2">
         <div className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
@@ -733,6 +936,37 @@ function TopNav({
         <UserMenu />
       </div>
     </div>
+  );
+}
+
+function TopNavSelect({
+  label,
+  value,
+  disabled,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  disabled: boolean;
+  onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className="min-w-[15rem] border-b-2 border-slate-900 pb-1 text-left md:min-w-[16rem]">
+      <span className="block text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="relative mt-0.5 block">
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={onChange}
+          className="w-full appearance-none bg-transparent py-0.5 pr-8 text-sm font-semibold text-slate-950 outline-none transition disabled:cursor-not-allowed disabled:text-slate-400"
+        >
+          {children}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-1 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+      </span>
+    </label>
   );
 }
 
@@ -779,43 +1013,12 @@ function UserMenu() {
         </span>
       ) : (
         <form action="/auth/signout" method="post">
-          <button
-            type="submit"
-            className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-          >
+          <Button type="submit" variant="outline" size="sm">
             Sign out
-          </button>
+          </Button>
         </form>
       )}
     </div>
-  );
-}
-
-function TopNavLink({
-  href,
-  active,
-  label,
-  disabled = false,
-}: {
-  href: string;
-  active: boolean;
-  label: string;
-  disabled?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      aria-disabled={disabled}
-      className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
-        active
-          ? 'bg-blue-50 text-blue-700'
-          : disabled
-            ? 'pointer-events-none text-slate-300'
-            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-      }`}
-    >
-      {label}
-    </Link>
   );
 }
 
@@ -873,25 +1076,14 @@ function Field({
   multiline?: boolean;
 }) {
   return (
-    <label className="block">
-      <span className="text-xs font-medium text-slate-500">{label}</span>
+    <TextField value={value} onChange={onChange} className="flex flex-col gap-1">
+      <Label className="text-xs font-medium text-slate-500">{label}</Label>
       {multiline ? (
-        <textarea
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          rows={4}
-          className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
-        />
+        <TextArea placeholder={placeholder} rows={4} className="resize-none" />
       ) : (
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
-        />
+        <Input placeholder={placeholder} />
       )}
-    </label>
+    </TextField>
   );
 }
 
@@ -989,13 +1181,9 @@ function CreateOrganizationModal({
               {mode === 'edit' ? 'Edit organization' : 'Create organization'}
             </h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
-          >
+          <Button type="button" variant="ghost" size="sm" onPress={onClose}>
             Close
-          </button>
+          </Button>
         </div>
 
         <label className="mx-auto mt-5 flex w-32 cursor-pointer flex-col items-center text-center">
@@ -1023,19 +1211,12 @@ function CreateOrganizationModal({
         </div>
 
         <div className="mt-5 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => onOrganizationIconChange('')}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
-          >
+          <Button type="button" variant="outline" onPress={() => onOrganizationIconChange('')}>
             Clear picture
-          </button>
-          <button
-            disabled={isSavingWorkspace}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          </Button>
+          <Button type="submit" variant="primary" isDisabled={isSavingWorkspace}>
             {isSavingWorkspace ? 'Saving...' : mode === 'edit' ? 'Save changes' : 'Create and open'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -1090,13 +1271,9 @@ function CreatePropertyModal({
               {mode === 'edit' ? 'Edit property' : 'Create property'}
             </h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
-          >
+          <Button type="button" variant="ghost" size="sm" onPress={onClose}>
             Close
-          </button>
+          </Button>
         </div>
 
         <label className="mx-auto mt-5 flex w-32 cursor-pointer flex-col items-center text-center">
@@ -1124,19 +1301,12 @@ function CreatePropertyModal({
         </div>
 
         <div className="mt-5 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => onPropertyImageUrlChange('')}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
-          >
+          <Button type="button" variant="outline" onPress={() => onPropertyImageUrlChange('')}>
             Clear picture
-          </button>
-          <button
-            disabled={isSavingWorkspace}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          </Button>
+          <Button type="submit" variant="primary" isDisabled={isSavingWorkspace}>
             {isSavingWorkspace ? 'Saving...' : mode === 'edit' ? 'Save changes' : 'Create and open'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -1209,7 +1379,14 @@ function OrganizationsView({
                 Edit
               </button>
 
-              <Link href={organizationPath(organization.id)} className="block pr-16">
+              <Link
+                href={organizationPath(organization.id)}
+                onClick={() => {
+                  window.localStorage.setItem(selectedOrganizationStorageKey, organization.id);
+                  window.localStorage.removeItem(selectedPropertyStorageKey);
+                }}
+                className="block pr-16"
+              >
                 <div className="flex items-start gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-blue-50 text-sm font-semibold text-blue-700 ring-1 ring-blue-100">
                     <ImageIcon value={organization.icon} label={organization.name} />
@@ -1362,7 +1539,14 @@ function PropertyCard({
         Edit
       </button>
 
-      <Link href={propertyPath(property.id)} className="block pr-16">
+      <Link
+        href={propertyPath(property.id)}
+        onClick={() => {
+          window.localStorage.setItem(selectedOrganizationStorageKey, property.organizationId);
+          window.localStorage.setItem(selectedPropertyStorageKey, property.id);
+        }}
+        className="block pr-16"
+      >
         <div className="flex items-start gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-blue-50 text-sm font-semibold text-blue-700 ring-1 ring-blue-100">
             {property.imageUrl ? <ImageIcon value={property.imageUrl} label={property.name} /> : property.icon}
@@ -1392,11 +1576,14 @@ function PropertyCard({
 }
 
 function PropertyChatbotWorkspaceView({
+  organizations,
+  properties,
   organization,
   property,
   chatInput,
   chatMessages,
   chatError,
+  lastRetrievalLog,
   isSending,
   isSavingWorkspace,
   activeSettingsTab,
@@ -1408,11 +1595,14 @@ function PropertyChatbotWorkspaceView({
   onDelete,
   onSettingsTabChange,
 }: {
+  organizations: OrganizationWorkspace[];
+  properties: PropertyWorkspace[];
   organization: OrganizationWorkspace;
   property: PropertyWorkspace;
   chatInput: string;
   chatMessages: ChatMessage[];
   chatError: string | null;
+  lastRetrievalLog: ChatRetrievalLog | null;
   isSending: boolean;
   isSavingWorkspace: boolean;
   activeSettingsTab: SettingsTab;
@@ -1432,9 +1622,18 @@ function PropertyChatbotWorkspaceView({
   const providerOption = getProviderOption(property.chatbot.provider);
   const selectedModel = getModelValue(providerOption.value, property.chatbot.model);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (window.innerWidth < 1180) setIsSettingsCollapsed(true);
+      if (window.innerWidth < 900) setIsThreadsCollapsed(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
   return (
     <main className="flex h-screen overflow-hidden bg-white text-slate-950">
-      <aside className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-all ${isAppNavCollapsed ? 'w-16' : 'w-64'}`}>
+      <aside className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-all ${isAppNavCollapsed ? 'w-16' : 'w-56 xl:w-64'}`}>
         <div className={`flex h-16 items-center border-b border-slate-100 px-3 ${isAppNavCollapsed ? 'justify-center' : 'gap-3'}`}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 text-xs font-bold">PA</div>
           {!isAppNavCollapsed && (
@@ -1508,7 +1707,18 @@ function PropertyChatbotWorkspaceView({
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-6">
+        <div className="shrink-0 border-b border-slate-200 px-4 pt-4 lg:px-6">
+          <TopNav
+            organizations={organizations}
+            properties={properties}
+            organization={organization}
+            property={property}
+            isSavingWorkspace={isSavingWorkspace}
+            showChatbotSelect
+          />
+        </div>
+
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4 lg:px-6">
           <div>
             <p className="text-xs text-slate-500">Organization</p>
             <p className="text-sm font-semibold">{organization.name}</p>
@@ -1529,7 +1739,6 @@ function PropertyChatbotWorkspaceView({
             organization={organization}
             property={property}
             initialKnowledgeText={property.chatbot.knowledgeSources.join('\n\n')}
-            systemPrompt={property.chatbot.systemPrompt}
             isSavingWorkspace={isSavingWorkspace}
             onPersistKnowledgeBase={onPersistKnowledgeBase}
           />
@@ -1551,7 +1760,7 @@ function PropertyChatbotWorkspaceView({
               <span className="mt-4 text-xs text-slate-500">1</span>
             </section>
           ) : (
-            <section className="w-80 shrink-0 border-r border-slate-200 bg-slate-50/60">
+            <section className="w-56 shrink-0 border-r border-slate-200 bg-slate-50/60 lg:w-64 xl:w-80">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
                 <h3 className="text-lg font-bold">Threads <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-500">1</span></h3>
                 <div className="flex items-center gap-2">
@@ -1653,7 +1862,7 @@ function PropertyChatbotWorkspaceView({
               <span className="mt-8 rotate-90 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-500">Settings</span>
             </aside>
           ) : (
-          <aside className="w-[420px] shrink-0 overflow-y-auto bg-white p-6">
+          <aside className="w-72 shrink-0 overflow-y-auto bg-white p-4 xl:w-[420px] xl:p-6">
             <div className="mb-5 flex items-center gap-8 border-b border-slate-200">
               <button
                 type="button"
@@ -1670,12 +1879,23 @@ function PropertyChatbotWorkspaceView({
                 type="button"
                 onClick={() => onSettingsTabChange('llm')}
                 className={`border-b-2 px-1 pb-3 text-sm font-semibold ${
-                  activeSettingsTab !== 'instructions'
+                  activeSettingsTab === 'llm'
                     ? 'border-blue-600 text-blue-700'
                     : 'border-transparent text-slate-500'
                 }`}
               >
-                Settings
+                Model
+              </button>
+              <button
+                type="button"
+                onClick={() => onSettingsTabChange('retrieval')}
+                className={`border-b-2 px-1 pb-3 text-sm font-semibold ${
+                  activeSettingsTab === 'retrieval'
+                    ? 'border-blue-600 text-blue-700'
+                    : 'border-transparent text-slate-500'
+                }`}
+              >
+                Retrieval
               </button>
               <button
                 type="button"
@@ -1709,6 +1929,8 @@ function PropertyChatbotWorkspaceView({
                   {isSavingWorkspace ? 'Saving...' : 'Save instructions'}
                 </button>
               </div>
+            ) : activeSettingsTab === 'retrieval' ? (
+              <RetrievalSettingsPreview compact property={property} latestRetrievalLog={lastRetrievalLog} onChatbotUpdate={onChatbotUpdate} />
             ) : (
               <div className="space-y-7">
                 <div>
@@ -1788,11 +2010,257 @@ function PropertyChatbotWorkspaceView({
           </aside>
           )}
         </div>
+        ) : activeWorkspaceSection === 'Settings' ? (
+          <SettingsWorkspaceView
+            property={property}
+            providerOption={providerOption}
+            selectedModel={selectedModel}
+            isSavingWorkspace={isSavingWorkspace}
+            onChatbotUpdate={onChatbotUpdate}
+            onPersistChatbot={onPersistChatbot}
+            latestRetrievalLog={lastRetrievalLog}
+          />
         ) : (
           <WorkspaceSectionPlaceholder section={activeWorkspaceSection} />
         )}
       </section>
     </main>
+  );
+}
+
+function SettingsWorkspaceView({
+  property,
+  providerOption,
+  selectedModel,
+  isSavingWorkspace,
+  onChatbotUpdate,
+  onPersistChatbot,
+  latestRetrievalLog,
+}: {
+  property: PropertyWorkspace;
+  providerOption: ReturnType<typeof getProviderOption>;
+  selectedModel: string;
+  isSavingWorkspace: boolean;
+  onChatbotUpdate: (updates: Parameters<typeof updatePropertyChatbot>[2]) => void;
+  onPersistChatbot: () => void;
+  latestRetrievalLog: ChatRetrievalLog | null;
+}) {
+  return (
+    <section className="min-w-0 flex-1 overflow-y-auto bg-white p-6 lg:p-8">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-8 flex items-center gap-3">
+          <span className="h-8 w-1 bg-cyan-400" />
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-950">Settings</h1>
+            <p className="mt-1 text-sm text-slate-500">Manage chatbot instructions, model behavior, and retrieval controls for {property.name}.</p>
+          </div>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-950">Instructions</h2>
+            <p className="mt-2 text-sm text-slate-500">Set how this property chatbot should behave. This is the dedicated settings section for the saved system prompt.</p>
+            <div className="mt-5">
+              <Field
+                label="System instructions"
+                value={property.chatbot.systemPrompt}
+                onChange={(systemPrompt) => onChatbotUpdate({ systemPrompt })}
+                placeholder="How should this property assistant behave?"
+                multiline
+              />
+            </div>
+            <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50/60 p-4">
+              <h3 className="text-sm font-bold text-slate-950">Current system prompt</h3>
+              <p className="mt-1 text-xs font-semibold text-slate-500">This instruction context is saved here, not inside the Knowledge Base editor.</p>
+              <p className="mt-3 whitespace-pre-wrap rounded-lg border border-blue-100 bg-white p-3 text-sm leading-6 text-slate-700">
+                {property.chatbot.systemPrompt || 'No system prompt saved yet.'}
+              </p>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-950">Model</h2>
+            <div className="mt-5 space-y-5">
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-900">Language Model</span>
+                <select
+                  value={providerOption.value}
+                  onChange={(event) => {
+                    const nextProvider = getProviderOption(event.target.value);
+                    onChatbotUpdate({
+                      provider: nextProvider.value,
+                      model: nextProvider.models[0].value,
+                    });
+                  }}
+                  className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+                >
+                  {llmProviders.map((provider) => (
+                    <option key={provider.value} value={provider.value}>
+                      {provider.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-900">Model</span>
+                <select
+                  value={selectedModel}
+                  onChange={(event) => onChatbotUpdate({ model: event.target.value })}
+                  className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+                >
+                  {providerOption.models.map((model) => (
+                    <option key={model.value} value={model.value}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-900">Temperature: <span className="text-blue-700">{property.chatbot.temperature}</span></span>
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  value={property.chatbot.temperature}
+                  onChange={(event) => onChatbotUpdate({ temperature: Number(event.target.value) })}
+                  className="mt-3 w-full accent-blue-600"
+                />
+              </label>
+            </div>
+          </section>
+
+          <RetrievalSettingsPreview property={property} latestRetrievalLog={latestRetrievalLog} onChatbotUpdate={onChatbotUpdate} />
+        </div>
+
+        <button
+          type="button"
+          onClick={onPersistChatbot}
+          disabled={isSavingWorkspace}
+          className="mt-6 rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isSavingWorkspace ? 'Saving...' : 'Save settings'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function RetrievalSettingsPreview({
+  compact = false,
+  property,
+  latestRetrievalLog,
+  onChatbotUpdate,
+}: {
+  compact?: boolean;
+  property: PropertyWorkspace;
+  latestRetrievalLog: ChatRetrievalLog | null;
+  onChatbotUpdate: (updates: Parameters<typeof updatePropertyChatbot>[2]) => void;
+}) {
+  return (
+    <section className={`rounded-xl border border-slate-200 bg-white ${compact ? 'p-0 shadow-none' : 'p-5 shadow-sm xl:col-span-2'}`}>
+      <div className={compact ? '' : 'max-w-3xl'}>
+        <h2 className="text-lg font-bold text-slate-950">Retrieval Settings</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Configure how the chatbot pulls chunks from the property knowledge base during testing, then inspect the latest retrieval below.
+        </p>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-sm font-semibold text-slate-900">Chunks to retrieve</span>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={property.chatbot.retrievalTopK}
+              onChange={(event) => onChatbotUpdate({ retrievalTopK: Math.max(1, Number(event.target.value) || 1) })}
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm font-semibold text-slate-900">Memory mode</span>
+            <select
+              value={property.chatbot.retrievalMemoryMode}
+              onChange={(event) => onChatbotUpdate({ retrievalMemoryMode: event.target.value as PropertyWorkspace['chatbot']['retrievalMemoryMode'] })}
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+            >
+              <option value="hybrid">Hybrid: chat window + vector retrieval</option>
+              <option value="rolling_window">Rolling chat window</option>
+              <option value="summary_memory">Summary memory</option>
+              <option value="retrieval_only">Retrieval only</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-sm font-semibold text-slate-900">Similarity threshold</span>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step="0.05"
+              value={property.chatbot.retrievalSimilarityThreshold}
+              onChange={(event) =>
+                onChatbotUpdate({
+                  retrievalSimilarityThreshold: Math.min(1, Math.max(0, Number(event.target.value) || 0)),
+                })
+              }
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm font-semibold text-slate-900">Chat history window</span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={property.chatbot.retrievalHistoryWindow}
+              onChange={(event) => onChatbotUpdate({ retrievalHistoryWindow: Math.max(1, Number(event.target.value) || 1) })}
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+            />
+          </label>
+        </div>
+
+        <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-900">Latest retrieval</span>
+            <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-slate-600">
+              Mode: {latestRetrievalLog?.retrieval || 'not run'}
+            </span>
+            <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-slate-600">
+              Memory: {latestRetrievalLog?.memoryMode || property.chatbot.retrievalMemoryMode}
+            </span>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+            <span className="rounded-full bg-white px-2 py-1">top-k {latestRetrievalLog?.topK ?? property.chatbot.retrievalTopK}</span>
+            <span className="rounded-full bg-white px-2 py-1">threshold {latestRetrievalLog?.similarityThreshold ?? property.chatbot.retrievalSimilarityThreshold}</span>
+            <span className="rounded-full bg-white px-2 py-1">history {latestRetrievalLog?.historyWindow ?? property.chatbot.retrievalHistoryWindow}</span>
+            <span className="rounded-full bg-white px-2 py-1">{latestRetrievalLog?.results.length ?? 0} chunks returned</span>
+          </div>
+
+          {latestRetrievalLog && latestRetrievalLog.results.length > 0 ? (
+            <div className="mt-4 space-y-3">
+              {latestRetrievalLog.results.map((result, index) => (
+                <article key={`${result.source_id || result.title}-${index}`} className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-slate-900">{result.source_name || result.title}</p>
+                    {typeof result.similarity === 'number' && (
+                      <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                        {result.similarity.toFixed(3)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {result.category} · chunk {(result.chunk_index ?? 0) + 1}
+                    {typeof result.chunk_count === 'number' ? ` of ${result.chunk_count}` : ''}
+                  </p>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-slate-500">Send a chatbot test message to inspect which chunks were retrieved.</p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -2018,30 +2486,69 @@ function KnowledgeBaseWorkspaceView({
   organization,
   property,
   initialKnowledgeText,
-  systemPrompt,
   isSavingWorkspace,
   onPersistKnowledgeBase,
 }: {
   organization: OrganizationWorkspace;
   property: PropertyWorkspace;
   initialKnowledgeText: string;
-  systemPrompt: string;
   isSavingWorkspace: boolean;
   onPersistKnowledgeBase: (knowledgeText: string) => Promise<void>;
 }) {
-  const [knowledgeText, setKnowledgeText] = useState(initialKnowledgeText);
+  const [knowledgeText, setKnowledgeText] = useState(() => initialKnowledgeText);
   const [status, setStatus] = useState<string | null>(null);
   const [activeKnowledgeTab, setActiveKnowledgeTab] = useState('Overview');
   const [indexingStatus, setIndexingStatus] = useState<KnowledgeIndexingStatus | null>(null);
   const [sourceCount, setSourceCount] = useState(0);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSourceEntry[]>([]);
   const [retrievalQuery, setRetrievalQuery] = useState('');
   const [retrievalResults, setRetrievalResults] = useState<KnowledgeSearchPreview[]>([]);
   const [retrievalMode, setRetrievalMode] = useState<'vector' | 'text' | null>(null);
   const [isRetrieving, setIsRetrieving] = useState(false);
+  const [isChunkSettingsOpen, setIsChunkSettingsOpen] = useState(false);
+  const [chunkSettings, setChunkSettings] = useState<ChunkSettings>(() => {
+    if (typeof window === 'undefined') {
+      return defaultChunkSettings;
+    }
+
+    try {
+      const saved = window.localStorage.getItem(getKnowledgeChunkSettingsStorageKey(property.id));
+      return parseChunkSettings(saved ? JSON.parse(saved) : null);
+    } catch {
+      return defaultChunkSettings;
+    }
+  });
+  const [chunkSettingsDraft, setChunkSettingsDraft] = useState<ChunkSettings>(() => chunkSettings);
   const characterCount = knowledgeText.length;
   const approximateTokens = Math.ceil(characterCount / 4);
   const knowledgeTabs = ['Overview', 'File', 'Text', 'Website', 'API', 'Database', 'Tools'];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadKnowledgeSources() {
+      try {
+        const response = await fetch(`/api/kb/list?propertyId=${property.id}`, { cache: 'no-store' });
+        const payload = (await response.json()) as { success: boolean; data?: KnowledgeSourceEntry[] };
+        if (!cancelled && response.ok && payload.success && Array.isArray(payload.data)) {
+          setKnowledgeSources(payload.data);
+          setSourceCount(payload.data.length);
+        }
+      } catch {
+        if (!cancelled) {
+          setKnowledgeSources([]);
+          setSourceCount(0);
+        }
+      }
+    }
+
+    void loadKnowledgeSources();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [property.id]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2097,7 +2604,11 @@ function KnowledgeBaseWorkspaceView({
         data?: LegacyKnowledgeEntry;
       };
       if (!response.ok || !payload.success) throw new Error(payload.error || 'Failed to index knowledge source');
-      if (payload.data) setSourceCount((current) => Math.max(current, 1));
+      if (payload.data) {
+        const nextSources = [payload.data as KnowledgeSourceEntry, ...knowledgeSources.filter((entry) => entry.id !== payload.data?.id)];
+        setKnowledgeSources(nextSources);
+        setSourceCount(nextSources.length);
+      }
       if (payload.indexing) setIndexingStatus(payload.indexing);
       setStatus(payload.indexing?.status === 'indexed'
         ? `Vector indexed ${payload.indexing.chunkCount} chunk${payload.indexing.chunkCount === 1 ? '' : 's'}.`
@@ -2130,6 +2641,9 @@ function KnowledgeBaseWorkspaceView({
         propertyName: property.name,
         characterCount,
         approximateTokens,
+        chunkStrategy: chunkSettings.strategy,
+        chunkSize: chunkSettings.chunkSize,
+        chunkOverlap: chunkSettings.chunkOverlap,
       },
     });
   }
@@ -2138,21 +2652,70 @@ function KnowledgeBaseWorkspaceView({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const text = await file.text();
-    await uploadKnowledgeSource({
-      sourceType: 'file',
-      sourceId: `property:${property.id}:file:${file.name}`,
-      title: file.name,
-      sourceName: file.name,
-      content: text,
-      metadata: {
-        origin: 'workspace-file-tab',
-        fileName: file.name,
-        fileType: file.type || 'unknown',
-        fileSize: file.size,
-      },
-    });
+    setIsIndexing(true);
+    setStatus(null);
+    setIndexingStatus(null);
+    try {
+      const formData = new FormData();
+      formData.set('file', file);
+      formData.set('organizationId', organization.id);
+      formData.set('organizationName', organization.name);
+      formData.set('propertyId', property.id);
+      formData.set('propertyName', property.name);
+      formData.set('sourceType', 'file');
+      formData.set('overwrite', 'false');
+      formData.set('chunkStrategy', chunkSettings.strategy);
+      formData.set('chunkSize', String(chunkSettings.chunkSize));
+      formData.set('chunkOverlap', String(chunkSettings.chunkOverlap));
+
+      const response = await fetch('/api/kb/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const payload = (await response.json()) as {
+        success: boolean;
+        error?: string;
+        indexing?: KnowledgeIndexingStatus;
+        data?: KnowledgeSourceEntry;
+      };
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Failed to upload knowledge file');
+      if (payload.data) {
+        const nextSources = [payload.data, ...knowledgeSources.filter((entry) => entry.id !== payload.data?.id)];
+        setKnowledgeSources(nextSources);
+        setSourceCount(nextSources.length);
+      }
+      if (payload.indexing) setIndexingStatus(payload.indexing);
+      setStatus(payload.indexing?.status === 'indexed' ? `Uploaded and indexed ${file.name}.` : payload.indexing?.error || `Uploaded ${file.name}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to upload knowledge file.');
+    } finally {
+      setIsIndexing(false);
+    }
     event.target.value = '';
+  }
+
+  async function handleDeleteKnowledgeSource(entry: KnowledgeSourceEntry) {
+    setStatus(null);
+    try {
+      const response = await fetch('/api/kb/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: entry.id,
+          sourceId: entry.source_id,
+          sourceType: entry.source_type,
+          propertyId: property.id,
+        }),
+      });
+      const payload = (await response.json()) as { success: boolean; error?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Failed to delete source');
+      const nextSources = knowledgeSources.filter((source) => source.id !== entry.id);
+      setKnowledgeSources(nextSources);
+      setSourceCount(nextSources.length);
+      setStatus(`Deleted ${entry.title}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Failed to delete source.');
+    }
   }
 
   async function handleRetrievalPreview() {
@@ -2165,7 +2728,13 @@ function KnowledgeBaseWorkspaceView({
       const response = await fetch('/api/kb/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: retrievalQuery, matchCount: 5 }),
+        body: JSON.stringify({
+          query: retrievalQuery,
+          propertyId: property.id,
+          organizationId: organization.id,
+          matchCount: property.chatbot.retrievalTopK,
+          matchThreshold: property.chatbot.retrievalSimilarityThreshold,
+        }),
       });
       const payload = (await response.json()) as {
         success: boolean;
@@ -2181,6 +2750,25 @@ function KnowledgeBaseWorkspaceView({
     } finally {
       setIsRetrieving(false);
     }
+  }
+
+  function openChunkSettings() {
+    setChunkSettingsDraft(chunkSettings);
+    setIsChunkSettingsOpen(true);
+  }
+
+  function saveChunkSettings() {
+    const normalizedSettings = {
+      ...chunkSettingsDraft,
+      chunkSize: Math.max(1, Math.round(chunkSettingsDraft.chunkSize || defaultChunkSettings.chunkSize)),
+      chunkOverlap: Math.max(0, Math.round(chunkSettingsDraft.chunkOverlap || defaultChunkSettings.chunkOverlap)),
+    };
+
+    setChunkSettings(normalizedSettings);
+    setChunkSettingsDraft(normalizedSettings);
+    window.localStorage.setItem(getKnowledgeChunkSettingsStorageKey(property.id), JSON.stringify(normalizedSettings));
+    setIsChunkSettingsOpen(false);
+    setStatus('Chunk settings saved.');
   }
 
   return (
@@ -2270,44 +2858,66 @@ function KnowledgeBaseWorkspaceView({
           )}
 
           {activeKnowledgeTab === 'File' && (
-            <section className="mt-5 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+            <section className="mt-5 space-y-5">
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">+</div>
               <h2 className="mt-4 text-lg font-bold text-slate-950">Upload a file source</h2>
-              <p className="mt-2 text-sm text-slate-500">TXT, CSV, Markdown, and other text-readable files can be indexed now. PDF/DOC parsing can be added next.</p>
+              <p className="mt-2 text-sm text-slate-500">Uploads are stored in Supabase Storage under this property, then indexed when the parser supports the file format.</p>
+              <p className="mt-3 text-xs font-semibold text-slate-500">
+                Current upload chunk settings: {getChunkStrategyLabel(chunkSettings.strategy)} · {chunkSettings.chunkSize}/{chunkSettings.chunkOverlap}
+              </p>
               <label className="mt-5 inline-flex cursor-pointer rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500">
                 {isIndexing ? 'Indexing...' : 'Choose file'}
                 <input type="file" className="sr-only" onChange={handleFileChange} disabled={isIndexing} />
               </label>
+              </div>
+
+              <div className="space-y-3">
+                {knowledgeSources.filter((entry) => entry.source_type === 'file').length > 0 ? (
+                  knowledgeSources
+                    .filter((entry) => entry.source_type === 'file')
+                    .map((entry) => {
+                      const metadata = (entry.metadata || {}) as Record<string, unknown>;
+                      return (
+                        <article key={entry.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-bold text-slate-950">{entry.title}</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {String(metadata.fileType || 'unknown')} · {typeof metadata.fileSize === 'number' ? `${metadata.fileSize} bytes` : 'size unknown'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <details className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                <summary className="cursor-pointer font-semibold text-slate-700">Info</summary>
+                                <div className="mt-2 space-y-1">
+                                  <p>Parser: {String(metadata.parserType || 'unknown')}</p>
+                                  <p>Status: {String(metadata.parserStatus || metadata.indexingStatus || 'unknown')}</p>
+                                  <p>Chunking: {String(metadata.chunkStrategy || 'recursive_character')}</p>
+                                  <p>Chunk size: {String(metadata.chunkSize || '-')}</p>
+                                  <p>Overlap: {String(metadata.chunkOverlap || '-')}</p>
+                                </div>
+                              </details>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteKnowledgeSource(entry)}
+                                className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+                              >
+                                X
+                              </button>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })
+                ) : (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                    No files uploaded for this property yet.
+                  </div>
+                )}
+              </div>
             </section>
           )}
-
-          {activeKnowledgeTab === 'Text' && <section className="mt-5 rounded-lg border border-blue-100 bg-blue-50/60 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-bold text-slate-950">Current system prompt</h2>
-                <p className="mt-1 text-xs font-semibold text-slate-500">This is the instruction context saved for this property chatbot.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setKnowledgeText((current) => {
-                    const trimmedPrompt = systemPrompt.trim();
-                    if (!trimmedPrompt) return current;
-                    if (!current.trim()) return trimmedPrompt;
-                    if (current.includes(trimmedPrompt)) return current;
-                    return `${current.trim()}\n\n${trimmedPrompt}`;
-                  });
-                  setStatus('System prompt added to the editor.');
-                }}
-                className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-50"
-              >
-                Add to text
-              </button>
-            </div>
-            <p className="mt-3 whitespace-pre-wrap rounded-lg border border-blue-100 bg-white p-3 text-sm leading-6 text-slate-700">
-              {systemPrompt || 'No system prompt saved yet.'}
-            </p>
-          </section>}
 
           {activeKnowledgeTab === 'Text' && <label className="mt-5 block">
             <span className="sr-only">Knowledge base text</span>
@@ -2332,53 +2942,72 @@ function KnowledgeBaseWorkspaceView({
             </section>
           )}
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
-              <span className="rounded-full bg-slate-100 px-3 py-1">{characterCount.toLocaleString()} characters</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">{approximateTokens.toLocaleString()} approx. tokens</span>
-              <span className="rounded-full bg-slate-100 px-3 py-1">{knowledgeText.trim() ? '1 text block' : 'No text saved'}</span>
-            </div>
-            {status && <p className="text-sm font-semibold text-slate-500">{status}</p>}
-          </div>
-
-          <div className="mt-5 flex items-center gap-4">
-            <button
-              type="submit"
-              disabled={isSavingWorkspace}
-              className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSavingWorkspace ? 'Updating...' : 'Update chatbot'}
-            </button>
-            {activeKnowledgeTab === 'Text' && (
+          <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                disabled={isSavingWorkspace}
+                className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSavingWorkspace ? 'Updating...' : 'Update chatbot'}
+              </button>
+              {activeKnowledgeTab === 'Text' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleTextIndex}
+                    disabled={isIndexing || !knowledgeText.trim()}
+                    className="rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isIndexing ? 'Indexing...' : 'Index to vectors'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openChunkSettings}
+                    className="inline-flex h-12 w-12 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50"
+                    aria-label="Open chunk settings"
+                    title="Chunk settings"
+                  >
+                    <SlidersHorizontal className="h-5 w-5" />
+                  </button>
+                </>
+              )}
               <button
                 type="button"
-                onClick={handleTextIndex}
-                disabled={isIndexing || !knowledgeText.trim()}
-                className="rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => {
+                  setKnowledgeText('');
+                  setStatus(null);
+                }}
+                className="rounded-lg border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
               >
-                {isIndexing ? 'Indexing...' : 'Index to vectors'}
+                Clear text
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setKnowledgeText(systemPrompt.trim())}
-              className="rounded-lg border border-blue-100 px-5 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
-            >
-              Use system prompt
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setKnowledgeText('');
-                setStatus(null);
-              }}
-              className="rounded-lg border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-            >
-              Clear text
-            </button>
+            </div>
+
+            <div className="flex flex-col items-start gap-2 xl:items-end">
+              <div className="flex flex-wrap justify-start gap-2 text-xs font-semibold text-slate-500 xl:justify-end">
+                <span className="rounded-full bg-slate-100 px-3 py-1">{characterCount.toLocaleString()} characters</span>
+                <span className="rounded-full bg-slate-100 px-3 py-1">{approximateTokens.toLocaleString()} approx. tokens</span>
+                <span className="rounded-full bg-slate-100 px-3 py-1">{knowledgeText.trim() ? '1 text block' : 'No text saved'}</span>
+                {activeKnowledgeTab === 'Text' && (
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">
+                    {getChunkStrategyLabel(chunkSettings.strategy)} · {chunkSettings.chunkSize}/{chunkSettings.chunkOverlap}
+                  </span>
+                )}
+              </div>
+              {status && <p className="text-sm font-semibold text-slate-500 xl:text-right">{status}</p>}
+            </div>
           </div>
         </form>
       </div>
+
+      <ChunkSettingsModal
+        open={isChunkSettingsOpen}
+        value={chunkSettingsDraft}
+        onClose={() => setIsChunkSettingsOpen(false)}
+        onChange={setChunkSettingsDraft}
+        onSave={saveChunkSettings}
+      />
     </section>
   );
 }
@@ -2388,6 +3017,102 @@ function KbMetric({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
       <p className="mt-3 text-lg font-bold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function ChunkSettingsModal({
+  open,
+  value,
+  onClose,
+  onChange,
+  onSave,
+}: {
+  open: boolean;
+  value: ChunkSettings;
+  onClose: () => void;
+  onChange: (value: ChunkSettings) => void;
+  onSave: () => void;
+}) {
+  if (!open) return null;
+
+  const chunkStrategies: Array<{ value: ChunkStrategy; label: string }> = [
+    { value: 'recursive_character', label: 'Recursive Character Splitter' },
+    { value: 'sentence', label: 'Sentence Splitter' },
+    { value: 'latex', label: 'LaTeX Splitter' },
+    { value: 'markdown', label: 'Markdown Splitter' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-4">
+      <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Knowledge Base</p>
+            <h3 className="mt-1 text-2xl font-bold text-slate-900">Chunk Settings</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-5">
+          <fieldset>
+            <legend className="text-base font-semibold text-slate-900">Chunk type</legend>
+            <div className="mt-3 space-y-3">
+              {chunkStrategies.map((strategy) => (
+                <label key={strategy.value} className="flex items-center gap-3 text-sm text-slate-700">
+                  <input
+                    type="radio"
+                    name="chunk-strategy"
+                    checked={value.strategy === strategy.value}
+                    onChange={() => onChange({ ...value, strategy: strategy.value })}
+                    className="h-4 w-4 border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{strategy.label}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-600">Chunk Size</span>
+              <input
+                type="number"
+                min={1}
+                value={value.chunkSize}
+                onChange={(event) =>
+                  onChange({ ...value, chunkSize: Number(event.target.value) || defaultChunkSettings.chunkSize })
+                }
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-50"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-600">Chunk Overlap</span>
+              <input
+                type="number"
+                min={0}
+                value={value.chunkOverlap}
+                onChange={(event) =>
+                  onChange({ ...value, chunkOverlap: Math.max(0, Number(event.target.value) || 0) })
+                }
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-50"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <Button type="button" variant="primary" onPress={onSave}>
+            Save
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

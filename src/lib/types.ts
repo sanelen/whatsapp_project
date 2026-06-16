@@ -28,8 +28,10 @@ export interface KnowledgeSearchResult {
   title: string;
   content: string;
   source_type?: string;
+  source_id?: string;
   source_name?: string;
   chunk_index?: number;
+  chunk_count?: number;
   metadata?: Record<string, unknown>;
   similarity?: number;
 }

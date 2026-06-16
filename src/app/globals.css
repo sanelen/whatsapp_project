@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* HeroUI v3 prebuilt styles. Import order matters: tailwindcss must come first. */
+@import "@heroui/styles";
 
 :root {
   --background: #ffffff;

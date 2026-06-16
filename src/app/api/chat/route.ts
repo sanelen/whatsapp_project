@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
-import { getPromptSettings } from '@/lib/supabase';
+import { getPromptSettings, getSupabaseAdmin } from '@/lib/supabase';
 import { requireApiAuth } from '@/lib/auth/api-guard';
+import { resolveOpenAiEmbeddingKey, retrieveKnowledge } from '@/lib/kb/vector';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -13,6 +14,13 @@ type ChatRequest = {
   messages?: ChatMessage[];
   stream?: boolean;
   systemPrompt?: string;
+  propertyId?: string;
+  retrieval?: {
+    topK?: number;
+    similarityThreshold?: number;
+    memoryMode?: 'hybrid' | 'rolling_window' | 'summary_memory' | 'retrieval_only';
+    historyWindow?: number;
+  };
 };
 
 type UsageShape = {
@@ -76,53 +84,89 @@ export async function POST(request: NextRequest) {
         ? body.systemPrompt.trim().slice(0, 6000)
         : dbSystemPrompt;
 
-    const filtered = messages
+    const windowed = messages
       .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
       .map((m) => ({ role: m.role, content: m.content.trim() }))
       .filter((m) => m.content.length > 0)
-      .slice(-20);
+      .slice(-Math.max(1, body.retrieval?.historyWindow ?? 20));
 
-    if (filtered.length === 0) {
+    if (windowed.length === 0) {
       return NextResponse.json(
         { error: 'At least one chat message is required' },
         { status: 400 }
       );
     }
 
+    // Memory mode controls how prior turns vs. retrieved knowledge are combined:
+    //   hybrid         → conversation history + KB retrieval (default)
+    //   rolling_window → conversation history only, no KB retrieval
+    //   retrieval_only → only the latest user turn + KB retrieval
+    //   summary_memory → not yet implemented; falls back to hybrid
+    const memoryMode = body.retrieval?.memoryMode ?? 'hybrid';
+    const useRetrieval = memoryMode !== 'rolling_window';
+    const lastUserTurn = windowed.findLast((m) => m.role === 'user');
+    const filtered =
+      memoryMode === 'retrieval_only' && lastUserTurn ? [lastUserTurn] : windowed;
+
     // Fetch relevant KB entries
     let kbContext = '';
+    let retrievalPayload:
+      | {
+          retrieval?: 'vector' | 'text';
+          propertyId?: string;
+          memoryMode?: string;
+          results: Array<{
+            category: string;
+            title: string;
+            source_type?: string;
+            source_id?: string;
+            source_name?: string;
+            similarity?: number;
+            chunk_index?: number;
+            chunk_count?: number;
+          }>;
+        }
+      | undefined;
     const lastUserMessage = filtered.findLast((m) => m.role === 'user')?.content || '';
-    if (lastUserMessage) {
+    if (lastUserMessage && useRetrieval) {
       try {
-        const kbRes = await fetch(`${process.env.APP_URL || 'http://localhost:3000'}/api/kb/search`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: lastUserMessage }),
+        // Retrieve knowledge directly (no internal HTTP hop) so the chat route
+        // does not depend on APP_URL/hostname or re-authenticate against itself.
+        const { retrieval, results } = await retrieveKnowledge({
+          admin: getSupabaseAdmin(),
+          apiKey: resolveOpenAiEmbeddingKey(),
+          query: lastUserMessage,
+          propertyId: body.propertyId,
+          matchCount: body.retrieval?.topK ?? 5,
+          matchThreshold: body.retrieval?.similarityThreshold ?? 0.2,
         });
-        if (kbRes.ok) {
-          const kbData = await kbRes.json() as {
-            retrieval?: 'vector' | 'text';
-            data?: Array<{
-              category: string;
-              title: string;
-              content: string;
-              source_type?: string;
-              source_name?: string;
-              similarity?: number;
-            }>;
+
+        if (results.length > 0) {
+          const retrievalLabel = retrieval === 'vector' ? 'Vector-retrieved' : 'Text-matched';
+          retrievalPayload = {
+            retrieval,
+            propertyId: body.propertyId,
+            memoryMode: body.retrieval?.memoryMode,
+            results: results.map((kb) => ({
+              category: kb.category,
+              title: kb.title,
+              source_type: kb.source_type,
+              source_id: kb.source_id,
+              source_name: kb.source_name,
+              similarity: kb.similarity,
+              chunk_index: kb.chunk_index,
+              chunk_count: kb.chunk_count,
+            })),
           };
-          if (Array.isArray(kbData.data) && kbData.data.length > 0) {
-            const retrievalLabel = kbData.retrieval === 'vector' ? 'Vector-retrieved' : 'Text-matched';
-            kbContext = `\n\n--- Relevant Knowledge Base (${retrievalLabel}) ---\n` +
-              kbData.data.map((kb) => {
-                const source = kb.source_name || kb.category;
-                const score = typeof kb.similarity === 'number' ? ` score=${kb.similarity.toFixed(3)}` : '';
-                return `[${source}] ${kb.title}${score}\n${kb.content}`;
-              }).join('\n---\n');
-          }
+          kbContext = `\n\n--- Relevant Knowledge Base (${retrievalLabel}) ---\n` +
+            results.map((kb) => {
+              const source = kb.source_name || kb.category;
+              const score = typeof kb.similarity === 'number' ? ` score=${kb.similarity.toFixed(3)}` : '';
+              return `[${source}] ${kb.title}${score}\n${kb.content}`;
+            }).join('\n---\n');
         }
       } catch (err) {
-        console.error('KB search failed:', err);
+        console.error('KB retrieval failed:', err);
       }
     }
 
@@ -199,7 +243,7 @@ export async function POST(request: NextRequest) {
       });
       const reply = completion.content[0]?.type === 'text' ? completion.content[0].text : 'No response.';
       const usage = { prompt_tokens: completion.usage.input_tokens, completion_tokens: completion.usage.output_tokens };
-      return NextResponse.json({ reply, usage, cost: calculateCost(usage) });
+      return NextResponse.json({ reply, usage, cost: calculateCost(usage), retrieval: retrievalPayload });
     }
 
     // ── OPENAI-COMPATIBLE (OpenAI, Groq, Mistral, Together, custom) ──────────
@@ -259,7 +303,7 @@ export async function POST(request: NextRequest) {
     const usage = completion.usage as UsageShape | undefined;
     const normalizedUsage = usage ? { prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens, cached_tokens: usage.prompt_tokens_details?.cached_tokens ?? 0 } : undefined;
 
-    return NextResponse.json({ reply, usage: normalizedUsage, cost: usage ? calculateCost(usage) : undefined });
+    return NextResponse.json({ reply, usage: normalizedUsage, cost: usage ? calculateCost(usage) : undefined, retrieval: retrievalPayload });
   } catch (error) {
     const status =
       typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'

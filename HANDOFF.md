@@ -1,6 +1,6 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
-**Last updated:** 2026-06-04, local auth bypass + KB text-source cleanup
+**Last updated:** 2026-06-15 — KB pipeline hardened, HeroUI adopted, audio transcription CLI shipped, and tenant-operations planning docs + flow diagrams added (see §12)
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`
 **Working branch:** `sanelengcobo/aut-9-extend-supabase-schema-for-tenant-register-and-assistant`
@@ -159,6 +159,124 @@ Pre-existing, now affected by the flatten (referenced in AUT-15):
 6. **`HANDOFF.md` commit** — this file may still be uncommitted; commit + push if desired.
 7. **(Cosmetic)** Vercel dashboard Node version still says 24.x; build now uses 22.x
    from `engines` and logs an informational notice. Set dashboard to 22.x to silence.
+
+### 6a. Current roadmap execution status (2026-06-14)
+
+Work completed since the earlier handoff:
+
+- Restored workspace top-nav dropdown behavior so organization/chatbot selection is visible in the correct screens and persisted with `localStorage`.
+- Added KB roadmap docs:
+  - `docs/ROADMAP.md`
+  - `docs/roadmap/ui/README.md`
+  - `docs/roadmap/functionality/vector-embeddings.md`
+- Added a vector audit script:
+  - `scripts/audit-vector-pipeline.mjs`
+  - npm script `audit:vector-pipeline`
+- Captured audit findings in:
+  - `docs/audits/vector-pipeline-2026-06-14T19-52-40-546Z.md`
+- Moved the KB system prompt editor out of the Text tab and into Settings.
+- Added text chunk-settings UI in the KB Text tab footer, persisted per property in local storage, and threaded those settings into indexing metadata.
+
+Current implementation pass now underway:
+
+- property-scoped retrieval filters
+- real multipart file ingestion
+- Supabase Storage-backed uploads
+- retrieval metadata returned to chat/test surfaces
+- source listing and delete/info controls for KB files
+
+Implementation landed in code (2026-06-14):
+
+- Added KB file parsing/storage helper:
+  - `src/lib/kb/sources.ts`
+  - supports text, markdown, CSV, JSON, HTML, PDF, DOCX, and XLS/XLSX extraction
+  - unsupported binaries are stored but marked `unsupported`
+- Added tests for parser/path/chunk-setting helpers:
+  - `src/lib/kb/sources.test.ts`
+  - expanded `src/lib/kb/vector.test.ts`
+- Reworked `src/app/api/kb/upload/route.ts`:
+  - now accepts `multipart/form-data`
+  - uploads files to Supabase Storage bucket `uploads`
+  - stores under `{organizationId}/{propertyId}/{sourceId}/{fileName}`
+  - persists parser/chunk/storage metadata
+  - indexes extracted text when supported
+- Updated KB list/delete/search routes:
+  - property-scoped listing
+  - source deletion clears storage objects and KB rows
+  - search now accepts property filters and returns `source_id` / `chunk_count`
+- Added retrieval settings to property chatbot settings model:
+  - `retrieval_top_k`
+  - `retrieval_similarity_threshold`
+  - `retrieval_memory_mode`
+  - `retrieval_history_window`
+- Added migrations:
+  - `supabase/migrations/20260614102000_scope_knowledge_vector_matches.sql`
+  - `supabase/migrations/20260614103000_add_retrieval_settings_to_property_chatbots.sql`
+- Updated workspace/chat UI:
+  - KB File tab now uses real multipart upload
+  - file sources show info + delete controls
+  - chatbot sends `propertyId` + retrieval settings to `/api/chat`
+  - retrieval settings are editable from the Retrieval section
+  - latest retrieval results are surfaced in the Retrieval panel
+
+Blocker — RESOLVED (2026-06-14):
+
+- The live Supabase DB was behind the code: it had only 2 migrations applied and
+  `property_chatbot_settings` was missing the 4 retrieval columns, so the workspace
+  load failed with
+  `Failed to load chatbot settings: column property_chatbot_settings.retrieval_top_k does not exist`.
+- Both pending migrations were applied to live `hambatrading` / `ddlykzackuehdexldazv`
+  (via Supabase MCP `apply_migration`, with explicit owner authorization):
+  - `20260614102000_scope_knowledge_vector_matches.sql` — `match_knowledge_vectors`
+    now takes `filter_organization_id` / `filter_property_id` (6-arg signature verified).
+  - `20260614103000_add_retrieval_settings_to_property_chatbots.sql` — added
+    `retrieval_top_k` (5), `retrieval_similarity_threshold` (0.200),
+    `retrieval_memory_mode` ('hybrid'), `retrieval_history_window` (20). Verified present.
+- Verified end-to-end: `npm test` 40/40, `npm run typecheck` clean. The running dev
+  server returns `GET /api/workspace -> 200` and the payload now carries the property's
+  `chatbot.retrievalTopK/SimilarityThreshold/MemoryMode/HistoryWindow` (5 / 0.2 /
+  hybrid / 20). The original column error is gone.
+
+KB pipeline hardening — COMPLETED (2026-06-14, same session):
+
+A fresh `npm run audit:vector-pipeline` after the migrations surfaced a regression and
+several audit-script staleness issues. All fixed; the audit now reports **0 findings /
+32 checks** (`docs/audits/vector-pipeline-2026-06-14T20-55-00-371Z.md`).
+
+- **Upload route regression fixed.** `src/lib/kb/sources.ts` imported `pdf-parse`
+  (→ `pdfjs-dist`) at module scope, which crashed the Next server runtime with
+  `TypeError: Object.defineProperty called on non-object`, 500-ing **every** upload
+  (even plain text). Heavy parsers (`pdf-parse`, `mammoth`, `xlsx`) are now lazy
+  `await import(...)`ed inside their format branches, and `next.config.ts` lists them
+  under `serverExternalPackages`.
+- **Corrupt/invalid documents degrade gracefully.** PDF/DOCX/XLSX parse failures are
+  caught (`unparseableFile`) → the file is still stored in Supabase Storage but flagged
+  `parserStatus: 'unsupported'` and skipped for embedding, instead of 500-ing.
+- **Chat route no longer self-calls over HTTP.** It imported a `retrieveKnowledge`
+  helper (new, in `src/lib/kb/vector.ts`: vector search + scoped text fallback) and
+  calls it directly with the admin client, removing the `fetch(${APP_URL}/api/kb/search)`
+  internal round-trip (auth/hostname coupling). `/api/kb/search` uses the same helper.
+- **Retrieval memory modes implemented** in `src/app/api/chat/route.ts`:
+  `hybrid` (history + KB), `rolling_window` (history only, retrieval skipped),
+  `retrieval_only` (latest user turn + KB). `summary_memory` falls back to `hybrid`
+  pending the lifecycle decision below. Verified live: hybrid → `retrieval: vector`,
+  rolling_window → no retrieval.
+- **Audit script made accurate.** `scripts/audit-vector-pipeline.mjs` now sends the
+  required `organizationId`/`propertyId` on multipart uploads, asserts storage paths and
+  parser types, adds a property-scope cross-bleed isolation test, and replaces three
+  previously-hardcoded findings with dynamic checks.
+- Final checks: `npm run typecheck` clean, `npm test` 40/40, `npm run build` ✓.
+
+### 6b. Open questions requiring review before hard-coding behavior
+
+These are noted in `docs/ROADMAP.md` as well:
+
+1. Unsupported binaries such as `.exe`:
+   storage is straightforward, but text embedding is not. Current safest assumption is to store them and mark indexing status `unsupported`.
+2. `summary_memory` semantics:
+   label is clear, implementation is not. We still need a decision on whether summaries are per conversation, per property, transient, or persisted.
+3. Large-document strategy:
+   standard multipart uploads are fine for the first pass, but resumable uploads may be needed if large files are expected regularly.
 
 ---
 
@@ -423,3 +541,46 @@ Implementation notes for AUT-17:
 - Next.js local docs (`node_modules/next/dist/docs/...`) for `proxy` + auth guidance.
 - Supabase connector for live schema confirmation/migration application.
 - Linear connector for AUT-17 status tracking and requirement logging.
+
+---
+
+## 12. Session 2026-06-15 — pipeline, UI, transcription, and tenant-ops planning
+
+Everything below is in the working tree only — **nothing committed/pushed yet.**
+
+### Shipped & verified (code)
+- **Retrieval migrations applied to live Supabase** (`hambatrading`): retrieval
+  columns on `property_chatbot_settings` + 6-arg `match_knowledge_vectors`. Workspace
+  load fixed.
+- **KB pipeline hardened (AUT-17):** lazy-loaded document parsers (fixed a
+  module-load crash that 500'd every upload), graceful handling of corrupt files,
+  `retrieveKnowledge` helper so `/api/chat` no longer self-calls over HTTP, and
+  retrieval **memory modes** (`hybrid`/`rolling_window`/`retrieval_only`). Audit:
+  **0 findings / 32 checks**. `typecheck` + `test` (40/40) + `build` green.
+- **HeroUI v3 adopted:** `@heroui/react` + prebuilt styles wired in `globals.css`
+  (no provider needed in v3); login form migrated as the first surface and verified
+  in-browser. See `docs/roadmap/ui/heroui.md`.
+- **Audio transcription CLI:** `npm run transcribe -- "<file>"` (OpenAI
+  `gpt-4o-transcribe`) → transcript + `.txt`. `scripts/transcribe.mjs`. Used to
+  transcribe the owner's planning voice note.
+
+### Planning docs added (NOT approved for build — drafts)
+From the [2026-06-14 La Lucia Mall voice note](docs/voice-notes/2026-06-14-la-lucia-mall-16.md),
+a **layer above organizations** (Chatbox vs Dashboard) with three capabilities:
+- `docs/roadmap/functionality/whatsapp-tenant-assistant.md`
+- `docs/roadmap/functionality/tenant-conversation-flows.md` — Mermaid **decision
+  trees** (routing, inquiring, leaving, human takeover)
+- `docs/roadmap/functionality/payments-dashboard.md` — per-unit CRM, tables/columns
+- `docs/roadmap/functionality/tenant-offboarding.md`
+- Plus earlier this session: `property-details.md`, `knowledge-base-photos.md`,
+  `storage.md`, `ui/forms.md`. Index: `docs/README.md`. Roadmap **Phase 7** added.
+
+> **AUT-15 direction confirmed by the owner:** the WhatsApp/Twilio platform *is*
+> wanted — resolve that ticket as "rebuild into `src/`."
+
+### Next steps
+1. Owner reviews the tenant-ops planning docs (esp. payments columns + open
+   questions) and records follow-up voice notes.
+2. Commit/push this session's work when ready (KB pipeline, HeroUI, transcription,
+   docs).
+3. Still outstanding from before: **AUT-14** (Vercel prod env vars).

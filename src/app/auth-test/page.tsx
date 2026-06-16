@@ -1,3 +1,4 @@
+import { Button } from '@heroui/react';
 import { requireUser } from '@/lib/auth/dal';
 import { isLocalAuthBypassEnabled } from '@/lib/auth/local-testing';
 
@@ -41,12 +42,9 @@ export default async function AuthTestPage() {
           </p>
         ) : (
           <form action="/auth/signout" method="post" className="mt-6">
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
+            <Button type="submit" variant="primary" fullWidth>
               Sign out and return to login
-            </button>
+            </Button>
           </form>
         )}
       </section>

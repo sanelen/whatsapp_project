@@ -6,6 +6,10 @@ export type ChatbotSettings = {
   knowledgeSources: string[];
   quickReplies: string[];
   whatsappTemplates: string[];
+  retrievalTopK: number;
+  retrievalSimilarityThreshold: number;
+  retrievalMemoryMode: 'hybrid' | 'rolling_window' | 'summary_memory' | 'retrieval_only';
+  retrievalHistoryWindow: number;
 };
 
 export type PropertyWorkspace = {
@@ -61,6 +65,10 @@ type ChatbotSettingsRow = {
   knowledge_sources: string[] | null;
   quick_replies: string[] | null;
   whatsapp_templates: string[] | null;
+  retrieval_top_k?: number | string | null;
+  retrieval_similarity_threshold?: number | string | null;
+  retrieval_memory_mode?: ChatbotSettings['retrievalMemoryMode'] | null;
+  retrieval_history_window?: number | string | null;
 };
 
 export function createId(prefix: string): string {
@@ -80,6 +88,10 @@ export function createDefaultChatbotSettings(propertyName: string): ChatbotSetti
     knowledgeSources: ['Property FAQ', 'Operating policies'],
     quickReplies: ['Share pricing', 'Book a viewing', 'Escalate to team'],
     whatsappTemplates: ['Welcome message', 'Viewing reminder'],
+    retrievalTopK: 5,
+    retrievalSimilarityThreshold: 0.2,
+    retrievalMemoryMode: 'hybrid',
+    retrievalHistoryWindow: 20,
   };
 }
 
@@ -167,6 +179,10 @@ export function mapWorkspaceRows(input: {
               knowledgeSources: settings.knowledge_sources || [],
               quickReplies: settings.quick_replies || [],
               whatsappTemplates: settings.whatsapp_templates || [],
+              retrievalTopK: Number(settings.retrieval_top_k ?? 5),
+              retrievalSimilarityThreshold: Number(settings.retrieval_similarity_threshold ?? 0.2),
+              retrievalMemoryMode: settings.retrieval_memory_mode || 'hybrid',
+              retrievalHistoryWindow: Number(settings.retrieval_history_window ?? 20),
             }
           : createDefaultChatbotSettings(property.name),
       };

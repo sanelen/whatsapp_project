@@ -3,16 +3,29 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import type { ApiResponse, KnowledgeBase } from '@/lib/types';
 import { requireApiAuth } from '@/lib/auth/api-guard';
 
-export async function GET() {
+export async function GET(request: Request) {
   const denied = await requireApiAuth();
   if (denied) return denied;
   try {
+    const url = new URL(request.url);
+    const propertyId = url.searchParams.get('propertyId');
+    const sourceType = url.searchParams.get('sourceType');
     const admin = getSupabaseAdmin();
-    const { data, error } = await admin
+    let query = admin
       .from('knowledge_base')
       .select('*')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
+
+    if (sourceType) {
+      query = query.eq('source_type', sourceType);
+    }
+
+    if (propertyId) {
+      query = query.contains('metadata', { propertyId });
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('KB list error:', error);

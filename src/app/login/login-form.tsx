@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
+import { Alert, Button, Input, Label, TextField } from '@heroui/react';
 import { getLoginErrorMessage } from '@/lib/auth/login-messages';
 import { createClient } from '@/lib/supabase/client';
 
@@ -90,15 +91,16 @@ export function LoginForm() {
         </p>
       </div>
 
-      <button
+      <Button
         type="button"
-        onClick={handleGoogle}
-        disabled={pending}
-        className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        variant="outline"
+        fullWidth
+        onPress={handleGoogle}
+        isDisabled={pending}
       >
         <span aria-hidden className="text-base">G</span>
         Continue with Google
-      </button>
+      </Button>
 
       <div className="my-5 flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-slate-400">
         <span className="h-px flex-1 bg-slate-200" />
@@ -107,52 +109,46 @@ export function LoginForm() {
       </div>
 
       <form method="post" onSubmit={handleEmailSubmit} className="space-y-3">
-        <label className="block">
-          <span className="text-xs font-medium text-slate-500">Email</span>
-          <input
-            type="email"
-            name="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs font-medium text-slate-500">Password</span>
-          <input
-            type="password"
-            name="password"
-            required
-            minLength={6}
-            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
-          />
-        </label>
+        <TextField
+          name="email"
+          type="email"
+          isRequired
+          autoComplete="email"
+          value={email}
+          onChange={setEmail}
+          className="flex flex-col gap-1"
+        >
+          <Label className="text-xs font-medium text-slate-500">Email</Label>
+          <Input placeholder="you@example.com" />
+        </TextField>
+
+        <TextField
+          name="password"
+          type="password"
+          isRequired
+          autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+          value={password}
+          onChange={setPassword}
+          className="flex flex-col gap-1"
+        >
+          <Label className="text-xs font-medium text-slate-500">Password</Label>
+          <Input placeholder="••••••••" minLength={6} />
+        </TextField>
 
         {error && (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </p>
+          <Alert status="danger">
+            <Alert.Description>{error}</Alert.Description>
+          </Alert>
         )}
         {notice && (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            {notice}
-          </p>
+          <Alert status="success">
+            <Alert.Description>{notice}</Alert.Description>
+          </Alert>
         )}
 
-        <button
-          type="submit"
-          disabled={pending}
-          className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <Button type="submit" variant="primary" fullWidth isPending={pending} isDisabled={pending}>
           {pending ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Sign up'}
-        </button>
+        </Button>
       </form>
 
       <p className="mt-5 text-center text-sm text-slate-500">

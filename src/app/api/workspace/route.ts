@@ -73,7 +73,7 @@ async function readWorkspace() {
     admin.from('properties').select('id,organization_id,name,location,icon,image_url').order('created_at', { ascending: true }),
     admin
       .from('property_chatbot_settings')
-      .select('property_id,provider,model,temperature,system_prompt,knowledge_sources,quick_replies,whatsapp_templates'),
+      .select('property_id,provider,model,temperature,system_prompt,knowledge_sources,quick_replies,whatsapp_templates,retrieval_top_k,retrieval_similarity_threshold,retrieval_memory_mode,retrieval_history_window'),
   ]);
 
   if (organizationsResult.error) throw new Error(`Failed to load organizations: ${organizationsResult.error.message}`);
@@ -162,6 +162,10 @@ export async function POST(request: NextRequest) {
         knowledge_sources: defaults.knowledgeSources,
         quick_replies: defaults.quickReplies,
         whatsapp_templates: defaults.whatsappTemplates,
+        retrieval_top_k: defaults.retrievalTopK,
+        retrieval_similarity_threshold: defaults.retrievalSimilarityThreshold,
+        retrieval_memory_mode: defaults.retrievalMemoryMode,
+        retrieval_history_window: defaults.retrievalHistoryWindow,
       });
       if (settingsError) throw new Error(`Failed to create chatbot settings: ${settingsError.message}`);
     }
@@ -176,6 +180,10 @@ export async function POST(request: NextRequest) {
       if (Array.isArray(chatbot.knowledgeSources)) update.knowledge_sources = chatbot.knowledgeSources;
       if (Array.isArray(chatbot.quickReplies)) update.quick_replies = chatbot.quickReplies;
       if (Array.isArray(chatbot.whatsappTemplates)) update.whatsapp_templates = chatbot.whatsappTemplates;
+      if (typeof chatbot.retrievalTopK === 'number') update.retrieval_top_k = chatbot.retrievalTopK;
+      if (typeof chatbot.retrievalSimilarityThreshold === 'number') update.retrieval_similarity_threshold = chatbot.retrievalSimilarityThreshold;
+      if (typeof chatbot.retrievalMemoryMode === 'string') update.retrieval_memory_mode = chatbot.retrievalMemoryMode;
+      if (typeof chatbot.retrievalHistoryWindow === 'number') update.retrieval_history_window = chatbot.retrievalHistoryWindow;
 
       const { error } = await admin
         .from('property_chatbot_settings')

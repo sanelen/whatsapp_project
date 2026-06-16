@@ -23,6 +23,7 @@ test('seed workspace creates a parent organization with child properties', () =>
   assert.equal(workspace.organizations.length, 1);
   assert.equal(properties.length, 2);
   assert.equal(properties[0].organizationId, organization.id);
+  assert.equal(properties[0].chatbot.retrievalTopK, 5);
 });
 
 test('adding an organization creates a parent card with a UUID-style id', () => {
@@ -74,6 +75,7 @@ test('adding a property links it to the selected organization', () => {
   assert.equal(properties[0].name, 'Cape Town Loft');
   assert.equal(properties[0].organizationId, organization.id);
   assert.equal(properties[0].chatbot.model, 'gpt-5.4');
+  assert.equal(properties[0].chatbot.retrievalMemoryMode, 'hybrid');
 });
 
 test('workspace summary counts each property as a chatbot workspace', () => {
@@ -98,6 +100,7 @@ test('property chatbot settings can be updated independently', () => {
   assert.equal(next.properties[0].chatbot.model, 'gpt-5.4-mini');
   assert.equal(next.properties[0].chatbot.systemPrompt, 'Custom property instruction');
   assert.deepEqual(next.properties[0].chatbot.knowledgeSources, ['Lease terms and viewing policy']);
+  assert.equal(next.properties[0].chatbot.retrievalTopK, 5);
   assert.equal(next.properties[1].chatbot.model, untouched.chatbot.model);
 });
 
@@ -144,6 +147,10 @@ test('maps Supabase rows into organization property workspace state', () => {
         knowledge_sources: ['FAQ'],
         quick_replies: ['Book now'],
         whatsapp_templates: ['Welcome'],
+        retrieval_top_k: 7,
+        retrieval_similarity_threshold: '0.35',
+        retrieval_memory_mode: 'rolling_window',
+        retrieval_history_window: 12,
       },
     ],
   });
@@ -152,6 +159,10 @@ test('maps Supabase rows into organization property workspace state', () => {
   assert.equal(workspace.properties[0].organizationId, 'org-1');
   assert.equal(workspace.properties[0].chatbot.model, 'gpt-5.4-mini');
   assert.equal(workspace.properties[0].chatbot.temperature, 0.7);
+  assert.equal(workspace.properties[0].chatbot.retrievalTopK, 7);
+  assert.equal(workspace.properties[0].chatbot.retrievalSimilarityThreshold, 0.35);
+  assert.equal(workspace.properties[0].chatbot.retrievalMemoryMode, 'rolling_window');
+  assert.equal(workspace.properties[0].chatbot.retrievalHistoryWindow, 12);
 });
 
 test('deleting an organization removes its child properties locally', () => {
