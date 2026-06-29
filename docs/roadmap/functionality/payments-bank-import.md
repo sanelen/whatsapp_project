@@ -1,8 +1,8 @@
 # Payments Bank Import Notes
 
 > Evidence captured from the 2026-06-29 Record and Replay session.
-> Status: **schema, importer/parser, and first manual dashboard trigger are in place;
-> live Gmail execution is blocked on service-account env configuration.**
+> Status: **schema, importer/parser, first manual dashboard trigger, and Gmail OAuth
+> setup route are in place; live Gmail execution still needs runtime credentials.**
 
 ## Why this note exists
 
@@ -176,21 +176,42 @@ The first backend execution slice is now implemented in code:
   parsing, lookup resolution, and persistence into the import/reference tables
 - `src/app/api/monthly-payments/import/route.ts` — protected trigger route for
   manual runs or a future Vercel cron
+- `src/app/api/monthly-payments/import/oauth/route.ts` — protected Gmail OAuth
+  setup/status route
 - `src/components/monthly-payments/bank-import-controls.tsx` — first manual import
-  panel on `/monthly-payments`, with a period selector, `Pull everything`, and an
-  `Import` trigger
+  panel on `/monthly-payments`, with Gmail connection status, a period selector,
+  `Pull everything`, and an `Import` trigger
 
 ### Current runtime requirement
 
-Actual Gmail pulls still require these env vars to be present where the route runs:
+Actual Gmail pulls require one of these auth paths where the route runs.
+
+Preferred for the observed `info.hambatrading@gmail.com` inbox:
+
+- `GMAIL_OAUTH_CLIENT_ID`
+- `GMAIL_OAUTH_CLIENT_SECRET`
+- `GMAIL_OAUTH_REFRESH_TOKEN`
+
+Alternative for Google Workspace domain-wide delegation:
 
 - `GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL`
 - `GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY`
+
+Operational helpers:
+
+- optional callback override: `GMAIL_OAUTH_REDIRECT_URI`
 - optional for cron protection: `BANK_IMPORT_CRON_SECRET`
+
+The Codex Gmail connector was authenticated as `info.hambatrading@gmail.com` during
+the 2026-06-29 implementation pass, and a Capitec search found forwarded messages
+with `message/rfc822` attachments. One sample had subject
+`Capitec Business Transaction Notification - 36683Capitec.pdf` and an attached
+`Capitec Business Transaction Notification.eml`, which matches the nested `.eml`
+path the importer handles.
 
 The next implementation slice should build:
 
-1. add the Gmail service-account env to the runtime
+1. add the Gmail OAuth env to the runtime
 2. execute the first live import against `info.hambatrading@gmail.com`
 3. bind Quarry Heights once its property row exists in Supabase
 4. add operator-managed unit hint rows for room/reference lookup

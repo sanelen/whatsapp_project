@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
-import { Download, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
+import { Download, ExternalLink, Loader2, MailCheck } from 'lucide-react';
 
 type BankImportControlsProps = {
   defaultPeriod: string;
@@ -25,6 +25,19 @@ type ImportResponse = {
   }>;
 };
 
+type GmailIntegrationResponse = {
+  success: boolean;
+  authorizationUrl?: string;
+  error?: string;
+  status?: {
+    configured: boolean;
+    preferredAuthMode: 'oauth_refresh_token' | 'service_account' | null;
+    hasOAuthClient: boolean;
+    hasOAuthRefreshToken: boolean;
+    hasServiceAccount: boolean;
+  };
+};
+
 function formatWindow(period: string) {
   const match = period.match(/^(\d{4})-(\d{2})$/);
   if (!match) return '';
@@ -46,7 +59,9 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
   const [selectedPeriod, setSelectedPeriod] = useState(defaultPeriod);
   const [pullAll, setPullAll] = useState(false);
   const [result, setResult] = useState<ImportResponse | null>(null);
+  const [gmailStatus, setGmailStatus] = useState<GmailIntegrationResponse | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isConnecting, startConnecting] = useTransition();
 
   const periodOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -62,6 +77,39 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
 
     return options;
   }, [defaultPeriod, periods]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/monthly-payments/import/oauth')
+      .then((response) => response.json() as Promise<GmailIntegrationResponse>)
+      .then((payload) => {
+        if (isMounted) setGmailStatus(payload);
+      })
+      .catch((error: unknown) => {
+        if (isMounted) {
+          setGmailStatus({
+            success: false,
+            error: error instanceof Error ? error.message : 'Could not check Gmail status',
+          });
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  function connectGmail() {
+    startConnecting(async () => {
+      const response = await fetch('/api/monthly-payments/import/oauth');
+      const payload = (await response.json()) as GmailIntegrationResponse;
+      setGmailStatus(payload);
+
+      if (payload.authorizationUrl) {
+        window.location.assign(payload.authorizationUrl);
+      }
+    });
+  }
 
   function runImport() {
     setResult(null);
@@ -145,6 +193,31 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
           {isPending ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
           Import
         </button>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <span
+          className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-semibold ${
+            gmailStatus?.status?.configured
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-slate-300 bg-white text-slate-600'
+          }`}
+        >
+          <MailCheck size={15} />
+          {gmailStatus?.status?.configured ? 'Gmail ready' : 'Gmail not connected'}
+        </span>
+        {!gmailStatus?.status?.configured ? (
+          <button
+            type="button"
+            onClick={connectGmail}
+            disabled={isConnecting}
+            className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-sky-400 disabled:cursor-wait disabled:text-slate-400"
+          >
+            {isConnecting ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+            Connect Gmail
+          </button>
+        ) : null}
+        {gmailStatus?.error ? <p className="text-sm text-rose-700">{gmailStatus.error}</p> : null}
       </div>
 
       {result ? (

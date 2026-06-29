@@ -70,6 +70,13 @@ type GmailAttachmentResponse = {
   size?: number;
 };
 
+type GoogleAuthMode = 'oauth_refresh_token' | 'service_account';
+
+type GoogleAccessTokenResult = {
+  accessToken: string;
+  authMode: GoogleAuthMode;
+};
+
 type ImportedAttachment = {
   fileName: string;
   mimeType: string;
@@ -106,6 +113,7 @@ type ResolvedImportContext = {
 
 export type BankImportRunSummary = {
   mailboxEmail: string;
+  authMode: GoogleAuthMode | null;
   billingPeriod: string | null;
   billingWindowStart: string | null;
   billingWindowEnd: string | null;
@@ -127,6 +135,9 @@ export type BillingWindow = {
   gmailAfterDate: string;
   gmailBeforeDate: string;
 };
+
+const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 function base64UrlEncode(input: string | Buffer) {
   return Buffer.from(input)
@@ -421,7 +432,7 @@ function signJwtWithServiceAccount(input: {
       iss: input.clientEmail,
       sub: input.subject,
       scope: input.scopes.join(' '),
-      aud: 'https://oauth2.googleapis.com/token',
+      aud: GOOGLE_OAUTH_TOKEN_URL,
       iat: now,
       exp: now + 3600,
     })
@@ -439,23 +450,129 @@ function signJwtWithServiceAccount(input: {
   return `${header}.${claimSet}.${signature}`;
 }
 
-async function getGoogleAccessToken(userEmail: string) {
+export function getGmailIntegrationStatus() {
+  const oauthClientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
+  const oauthClientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET?.trim();
+  const oauthRefreshToken = process.env.GMAIL_OAUTH_REFRESH_TOKEN?.trim();
+  const serviceAccountClientEmail = process.env.GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL?.trim();
+  const serviceAccountPrivateKey = process.env.GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY?.trim();
+
+  const hasOAuthClient = Boolean(oauthClientId && oauthClientSecret);
+  const hasOAuthRefreshToken = Boolean(oauthRefreshToken);
+  const hasServiceAccount = Boolean(serviceAccountClientEmail && serviceAccountPrivateKey);
+
+  return {
+    configured: (hasOAuthClient && hasOAuthRefreshToken) || hasServiceAccount,
+    preferredAuthMode: hasOAuthClient && hasOAuthRefreshToken ? 'oauth_refresh_token' : hasServiceAccount ? 'service_account' : null,
+    hasOAuthClient,
+    hasOAuthRefreshToken,
+    hasServiceAccount,
+    missing: {
+      oauthClientId: !oauthClientId,
+      oauthClientSecret: !oauthClientSecret,
+      oauthRefreshToken: !oauthRefreshToken,
+      serviceAccountClientEmail: !serviceAccountClientEmail,
+      serviceAccountPrivateKey: !serviceAccountPrivateKey,
+    },
+  };
+}
+
+export function buildGmailOAuthConsentUrl(input: { redirectUri: string; state?: string }) {
+  const clientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
+  if (!clientId) {
+    throw new Error('Missing GMAIL_OAUTH_CLIENT_ID.');
+  }
+
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.searchParams.set('client_id', clientId);
+  url.searchParams.set('redirect_uri', input.redirectUri);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', GMAIL_READONLY_SCOPE);
+  url.searchParams.set('access_type', 'offline');
+  url.searchParams.set('prompt', 'consent');
+  if (input.state) {
+    url.searchParams.set('state', input.state);
+  }
+  return url.toString();
+}
+
+export async function exchangeGmailOAuthCode(input: { code: string; redirectUri: string }) {
+  const clientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
+  const clientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) {
+    throw new Error('Missing Gmail OAuth env. Set GMAIL_OAUTH_CLIENT_ID and GMAIL_OAUTH_CLIENT_SECRET.');
+  }
+
+  const response = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: input.redirectUri,
+      code: input.code,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to exchange Gmail OAuth code (${response.status})`);
+  }
+
+  return (await response.json()) as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+    scope?: string;
+    token_type?: string;
+  };
+}
+
+async function getGoogleOAuthRefreshAccessToken(): Promise<GoogleAccessTokenResult | null> {
+  const clientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
+  const clientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET?.trim();
+  const refreshToken = process.env.GMAIL_OAUTH_REFRESH_TOKEN?.trim();
+  if (!clientId || !clientSecret || !refreshToken) {
+    return null;
+  }
+
+  const response = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to refresh Gmail OAuth access token (${response.status})`);
+  }
+
+  const payload = (await response.json()) as { access_token?: string };
+  if (!payload.access_token) {
+    throw new Error('Gmail OAuth access token missing from refresh response');
+  }
+  return { accessToken: payload.access_token, authMode: 'oauth_refresh_token' };
+}
+
+async function getGoogleServiceAccountAccessToken(userEmail: string): Promise<GoogleAccessTokenResult | null> {
   const clientEmail = process.env.GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL?.trim();
   const privateKey = process.env.GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY?.trim();
   if (!clientEmail || !privateKey) {
-    throw new Error(
-      'Missing Gmail service-account env. Set GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL and GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY.'
-    );
+    return null;
   }
 
   const assertion = signJwtWithServiceAccount({
     clientEmail,
     privateKey,
     subject: userEmail,
-    scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+    scopes: [GMAIL_READONLY_SCOPE],
   });
 
-  const response = await fetch('https://oauth2.googleapis.com/token', {
+  const response = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -472,7 +589,19 @@ async function getGoogleAccessToken(userEmail: string) {
   if (!payload.access_token) {
     throw new Error('Google access token missing from OAuth response');
   }
-  return payload.access_token;
+  return { accessToken: payload.access_token, authMode: 'service_account' };
+}
+
+async function getGoogleAccessToken(userEmail: string) {
+  const oauthToken = await getGoogleOAuthRefreshAccessToken();
+  if (oauthToken) return oauthToken;
+
+  const serviceAccountToken = await getGoogleServiceAccountAccessToken(userEmail);
+  if (serviceAccountToken) return serviceAccountToken;
+
+  throw new Error(
+    'Missing Gmail auth env. Set either GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, and GMAIL_OAUTH_REFRESH_TOKEN, or set GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL and GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY.'
+  );
 }
 
 async function gmailRequest<T>(
@@ -845,7 +974,8 @@ export async function importMailboxPayments(
     throw new Error(`Mailbox ${mailbox.email_address} is missing organization_id`);
   }
 
-  const accessToken = await getGoogleAccessToken(mailbox.email_address);
+  const googleAuth = await getGoogleAccessToken(mailbox.email_address);
+  const accessToken = googleAuth.accessToken;
   const searchQuery = buildGmailSearchQuery(mailbox, options?.billingWindow);
   const { propertyMappings, unitMatchHints } = await loadImportLookups(mailbox.organization_id);
   const listResponse = await gmailRequest<GmailListResponse>(
@@ -859,6 +989,7 @@ export async function importMailboxPayments(
 
   const summary: BankImportRunSummary = {
     mailboxEmail: mailbox.email_address,
+    authMode: googleAuth.authMode,
     billingPeriod: options?.billingWindow?.period ?? null,
     billingWindowStart: options?.billingWindow?.startDate ?? null,
     billingWindowEnd: options?.billingWindow?.endDate ?? null,

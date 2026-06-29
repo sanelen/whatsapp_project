@@ -2,10 +2,37 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildGmailSearchQuery,
+  buildGmailOAuthConsentUrl,
   extractAttachmentsFromEml,
   getBillingWindowForPeriod,
+  getGmailIntegrationStatus,
   parseCapitecTransactionText,
 } from './bank-import';
+
+function withGmailEnv<T>(values: Record<string, string | undefined>, run: () => T) {
+  const previous = new Map<string, string | undefined>();
+  for (const key of Object.keys(values)) {
+    previous.set(key, process.env[key]);
+    const value = values[key];
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+
+  try {
+    return run();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
 
 test('parseCapitecTransactionText extracts incoming-funds fields from a Capitec PDF text sample', () => {
   const parsed = parseCapitecTransactionText(`
@@ -80,6 +107,51 @@ test('buildGmailSearchQuery adds billing-window date guards', () => {
   assert.match(query, /after:2026\/04\/08/);
   assert.match(query, /before:2026\/05\/09/);
   assert.doesNotMatch(query, /after:2026\/06\/29/);
+});
+
+test('getGmailIntegrationStatus prefers OAuth refresh-token credentials', () => {
+  withGmailEnv(
+    {
+      GMAIL_OAUTH_CLIENT_ID: 'client-id',
+      GMAIL_OAUTH_CLIENT_SECRET: 'client-secret',
+      GMAIL_OAUTH_REFRESH_TOKEN: 'refresh-token',
+      GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL: 'service@example.com',
+      GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY: 'private-key',
+    },
+    () => {
+      const status = getGmailIntegrationStatus();
+
+      assert.equal(status.configured, true);
+      assert.equal(status.preferredAuthMode, 'oauth_refresh_token');
+      assert.equal(status.hasOAuthClient, true);
+      assert.equal(status.hasOAuthRefreshToken, true);
+      assert.equal(status.hasServiceAccount, true);
+    }
+  );
+});
+
+test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => {
+  withGmailEnv(
+    {
+      GMAIL_OAUTH_CLIENT_ID: 'client-id.apps.googleusercontent.com',
+    },
+    () => {
+      const url = new URL(
+        buildGmailOAuthConsentUrl({
+          redirectUri: 'http://localhost:3001/api/monthly-payments/import/oauth',
+          state: 'monthly-payments-bank-import',
+        })
+      );
+
+      assert.equal(url.origin, 'https://accounts.google.com');
+      assert.equal(url.searchParams.get('client_id'), 'client-id.apps.googleusercontent.com');
+      assert.equal(url.searchParams.get('response_type'), 'code');
+      assert.equal(url.searchParams.get('scope'), 'https://www.googleapis.com/auth/gmail.readonly');
+      assert.equal(url.searchParams.get('access_type'), 'offline');
+      assert.equal(url.searchParams.get('prompt'), 'consent');
+      assert.equal(url.searchParams.get('state'), 'monthly-payments-bank-import');
+    }
+  );
 });
 
 test('extractAttachmentsFromEml recovers nested PDF attachments from a forwarded mail body', () => {
