@@ -1,5 +1,8 @@
+'use client';
+
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ClipboardList, Landmark, ReceiptText } from 'lucide-react';
+import { ArrowRight, ClipboardList, Landmark, ReceiptText, RefreshCw } from 'lucide-react';
 import type { MonthlyPaymentsDashboardSnapshot } from '@/lib/monthly-payments';
 import { BankImportControls } from './bank-import-controls';
 
@@ -26,11 +29,26 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
   const isMissingTables = dashboard.setupState === 'missing_tables';
   const isEmpty = dashboard.setupState === 'empty' || dashboard.locations.length === 0;
   const currentPeriod = dashboard.recentMonths.find((month) => month.isCurrent)?.key ?? dashboard.recentMonths.at(-1)?.key ?? '';
+  const [selectedPeriod, setSelectedPeriod] = useState(currentPeriod);
+  const [runRequestToken, setRunRequestToken] = useState(0);
+  const selectedMonth = useMemo(
+    () => dashboard.recentMonths.find((month) => month.key === selectedPeriod) ?? dashboard.recentMonths.at(2),
+    [dashboard.recentMonths, selectedPeriod]
+  );
+  const selectedMonthIndex = dashboard.recentMonths.findIndex((month) => month.key === selectedPeriod);
+
+  function moveSelectedMonth(direction: -1 | 1) {
+    if (selectedMonthIndex === -1) return;
+    const nextMonth = dashboard.recentMonths[selectedMonthIndex + direction];
+    if (nextMonth) {
+      setSelectedPeriod(nextMonth.key);
+    }
+  }
 
   return (
     <main className="payments-page-scroll min-h-screen overflow-y-auto bg-[linear-gradient(180deg,#e0f2fe_0%,#f8fafc_42%,#dbeafe_100%)] px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-[28px] border border-white/70 bg-slate-950 p-5 text-white shadow-[0_24px_90px_rgba(15,23,42,0.22)]">
+        <aside className="self-start rounded-[28px] border border-white/70 bg-slate-950 p-5 text-white shadow-[0_24px_90px_rgba(15,23,42,0.22)] lg:sticky lg:top-6">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
             Monthly Payments
           </p>
@@ -115,17 +133,21 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
             <div className="inline-flex items-center overflow-hidden rounded-2xl border border-slate-300 bg-white text-sm font-semibold text-slate-950 shadow-sm">
               <button
                 type="button"
-                disabled
-                className="border-r border-slate-300 px-4 py-3 text-slate-500"
+                onClick={() => moveSelectedMonth(-1)}
+                disabled={selectedMonthIndex <= 0}
+                className="border-r border-slate-300 px-4 py-3 text-slate-500 disabled:text-slate-300"
               >
                 ‹
               </button>
-              <span className="px-5 py-3">{dashboard.monthLabel}</span>
+              <span className="px-5 py-3">
+                {selectedMonth ? `${selectedMonth.label} ${selectedPeriod.slice(0, 4)}` : dashboard.monthLabel}
+              </span>
               <button
                 type="button"
-                disabled
-                className="border-l border-slate-300 px-4 py-3 text-slate-300"
-                title="Current month"
+                onClick={() => moveSelectedMonth(1)}
+                disabled={selectedMonthIndex === -1 || selectedMonthIndex >= dashboard.recentMonths.length - 1}
+                className="border-l border-slate-300 px-4 py-3 text-slate-500 disabled:text-slate-300"
+                title="Next month"
               >
                 ›
               </button>
@@ -135,6 +157,9 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
           {currentPeriod ? (
             <BankImportControls
               defaultPeriod={currentPeriod}
+              selectedPeriod={selectedPeriod}
+              onSelectedPeriodChange={setSelectedPeriod}
+              runRequestToken={runRequestToken}
               periods={dashboard.recentMonths.map((month) => ({
                 key: month.key,
                 label: month.label,
@@ -148,23 +173,32 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Recent months - tap to view
               </p>
-              <p className="text-xs font-medium text-slate-400">Collection rate</p>
+              <button
+                type="button"
+                onClick={() => setRunRequestToken((token) => token + 1)}
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-400 hover:text-sky-800"
+              >
+                <RefreshCw size={13} />
+                Refresh {selectedMonth?.label ?? 'month'}
+              </button>
             </div>
             <div className="mt-4 grid grid-cols-5 gap-2 sm:gap-3">
               {dashboard.recentMonths.map((month) => (
-                <article
+                <button
                   key={month.key}
-                  className={`rounded-[20px] border p-3 text-center ${
-                    month.isCurrent
+                  type="button"
+                  onClick={() => setSelectedPeriod(month.key)}
+                  className={`rounded-[20px] border p-3 text-center transition ${
+                    month.key === selectedPeriod
                       ? 'border-slate-900 bg-white shadow-sm'
-                      : 'border-slate-200 bg-white/80'
+                      : 'border-slate-200 bg-white/80 hover:border-sky-300 hover:bg-white'
                   }`}
                 >
                   <div className="mx-auto flex h-12 w-10 items-end justify-center">
                     <div className="flex h-10 w-5 items-end overflow-hidden rounded-[4px] border border-slate-300 bg-slate-100">
                       <div
                         className={`w-full ${
-                          month.isCurrent
+                          month.key === selectedPeriod
                             ? 'bg-[repeating-linear-gradient(45deg,rgba(14,165,233,0.35),rgba(14,165,233,0.35)_8px,rgba(15,118,110,0.25)_8px,rgba(15,118,110,0.25)_16px)]'
                             : 'bg-slate-300/80'
                         }`}
@@ -174,20 +208,20 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                   </div>
                   <p
                     className={`mt-2 text-sm font-semibold ${
-                      month.isCurrent ? 'text-slate-950' : 'text-slate-500'
+                      month.key === selectedPeriod ? 'text-slate-950' : 'text-slate-500'
                     }`}
                   >
                     {month.label}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    {month.isCurrent ? `${formatPercent(month.collectionRate)} ●` : formatPercent(month.collectionRate)}
+                    {month.key === selectedPeriod ? `${formatPercent(month.collectionRate)} ●` : formatPercent(month.collectionRate)}
                   </p>
-                </article>
+                </button>
               ))}
             </div>
           </section>
 
-          <section className="mt-6 rounded-[24px] border-2 border-slate-300 bg-[#fcfcfa] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <section className="mt-6 rounded-[24px] border-2 border-slate-300 bg-[#fcfcfa] p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] sm:p-5">
             <div className="flex items-center justify-between gap-4">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Rolling total - collected vs expected
@@ -197,12 +231,12 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               </p>
             </div>
 
-            <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <p className="text-4xl font-semibold tracking-tight text-slate-950 sm:text-[3.35rem]">
+                <p className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-[2.85rem]">
                   {formatCurrency(dashboard.rollingTotal.collectedAmount)}
                 </p>
-                <p className="mt-2 text-base text-slate-500">
+                <p className="mt-1 text-sm text-slate-500 sm:text-base">
                   / {formatCurrency(dashboard.rollingTotal.expectedAmount)} expected
                 </p>
               </div>
@@ -222,7 +256,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               </div>
             </div>
 
-            <div className="mt-5 h-5 overflow-hidden rounded-full border border-slate-300 bg-white">
+            <div className="mt-4 h-4 overflow-hidden rounded-full border border-slate-300 bg-white">
               <div
                 className="h-full bg-[repeating-linear-gradient(45deg,#0ea5e9,#0ea5e9_8px,#0f766e_8px,#0f766e_16px)]"
                 style={{ width: progressWidth(dashboard.rollingTotal.collectionRate) }}

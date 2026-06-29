@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { Download, ExternalLink, Loader2, MailCheck } from 'lucide-react';
 
 type BankImportControlsProps = {
   defaultPeriod: string;
   periods: Array<{ key: string; label: string; isCurrent: boolean }>;
+  selectedPeriod?: string;
+  onSelectedPeriodChange?: (period: string) => void;
+  runRequestToken?: number;
 };
 
 type ImportResponse = {
@@ -55,13 +58,27 @@ function formatWindow(period: string) {
   return `${formatter.format(start)} - ${formatter.format(end)}`;
 }
 
-export function BankImportControls({ defaultPeriod, periods }: BankImportControlsProps) {
-  const [selectedPeriod, setSelectedPeriod] = useState(defaultPeriod);
+export function BankImportControls({
+  defaultPeriod,
+  periods,
+  selectedPeriod,
+  onSelectedPeriodChange,
+  runRequestToken,
+}: BankImportControlsProps) {
+  const [internalSelectedPeriod, setInternalSelectedPeriod] = useState(defaultPeriod);
   const [pullAll, setPullAll] = useState(false);
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [googleCloudStatus, setGoogleCloudStatus] = useState<GoogleCloudIntegrationResponse | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isConnecting, startConnecting] = useTransition();
+  const lastRunRequestToken = useRef<number | undefined>(runRequestToken);
+
+  const activePeriod = selectedPeriod ?? internalSelectedPeriod;
+
+  function updateSelectedPeriod(nextPeriod: string) {
+    setInternalSelectedPeriod(nextPeriod);
+    onSelectedPeriodChange?.(nextPeriod);
+  }
 
   const periodOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -111,14 +128,15 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
     });
   }
 
-  function runImport() {
+  function runImport(periodOverride?: string | Event) {
+    const resolvedPeriod = typeof periodOverride === 'string' ? periodOverride : undefined;
     setResult(null);
     startTransition(async () => {
       const response = await fetch('/api/monthly-payments/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          billingPeriod: selectedPeriod,
+          billingPeriod: resolvedPeriod ?? activePeriod,
           pullAll,
           maxMessages: pullAll ? 100 : 50,
         }),
@@ -127,6 +145,15 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
       setResult(payload);
     });
   }
+
+  useEffect(() => {
+    if (runRequestToken === undefined) return;
+    if (lastRunRequestToken.current === runRequestToken) return;
+    lastRunRequestToken.current = runRequestToken;
+    if (runRequestToken > 0) {
+      runImport();
+    }
+  }, [runRequestToken, activePeriod, pullAll]);
 
   const totals = result?.data?.reduce(
     (summary, mailbox) => ({
@@ -148,56 +175,58 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
   );
 
   return (
-    <section className="mt-6 rounded-[24px] border border-slate-200 bg-[#fcfcfa] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <section className="mt-4 max-w-3xl rounded-[20px] border border-slate-200 bg-[#fcfcfa] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+      <div className="flex flex-col gap-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
             Bank import
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <select
-              value={selectedPeriod}
-              onChange={(event) => setSelectedPeriod(event.target.value)}
-              disabled={pullAll || isPending}
-              className="h-11 rounded-2xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm outline-none transition focus:border-sky-500"
-            >
-              {periodOptions.map((period) => (
-                <option key={period.key} value={period.key}>
-                  {period.label}
-                </option>
-              ))}
-            </select>
+          <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={activePeriod}
+                onChange={(event) => updateSelectedPeriod(event.target.value)}
+                disabled={pullAll || isPending}
+                className="h-10 rounded-2xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 shadow-sm outline-none transition focus:border-sky-500"
+              >
+                {periodOptions.map((period) => (
+                  <option key={period.key} value={period.key}>
+                    {period.label}
+                  </option>
+                ))}
+              </select>
 
-            <label className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm">
-              <input
-                type="checkbox"
-                checked={pullAll}
-                onChange={(event) => setPullAll(event.target.checked)}
-                disabled={isPending}
-                className="h-4 w-4 accent-sky-600"
-              />
-              Pull everything
-            </label>
+              <label className="inline-flex h-10 items-center gap-2 rounded-2xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm">
+                <input
+                  type="checkbox"
+                  checked={pullAll}
+                  onChange={(event) => setPullAll(event.target.checked)}
+                  disabled={isPending}
+                  className="h-4 w-4 accent-sky-600"
+                />
+                Pull everything
+              </label>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => runImport()}
+              disabled={isPending}
+              className="inline-flex h-10 min-w-[132px] items-center justify-center gap-2 self-start rounded-full bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-wait disabled:bg-slate-500 lg:self-auto"
+            >
+              {isPending ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              Import
+            </button>
           </div>
-          <p className="mt-2 text-sm text-slate-500">
-            {pullAll ? 'All importable months' : `${selectedPeriod} window: ${formatWindow(selectedPeriod)}`}
+          <p className="mt-1 text-xs text-slate-500">
+            {pullAll ? 'All importable months' : `${activePeriod} window: ${formatWindow(activePeriod)}`}
           </p>
         </div>
-
-        <button
-          type="button"
-          onClick={runImport}
-          disabled={isPending}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-slate-950 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-wait disabled:bg-slate-500"
-        >
-          {isPending ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-          Import
-        </button>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <span
-          className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-semibold ${
+          className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm font-semibold ${
             googleCloudStatus?.status?.configured
               ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
               : 'border-slate-300 bg-white text-slate-600'
@@ -211,7 +240,7 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
             type="button"
             onClick={openGoogleCloudSetup}
             disabled={isConnecting}
-            className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-sky-400 disabled:cursor-wait disabled:text-slate-400"
+            className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-sky-400 disabled:cursor-wait disabled:text-slate-400"
           >
             {isConnecting ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
             Google Cloud setup
@@ -222,7 +251,7 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
 
       {result ? (
         <div
-          className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
+          className={`mt-3 rounded-2xl border px-3 py-2 text-sm ${
             result.success
               ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
               : 'border-rose-200 bg-rose-50 text-rose-900'

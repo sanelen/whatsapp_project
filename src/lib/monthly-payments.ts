@@ -36,6 +36,8 @@ export type MonthlyPaymentsReferenceRow = {
   property_id: string | null;
   unit_id: string | null;
   unit_payment_period_id: string | null;
+  bank_import_entry_id?: string | null;
+  inferred_location_name?: string | null;
   reference: string;
   amount: number | string;
   received_at: string;
@@ -134,6 +136,9 @@ export function buildMonthlyPaymentsDashboardSnapshot(
   const unitsByProperty = new Map<string, MonthlyPaymentsUnitRow[]>();
   const periodsByUnitAndMonth = new Map<string, MonthlyPaymentsPeriodRow>();
   const referencesByPeriod = new Map<string, MonthlyPaymentsReferenceRow[]>();
+  const referencesByPropertyAndMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
+  const referencesByMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
+  const referencesByInferredLocationAndMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
 
   for (const unit of input.units) {
     const current = unitsByProperty.get(unit.property_id) ?? [];
@@ -146,16 +151,36 @@ export function buildMonthlyPaymentsDashboardSnapshot(
   }
 
   for (const reference of input.references) {
+    const monthKey = toDateOnlyMonthKey(reference.received_at);
+    const monthReferences = referencesByMonth.get(monthKey) ?? [];
+    monthReferences.push(reference);
+    referencesByMonth.set(monthKey, monthReferences);
+
+    if (!reference.property_id && reference.inferred_location_name) {
+      const inferredLocationKey = `${reference.inferred_location_name}:${monthKey}`;
+      const inferredLocationReferences = referencesByInferredLocationAndMonth.get(inferredLocationKey) ?? [];
+      inferredLocationReferences.push(reference);
+      referencesByInferredLocationAndMonth.set(inferredLocationKey, inferredLocationReferences);
+    }
+
+    if (reference.property_id) {
+      const propertyMonthKey = `${reference.property_id}:${monthKey}`;
+      const propertyMonthReferences = referencesByPropertyAndMonth.get(propertyMonthKey) ?? [];
+      propertyMonthReferences.push(reference);
+      referencesByPropertyAndMonth.set(propertyMonthKey, propertyMonthReferences);
+    }
+
     if (!reference.unit_payment_period_id) continue;
     const current = referencesByPeriod.get(reference.unit_payment_period_id) ?? [];
     current.push(reference);
     referencesByPeriod.set(reference.unit_payment_period_id, current);
   }
 
-  const locations = properties.map((property) => {
+  const propertyLocations = properties.map((property) => {
     const units = unitsByProperty.get(property.id) ?? [];
+    const currentMonthReferences =
+      referencesByPropertyAndMonth.get(`${property.id}:${currentMonthKey}`) ?? [];
     let expectedAmount = 0;
-    let collectedAmount = 0;
     let occupiedCount = 0;
     let blockedCount = 0;
     let overdueCount = 0;
@@ -170,15 +195,10 @@ export function buildMonthlyPaymentsDashboardSnapshot(
         : toMoney(
             period?.expected_amount ?? (unit.occupancy_status === 'occupied' ? unit.rent_amount : 0)
           );
-      const signedReferences = period ? referencesByPeriod.get(period.id) ?? [] : [];
-      const received = signedReferences
-        .filter((reference) => reference.signed_off)
-        .reduce((sum, reference) => sum + toMoney(reference.amount), 0);
       const status =
         period?.status ?? (isBlocked ? 'blocked' : unit.occupancy_status === 'occupied' ? 'unpaid' : 'blocked');
 
       expectedAmount += expected;
-      collectedAmount += received;
 
       if (isBlocked || status === 'blocked') {
         blockedCount += 1;
@@ -190,6 +210,11 @@ export function buildMonthlyPaymentsDashboardSnapshot(
       if (status === 'paid') paidCount += 1;
       if (status === 'unpaid' || status === 'partial' || status === 'mismatch') dueCount += 1;
     }
+
+    const collectedAmount = currentMonthReferences.reduce(
+      (sum, reference) => sum + toMoney(reference.amount),
+      0
+    );
 
     return {
       id: property.id,
@@ -207,10 +232,39 @@ export function buildMonthlyPaymentsDashboardSnapshot(
     };
   });
 
+  const inferredLocationNames = Array.from(
+    new Set(
+      (referencesByMonth.get(currentMonthKey) ?? [])
+        .filter((reference) => !reference.property_id && reference.inferred_location_name)
+        .map((reference) => reference.inferred_location_name as string)
+    )
+  );
+
+  const inferredLocations = inferredLocationNames.map((name) => {
+    const references = referencesByInferredLocationAndMonth.get(`${name}:${currentMonthKey}`) ?? [];
+    const collectedAmount = references.reduce((sum, reference) => sum + toMoney(reference.amount), 0);
+
+    return {
+      id: `inferred:${name}`,
+      name,
+      location: 'Imported bank references',
+      collectedAmount,
+      expectedAmount: 0,
+      collectionRate: 0,
+      occupiedCount: 0,
+      paidCount: 0,
+      dueCount: references.length,
+      overdueCount: 0,
+      blockedCount: 0,
+      unitCount: 0,
+    };
+  });
+
+  const locations = [...propertyLocations, ...inferredLocations];
+
   const recentMonths = monthStarts.map((monthStart) => {
     const monthKey = formatMonthKey(monthStart);
     let expectedAmount = 0;
-    let collectedAmount = 0;
 
     for (const unit of input.units) {
       const period = periodsByUnitAndMonth.get(`${unit.id}:${monthKey}`);
@@ -222,13 +276,12 @@ export function buildMonthlyPaymentsDashboardSnapshot(
             period?.expected_amount ??
               (isCurrentMonth && unit.occupancy_status === 'occupied' ? unit.rent_amount : 0)
           );
-
-      if (!period) continue;
-      const signedReferences = referencesByPeriod.get(period.id) ?? [];
-      collectedAmount += signedReferences
-        .filter((reference) => reference.signed_off)
-        .reduce((sum, reference) => sum + toMoney(reference.amount), 0);
     }
+
+    const collectedAmount = (referencesByMonth.get(monthKey) ?? []).reduce(
+      (sum, reference) => sum + toMoney(reference.amount),
+      0
+    );
 
     return {
       key: monthKey,
@@ -258,6 +311,10 @@ export function buildMonthlyPaymentsDashboardSnapshot(
     }
   );
 
+  const unmatchedPropertylessCollectedAmount = (referencesByMonth.get(currentMonthKey) ?? [])
+    .filter((reference) => !reference.property_id && !reference.inferred_location_name)
+    .reduce((sum, reference) => sum + toMoney(reference.amount), 0);
+
   const unmatchedReferenceCount = input.references.filter(
     (reference) =>
       toDateOnlyMonthKey(reference.received_at) === currentMonthKey && !reference.unit_payment_period_id
@@ -275,9 +332,10 @@ export function buildMonthlyPaymentsDashboardSnapshot(
     recentMonths,
     rollingTotal: {
       ...rollingTotal,
+      collectedAmount: rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount,
       collectionRate:
         rollingTotal.expectedAmount > 0
-          ? rollingTotal.collectedAmount / rollingTotal.expectedAmount
+          ? (rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount) / rollingTotal.expectedAmount
           : 0,
     },
     locations: locations.sort((left, right) => right.expectedAmount - left.expectedAmount),
@@ -307,7 +365,7 @@ export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDas
         .gte('period_start', historyStart),
       admin
         .from('payment_references')
-        .select('id,organization_id,property_id,unit_id,unit_payment_period_id,reference,amount,received_at,signed_off')
+        .select('id,organization_id,property_id,unit_id,unit_payment_period_id,bank_import_entry_id,reference,amount,received_at,signed_off')
         .gte('received_at', historyStart),
     ]);
 
@@ -341,11 +399,42 @@ export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDas
     throw new Error(`Failed to load payment references: ${referencesResult.error.message}`);
   }
 
+  const references = (referencesResult.data ?? []) as MonthlyPaymentsReferenceRow[];
+  const unresolvedBankImportEntryIds = references
+    .filter((reference) => !reference.property_id && reference.bank_import_entry_id)
+    .map((reference) => reference.bank_import_entry_id as string);
+
+  const inferredLocationNamesByEntryId = new Map<string, string>();
+  if (unresolvedBankImportEntryIds.length > 0) {
+    const { data: bankImportEntries, error: bankImportEntriesError } = await admin
+      .from('bank_import_entries')
+      .select('id,raw_metadata')
+      .in('id', unresolvedBankImportEntryIds);
+
+    if (bankImportEntriesError) {
+      throw new Error(`Failed to load bank import entry metadata: ${bankImportEntriesError.message}`);
+    }
+
+    for (const entry of bankImportEntries ?? []) {
+      const propertyName =
+        typeof entry.raw_metadata?.propertyName === 'string' ? entry.raw_metadata.propertyName.trim() : '';
+      if (propertyName) {
+        inferredLocationNamesByEntryId.set(entry.id, propertyName);
+      }
+    }
+  }
+
   return buildMonthlyPaymentsDashboardSnapshot({
     organizations: organizationsResult.data ?? [],
     properties: propertiesResult.data ?? [],
     units: unitsResult.data ?? [],
     periods: periodsResult.data ?? [],
-    references: referencesResult.data ?? [],
+    references: references.map((reference) => ({
+      ...reference,
+      inferred_location_name:
+        !reference.property_id && reference.bank_import_entry_id
+          ? inferredLocationNamesByEntryId.get(reference.bank_import_entry_id) ?? null
+          : null,
+    })),
   });
 }

@@ -20,6 +20,16 @@ type BankImportFileRow = {
   id: string;
 };
 
+type BankImportEntryRow = {
+  id: string;
+  organization_id: string | null;
+  property_id: string | null;
+  transaction_type: string;
+  transaction_date: string | null;
+  reference: string;
+  amount: number | string;
+};
+
 type BankImportPropertyMappingRow = {
   id: string;
   organization_id: string;
@@ -82,6 +92,7 @@ type ImportedAttachment = {
   mimeType: string;
   data: Buffer;
   source: 'gmail' | 'eml';
+  sourceId: string;
   nestedFrom?: string;
 };
 
@@ -395,11 +406,13 @@ export function extractAttachmentsFromEml(raw: Buffer, nestedFrom = 'message.eml
     }
 
     if (filename) {
+      const sourceId = `eml:${nestedFrom}:${filename}:${sha256(decodeMimeBody(sectionParts.bodyText.trim(), transferEncoding)).slice(0, 16)}`;
       attachments.push({
         fileName: filename,
         mimeType: sectionType.split(';')[0].trim() || 'application/octet-stream',
         data: decodeMimeBody(sectionParts.bodyText.trim(), transferEncoding),
         source: 'eml',
+        sourceId,
         nestedFrom,
       });
     }
@@ -670,6 +683,7 @@ async function collectGmailAttachments(accessToken: string, userEmail: string, m
       mimeType,
       data,
       source: 'gmail',
+      sourceId: part.body?.attachmentId?.trim() || `gmail-inline:${fileName}:${sha256(data).slice(0, 16)}`,
     });
   }
 
@@ -787,11 +801,19 @@ async function createBankImportFile(input: {
     .maybeSingle<BankImportFileRow>();
   if (existingFile) return { file: existingFile, duplicate: true };
 
+  const { data: existingAttachmentFile } = await admin
+    .from('bank_import_files')
+    .select('id')
+    .eq('message_id', input.messageId)
+    .eq('gmail_attachment_id', input.attachment.sourceId)
+    .maybeSingle<BankImportFileRow>();
+  if (existingAttachmentFile) return { file: existingAttachmentFile, duplicate: true };
+
   const { data, error } = await admin
     .from('bank_import_files')
     .insert({
       message_id: input.messageId,
-      gmail_attachment_id: '',
+      gmail_attachment_id: input.attachment.sourceId,
       file_name: input.attachment.fileName,
       mime_type: input.attachment.mimeType,
       file_size_bytes: input.attachment.data.byteLength,
@@ -884,25 +906,67 @@ async function upsertPaymentReferenceFromImport(input: {
   organizationId: string;
   propertyId: string | null;
   bankImportEntryId: string;
-  entry: ParsedCapitecEntry;
+  entry: Pick<ParsedCapitecEntry, 'transactionDate' | 'reference' | 'amount'>;
 }) {
   const admin = getSupabaseAdmin();
   const receivedAt = input.entry.transactionDate ?? new Date().toISOString().slice(0, 10);
-  const { error } = await admin.from('payment_references').upsert(
-    {
-      organization_id: input.organizationId,
-      property_id: input.propertyId,
-      reference: input.entry.reference,
-      amount: input.entry.amount,
-      received_at: receivedAt,
-      bank: 'Capitec',
-      signed_off: false,
-      bank_import_entry_id: input.bankImportEntryId,
-    },
-    { onConflict: 'bank_import_entry_id' }
-  );
+  const payload = {
+    organization_id: input.organizationId,
+    property_id: input.propertyId,
+    reference: input.entry.reference,
+    amount: input.entry.amount,
+    received_at: receivedAt,
+    bank: 'Capitec',
+    signed_off: false,
+    bank_import_entry_id: input.bankImportEntryId,
+  };
 
-  if (error) throw new Error(`Failed to upsert payment reference from import: ${error.message}`);
+  const { data: existingReference, error: existingReferenceError } = await admin
+    .from('payment_references')
+    .select('id')
+    .eq('bank_import_entry_id', input.bankImportEntryId)
+    .maybeSingle<{ id: string }>();
+
+  if (existingReferenceError) {
+    throw new Error(`Failed to load payment reference from import: ${existingReferenceError.message}`);
+  }
+
+  if (existingReference) {
+    const { error } = await admin.from('payment_references').update(payload).eq('id', existingReference.id);
+    if (error) throw new Error(`Failed to update payment reference from import: ${error.message}`);
+    return 'updated' as const;
+  }
+
+  const { error } = await admin.from('payment_references').insert(payload);
+  if (error) throw new Error(`Failed to insert payment reference from import: ${error.message}`);
+  return 'inserted' as const;
+}
+
+async function backfillPaymentReferenceForExistingFile(fileId: string) {
+  const admin = getSupabaseAdmin();
+  const { data: entry, error } = await admin
+    .from('bank_import_entries')
+    .select('id,organization_id,property_id,transaction_type,transaction_date,reference,amount')
+    .eq('file_id', fileId)
+    .maybeSingle<BankImportEntryRow>();
+
+  if (error) {
+    throw new Error(`Failed to load existing bank import entry: ${error.message}`);
+  }
+  if (!entry || !entry.organization_id) return false;
+  if (entry.transaction_type.trim().toLowerCase() !== 'incoming funds') return false;
+
+  await upsertPaymentReferenceFromImport({
+    organizationId: entry.organization_id,
+    propertyId: entry.property_id,
+    bankImportEntryId: entry.id,
+    entry: {
+      transactionDate: entry.transaction_date,
+      reference: entry.reference,
+      amount: Number(entry.amount),
+    },
+  });
+  return true;
 }
 
 async function markBankImportMessageStatus(messageId: string, status: 'processed' | 'failed', errorMessage = '') {
@@ -1047,6 +1111,9 @@ export async function importMailboxPayments(
 
         if (duplicate) {
           summary.duplicateFiles += 1;
+          if (await backfillPaymentReferenceForExistingFile(file.id)) {
+            summary.paymentReferencesCreated += 1;
+          }
           continue;
         }
 

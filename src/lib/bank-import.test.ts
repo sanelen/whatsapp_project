@@ -181,6 +181,7 @@ test('extractAttachmentsFromEml recovers nested PDF attachments from a forwarded
   assert.equal(attachments.length, 1);
   assert.equal(attachments[0].fileName, '70006Capitec.pdf');
   assert.equal(attachments[0].mimeType, 'application/pdf');
+  assert.match(attachments[0].sourceId, /^eml:forwarded\.eml:70006Capitec\.pdf:/);
   assert.equal(attachments[0].nestedFrom, 'forwarded.eml');
   assert.deepEqual(attachments[0].data, pdfBytes);
 });
