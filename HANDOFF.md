@@ -1,6 +1,6 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
-**Last updated:** 2026-06-29 — monthly-payments dashboard, bank-import schema/service, Google Cloud Gmail API setup, manual import UI, and Gmail/PDF evidence captured into docs (see §6b and §12)
+**Last updated:** 2026-06-30 — windowed-import fix (§6d) + refresh-from-DB, categorization, dashboard visuals, Gmail→Drive archive with source toggle (§6e). Next: Drive→Supabase re-import. Prior: 2026-06-29 — monthly-payments dashboard, bank-import schema/service, Google Cloud Gmail API setup, manual import UI, and Gmail/PDF evidence captured into docs (see §6b and §12)
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`
 **Working branch:** `codex/monthly-payments`
@@ -422,6 +422,98 @@ Important nuance:
 - The roadmap docs previously said payments was planning-only.
 - That is no longer true in a strict sense: a first implementation pass exists, but
   it is still prototype-grade and not yet backed by Supabase payments tables.
+
+### 6d. Fix — windowed import returned "0 messages" (2026-06-30)
+
+Symptom: clicking **Import** on `/monthly-payments` for a selected month (e.g. Jun)
+returned `Imported 0 references from 0 messages`, even though a prior **Pull everything**
+run had already populated the DB (20 messages, 9 entries, 9 payment references).
+
+Root cause: `buildGmailSearchQuery` (`src/lib/bank-import.ts`) scoped the Gmail search by
+**email received-date** using a tight `after:`/`before:` pair around the billing window.
+But Capitec notifications are **forwarded** into `info.hambatrading@gmail.com`, so a
+message's Gmail received-date is the *forward* date — weeks after the transaction. The
+20 forwarded mails were received **2026-06-12 … 06-29**; the Jun window's Gmail filter
+(`after:2026/05/08 before:2026/06/09`) excluded all of them → 0 messages scanned. The
+service already re-filters parsed PDFs by true transaction date
+(`isEntryInsideBillingWindow`), so the received-date window was redundant *and* harmful.
+
+Fix: for billing-window runs, drop the `before:` received-date guard and keep only a
+generous `after:` floor (window start − 1 day) to bound API volume. A forward can never
+arrive before the transaction, so received-date ≥ window start; transaction-date scoping
+happens downstream. `Pull everything` (no window) is unchanged.
+
+- Changed: `src/lib/bank-import.ts` (`buildGmailSearchQuery` billing-window branch).
+- Tests: updated `src/lib/bank-import.test.ts` (now asserts the `after:` floor and the
+  absence of any `before:` guard). `gmailBeforeDate` is still computed on `BillingWindow`
+  but no longer used in the query — left in place for compatibility.
+- Verified: `npm run typecheck` clean; the two query functions exercised directly via
+  Node type-stripping produce `has:attachment subject:"…" after:<floor>` with no `before:`.
+  (`npm test` could not run in the Linux sandbox — repo `node_modules` carries the macOS
+  esbuild binary; run `npm test` on the Mac to confirm the suite.)
+
+Important follow-on for the operator: the existing 9 transactions are dated **Jun 12–27**,
+which fall in the **July** billing period (Jun 9 – Jul 8) under the 9th-to-8th rule, not
+June. To import them, select **Jul**. Open question worth confirming with the owner:
+whether the month *label* shown in the UI should match this 9th-to-8th window or the
+calendar month the rent is "for".
+
+Not yet done: account `6088` (Quarry Heights) still has no bound `property_id`, so its
+entries import as an inferred/unresolved location (see §8 step 5).
+
+### 6e. Refresh-from-DB, categorization, dashboard visuals, Drive archive (2026-06-30)
+
+Shipped in the same session as §6d (all on `codex/monthly-payments`, verified live in the
+browser at `localhost:3001`):
+
+- **Refresh no longer imports.** The Recent-Months "Refresh" button was triggering a Gmail
+  import (`runRequestToken` → `runImport`). It now calls `router.refresh()` to re-read the
+  dashboard snapshot from the DB. A successful Import also refreshes the dashboard.
+  (`monthly-payments-hub.tsx`, `bank-import-controls.tsx` → `onImported`.)
+- **Categorization.** Created live property `Quarry Heights` and bound account `6088` to it;
+  created `West Rich` and bound account `4079` (proactive — no 4079 txns yet); backfilled
+  `property_id` on existing entries + payment_references. Account map is now
+  `7904 → Essex / Berea (property "berea")`, `6088 → Quarry Heights`, `4079 → West Rich`.
+- **Dashboard visuals when no expected target exists.** Collected money was invisible because
+  every %/bar was `collected ÷ expected` with expected = 0. Now: rolling-total + location
+  badges show `—` (not a misleading 0%) and bars fill from collected money; month cards show
+  the collected **rand** (e.g. `R21k`) with mini-bars sized by collected vs the busiest month.
+  Exposed `collectedAmount`/`expectedAmount` per month in `MonthlyPaymentsMonthSummary`
+  (`monthly-payments.ts`, `monthly-payments-hub.tsx`).
+- **Bank-import source toggle + Gmail→Drive archive.**
+  - Added a `getBillingPeriodForDate` helper (inverse of `getBillingWindowForPeriod`); unit-checked.
+  - New segmented **Gmail | Drive | Both** control in the import panel (`source` param threaded
+    through `/api/monthly-payments/import` → `runBankImport`).
+  - New `src/lib/google-drive.ts` (drive.file REST client: ensure-folder-path, multipart
+    upload, list, download).
+  - `archiveStoredFilesToDrive()` in `bank-import.ts` mirrors every stored PDF into
+    `Hamba Trading Bank Files / <billing-period> / <building>`, **re-parsing each PDF** for its
+    own date+account (the entry↔file link is lossy), deduped via new
+    `bank_import_files.drive_file_id` / `drive_folder_path` / `drive_archived_at` columns
+    (migration `add_drive_archive_tracking_to_bank_import_files`). Idempotent.
+  - **OAuth scope expanded** to include `drive.file`; re-consented via browser as
+    `info.hambatrading@gmail.com`; new refresh token stored in `.env.local` (Next auto-reloaded
+    it — no manual restart needed).
+  - **Enabled the Google Drive API** in Cloud project `hamba-customer-service` (1012541406349) —
+    it was off (only Gmail API was on); that was the only thing blocking uploads.
+  - **Verified live:** ran source=Drive → all **44/44** files archived into month/building
+    folders (Feb→Jul; re-parsing surfaced months the dashboard doesn't show because they had no
+    linked entries). On-screen: "44 files archived to Drive".
+
+Data-quality note from this session: 9 June files were mislabeled `parser_status='failed'`
+(stale ON CONFLICT error from before a unique constraint existed) — flipped back to `parsed`
+since their entries/references were already correct. Only **2** PDFs are genuinely unparseable
+(`22185Capitec.pdf`, `74037Capitec.pdf`, forwarded 12 Jun) → they sit in `Uncategorized`.
+
+Folder-name note: account `7904` archives under **"Essex Berea"** (slash stripped from the
+mapping's "Essex / Berea"). Rename if "Berea Essex" is preferred.
+
+#### Pick up here next (Drive → Supabase re-import)
+The reverse direction is the open piece: read PDFs **back from the Drive month folders into
+Supabase** (so files manually dropped into Drive flow into the dashboard). Needs a nullable
+`bank_import_files.message_id` (Drive-sourced files have no Gmail message) and a small refactor
+to share the per-PDF parse/upsert path between the Gmail and Drive importers. The `source='drive'`
+branch currently only *builds/syncs* the archive.
 
 ---
 
