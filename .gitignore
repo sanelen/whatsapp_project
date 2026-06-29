@@ -25,6 +25,7 @@ coverage/
 # local logs and scratch output
 logs/
 *.log
+supabase/.temp/
 
 # TypeScript / Next generated files
 *.tsbuildinfo

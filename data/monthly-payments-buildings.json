@@ -1,0 +1,34 @@
+[
+  {
+    "id": "berea-1781627655115",
+    "name": "berea",
+    "location": "yyyy",
+    "unitCount": 3,
+    "units": [
+      {
+        "id": 1,
+        "label": "Room 1",
+        "price": "555",
+        "reference": "",
+        "keywords": [],
+        "occupancy": "vacant"
+      },
+      {
+        "id": 2,
+        "label": "Room 2",
+        "price": "8888",
+        "reference": "",
+        "keywords": [],
+        "occupancy": "occupied"
+      },
+      {
+        "id": 3,
+        "label": "Room 3",
+        "price": "888",
+        "reference": "",
+        "keywords": [],
+        "occupancy": "occupied"
+      }
+    ]
+  }
+]
