@@ -1,6 +1,6 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
-**Last updated:** 2026-06-29 — monthly-payments dashboard, bank-import schema/service, Gmail OAuth setup, manual import UI, and Gmail/PDF evidence captured into docs (see §6b and §12)
+**Last updated:** 2026-06-29 — monthly-payments dashboard, bank-import schema/service, Google Cloud Gmail API setup, manual import UI, and Gmail/PDF evidence captured into docs (see §6b and §12)
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`
 **Working branch:** `codex/monthly-payments`
@@ -292,9 +292,9 @@ Work completed in the current monthly-payments pass:
     - supports manual authenticated calls and cron-style bearer-secret calls
     - accepts `billingPeriod` (`YYYY-MM`) and `pullAll`; selected periods use the
       Hamba working window of previous-month 9th through selected-month 8th
-  - added protected Gmail setup/status route:
-    - `src/app/api/monthly-payments/import/oauth/route.ts`
-    - supports normal Gmail OAuth refresh-token setup for the observed
+  - added protected Google Cloud Gmail API setup/status route:
+    - `src/app/api/monthly-payments/import/google-cloud/route.ts`
+    - supports Google Cloud OAuth refresh-token setup for the observed
       `info.hambatrading@gmail.com` inbox, while leaving service-account delegation
       available for Google Workspace/domain-wide setups
   - added test coverage:
@@ -302,7 +302,7 @@ Work completed in the current monthly-payments pass:
     - current suite total: **52 passing tests**
 - Added the first manual import UI to `/monthly-payments`:
   - `src/components/monthly-payments/bank-import-controls.tsx`
-  - Gmail connection status and `Connect Gmail` action
+  - Google Cloud configuration status and setup action
   - month selector
   - `Pull everything` toggle
   - `Import` button
@@ -322,9 +322,10 @@ Important nuance from the recording:
 
 Current blocker for live import execution:
 
-- The route and service are working, and the connected Codex Gmail account was
-  verified as `info.hambatrading@gmail.com`.
-- A Gmail connector search found Capitec messages with forwarded `message/rfc822`
+- The route and service are working and call Google's Gmail API directly from the
+  app runtime using Google Cloud credentials; mailbox data is not pulled through an
+  app connector.
+- A mailbox inspection confirmed Capitec messages with forwarded `message/rfc822`
   attachments; one sample was
   `Capitec Business Transaction Notification - 36683Capitec.pdf`.
 - Actual app/runtime Gmail pulls are blocked until either OAuth or service-account
@@ -447,10 +448,10 @@ Important nuance:
 3. **Keep the docs and Linear in sync with the design review:** the reviewed flow is
    now entry layer → dashboard home → unit table → ref pool → drawer for payments,
    plus explicit WhatsApp/offboarding sequences.
-4. **Configure Gmail import env next:** set `GMAIL_OAUTH_CLIENT_ID` and
-   `GMAIL_OAUTH_CLIENT_SECRET`, use `/api/monthly-payments/import/oauth` or the
-   dashboard `Connect Gmail` action to get `GMAIL_OAUTH_REFRESH_TOKEN`, then run the
-   manual import from `/monthly-payments` for May/June and inspect
+4. **Configure Google Cloud Gmail API env next:** set `GMAIL_OAUTH_CLIENT_ID` and
+   `GMAIL_OAUTH_CLIENT_SECRET`, use `/api/monthly-payments/import/google-cloud` or
+   the dashboard Google Cloud setup action to get `GMAIL_OAUTH_REFRESH_TOKEN`, then
+   run the manual import from `/monthly-payments` for May/June and inspect
    `bank_import_entries` plus `payment_references`.
 5. **Bind missing property mappings:** `7904` is bound to Berea; `6088` is seeded for
    Quarry Heights but currently has no live property row id.

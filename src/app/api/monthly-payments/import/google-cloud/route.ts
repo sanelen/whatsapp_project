@@ -9,7 +9,7 @@ import {
 function resolveRedirectUri(request: NextRequest) {
   const configured = process.env.GMAIL_OAUTH_REDIRECT_URI?.trim();
   if (configured) return configured;
-  return new URL('/api/monthly-payments/import/oauth', request.nextUrl.origin).toString();
+  return new URL('/api/monthly-payments/import/google-cloud', request.nextUrl.origin).toString();
 }
 
 export async function GET(request: NextRequest) {
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
         status: getGmailIntegrationStatus(),
         nextStep: token.refresh_token
           ? 'Store this refreshToken as GMAIL_OAUTH_REFRESH_TOKEN in the runtime environment.'
-          : 'Google did not return a refresh token. Re-run consent with prompt=consent or remove the prior app grant in the Google account.',
+          : 'Google Cloud did not return a refresh token. Re-run consent with prompt=consent or remove the prior app grant in the Google account.',
       });
     }
 
@@ -47,10 +47,10 @@ export async function GET(request: NextRequest) {
       redirectUri,
       authorizationUrl,
       nextStep: status.configured
-        ? 'Gmail import credentials are configured.'
+        ? 'Google Cloud Gmail API credentials are configured.'
         : !authorizationUrl
-          ? 'Set GMAIL_OAUTH_CLIENT_ID and GMAIL_OAUTH_CLIENT_SECRET to generate the Gmail consent URL.'
-        : 'Open authorizationUrl, approve Gmail read-only access, then store the returned refreshToken as GMAIL_OAUTH_REFRESH_TOKEN.',
+          ? 'Set GMAIL_OAUTH_CLIENT_ID and GMAIL_OAUTH_CLIENT_SECRET from Google Cloud to generate the consent URL.'
+          : 'Open authorizationUrl, approve Gmail read-only access, then store the returned refreshToken as GMAIL_OAUTH_REFRESH_TOKEN.',
     });
   } catch (error) {
     return NextResponse.json(
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
         success: false,
         status,
         redirectUri,
-        error: error instanceof Error ? error.message : 'Failed to prepare Gmail OAuth setup',
+        error: error instanceof Error ? error.message : 'Failed to prepare Google Cloud Gmail API setup',
       },
       { status: 500 }
     );

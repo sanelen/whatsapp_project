@@ -25,7 +25,7 @@ type ImportResponse = {
   }>;
 };
 
-type GmailIntegrationResponse = {
+type GoogleCloudIntegrationResponse = {
   success: boolean;
   authorizationUrl?: string;
   error?: string;
@@ -59,7 +59,7 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
   const [selectedPeriod, setSelectedPeriod] = useState(defaultPeriod);
   const [pullAll, setPullAll] = useState(false);
   const [result, setResult] = useState<ImportResponse | null>(null);
-  const [gmailStatus, setGmailStatus] = useState<GmailIntegrationResponse | null>(null);
+  const [googleCloudStatus, setGoogleCloudStatus] = useState<GoogleCloudIntegrationResponse | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isConnecting, startConnecting] = useTransition();
 
@@ -80,16 +80,16 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
 
   useEffect(() => {
     let isMounted = true;
-    fetch('/api/monthly-payments/import/oauth')
-      .then((response) => response.json() as Promise<GmailIntegrationResponse>)
+    fetch('/api/monthly-payments/import/google-cloud')
+      .then((response) => response.json() as Promise<GoogleCloudIntegrationResponse>)
       .then((payload) => {
-        if (isMounted) setGmailStatus(payload);
+        if (isMounted) setGoogleCloudStatus(payload);
       })
       .catch((error: unknown) => {
         if (isMounted) {
-          setGmailStatus({
+          setGoogleCloudStatus({
             success: false,
-            error: error instanceof Error ? error.message : 'Could not check Gmail status',
+            error: error instanceof Error ? error.message : 'Could not check Google Cloud status',
           });
         }
       });
@@ -99,11 +99,11 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
     };
   }, []);
 
-  function connectGmail() {
+  function openGoogleCloudSetup() {
     startConnecting(async () => {
-      const response = await fetch('/api/monthly-payments/import/oauth');
-      const payload = (await response.json()) as GmailIntegrationResponse;
-      setGmailStatus(payload);
+      const response = await fetch('/api/monthly-payments/import/google-cloud');
+      const payload = (await response.json()) as GoogleCloudIntegrationResponse;
+      setGoogleCloudStatus(payload);
 
       if (payload.authorizationUrl) {
         window.location.assign(payload.authorizationUrl);
@@ -198,26 +198,26 @@ export function BankImportControls({ defaultPeriod, periods }: BankImportControl
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <span
           className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-semibold ${
-            gmailStatus?.status?.configured
+            googleCloudStatus?.status?.configured
               ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
               : 'border-slate-300 bg-white text-slate-600'
           }`}
         >
           <MailCheck size={15} />
-          {gmailStatus?.status?.configured ? 'Gmail ready' : 'Gmail not connected'}
+          {googleCloudStatus?.status?.configured ? 'Google Cloud ready' : 'Google Cloud not configured'}
         </span>
-        {!gmailStatus?.status?.configured ? (
+        {!googleCloudStatus?.status?.configured ? (
           <button
             type="button"
-            onClick={connectGmail}
+            onClick={openGoogleCloudSetup}
             disabled={isConnecting}
             className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-sky-400 disabled:cursor-wait disabled:text-slate-400"
           >
             {isConnecting ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
-            Connect Gmail
+            Google Cloud setup
           </button>
         ) : null}
-        {gmailStatus?.error ? <p className="text-sm text-rose-700">{gmailStatus.error}</p> : null}
+        {googleCloudStatus?.error ? <p className="text-sm text-rose-700">{googleCloudStatus.error}</p> : null}
       </div>
 
       {result ? (

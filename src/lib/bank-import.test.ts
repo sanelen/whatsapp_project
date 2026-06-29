@@ -138,7 +138,7 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
     () => {
       const url = new URL(
         buildGmailOAuthConsentUrl({
-          redirectUri: 'http://localhost:3001/api/monthly-payments/import/oauth',
+          redirectUri: 'http://localhost:3001/api/monthly-payments/import/google-cloud',
           state: 'monthly-payments-bank-import',
         })
       );
