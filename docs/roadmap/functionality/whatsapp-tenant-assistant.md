@@ -1,7 +1,7 @@
 # WhatsApp Tenant Assistant Roadmap
 
 > Derived from [2026-06-14 La Lucia Mall session](../../voice-notes/2026-06-14-la-lucia-mall-16.md).
-> Status: **planning only — not approved for build.**
+> Status: **planning only, but design-reviewed against the 2026-06-29 wireframe handoff.**
 
 ## Goal
 
@@ -27,6 +27,16 @@ allowing a **human to take over**. It serves three tenant states: **interested**
 > [tenant conversation flows](./tenant-conversation-flows.md).
 
 ## Conversation design
+
+The reviewed wireframes clarify the intended linear operational flow:
+
+1. **Inbound greeting** on the shared WhatsApp number.
+2. **Intent detection** into interested, servicing, leaving, or unclear/sensitive.
+3. **Interested path**: location selection → property info → live vacancy check →
+   application or lead capture.
+4. **Human takeover path**: any branch can detach the bot and move the thread into
+   an agent workspace with lead summary and actions.
+5. **Leaving path**: hands off into the offboarding sequence.
 
 ### State A — Interested / inquiring (priority)
 
@@ -56,6 +66,8 @@ Routes into the [offboarding flow](./tenant-offboarding.md).
 - **Human takeover / LLM detach:** every conversation can be flipped to a human;
   the bot pauses for that thread (this maps to the parked **AUT-8** "human handoff /
   bot pause").
+- **Agent workspace shape:** the reviewed design expects a 3-pane takeover surface:
+  conversation list, active thread, and a summary/actions rail.
 - **Guardrails:** business rules (pricing, occupancy, leaving rules) constrain the
   LLM; it should refuse/escalate outside them rather than improvise.
 - **Context segmentation:** per-conversation memory keyed by WhatsApp contact; reuse
@@ -86,8 +98,8 @@ Routes into the [offboarding flow](./tenant-offboarding.md).
 ## Phasing
 
 - **P0:** resolve AUT-15; confirm Twilio/Cloud API; webhook skeleton + signature.
-- **P1:** State A happy path — welcome, property info from structured data, lead
-  capture + summary.
-- **P2:** human takeover / bot-pause + agent view.
+- **P1:** State A happy path — welcome, property info from structured data, live
+  vacancy-aware branching, lead capture + summary.
+- **P2:** human takeover / bot-pause + 3-pane agent view.
 - **P3:** leaving flow (State C) integration.
 - **P4:** servicing (State B) + dynamic supplier forwarding.

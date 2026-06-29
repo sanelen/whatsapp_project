@@ -22,8 +22,8 @@ test('property assistance page renders the organizations view', () => {
 test('monthly payments page renders the monthly payments hub', () => {
   const source = readFileSync('src/app/monthly-payments/page.tsx', 'utf8');
   assert.match(source, /<MonthlyPaymentsHub/);
-  assert.match(source, /saveBuildingAction=\{saveMonthlyPaymentsBuilding\}/);
-  assert.match(source, /deleteBuildingAction=\{deleteMonthlyPaymentsBuilding\}/);
+  assert.match(source, /readMonthlyPaymentsDashboard/);
+  assert.match(source, /await requireUser\(\)/);
 });
 
 test('organization page renders the organization view with its id', () => {

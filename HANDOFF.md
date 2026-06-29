@@ -1,9 +1,9 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
-**Last updated:** 2026-06-15 — KB pipeline hardened, HeroUI adopted, audio transcription CLI shipped, and tenant-operations planning docs + flow diagrams added (see §12)
+**Last updated:** 2026-06-29 — monthly-payments dashboard, bank-import schema/service, manual import UI, and Gmail/PDF evidence captured into docs (see §6b and §12)
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`
-**Working branch:** `sanelengcobo/aut-9-extend-supabase-schema-for-tenant-register-and-assistant`
+**Working branch:** `codex/monthly-payments`
 **Production branch:** `main` (currently at `2174bde`, == working branch tip)
 **Vercel project:** `whatsapp-project` (team "sanele's projects") — production **READY**
 **Supabase project:** `hambatrading` (ref `ddlykzackuehdexldazv`, eu-central-1, ACTIVE_HEALTHY)
@@ -239,6 +239,106 @@ Blocker — RESOLVED (2026-06-14):
 
 KB pipeline hardening — COMPLETED (2026-06-14, same session):
 
+### 6b. Payments dashboard and bank-import progress (2026-06-29)
+
+Work completed in the current monthly-payments pass:
+
+- Added the entry-layer split on the home screen so the product now branches into
+  `Chatbox` and `Dashboard`.
+- Reworked the monthly-payments UI toward the reviewed wireframes while keeping the
+  current design language.
+- Added the Supabase tables behind the dashboard model:
+  - `property_units`
+  - `unit_payment_periods`
+  - `payment_references`
+- Added the Supabase tables behind the bank-email ingestion model:
+  - `bank_import_mailboxes`
+  - `bank_import_messages`
+  - `bank_import_files`
+  - `bank_import_entries`
+- Applied both new migration sets to the live Supabase project
+  `ddlykzackuehdexldazv`.
+- Replaced the earlier local-data monthly payments flow with Supabase-backed
+  dashboard snapshot logic.
+- Captured a Record and Replay session against the real Gmail source and documented
+  the observed Capitec attachment pattern plus the visible PDF fields in
+  `docs/roadmap/functionality/payments-bank-import.md`.
+- Follow-up owner walkthrough clarified the first business rules for interpretation:
+  - only `Incoming Funds` should be imported into the payment-reference flow
+  - destination account `6088` maps to Quarry Heights
+  - destination account `7904` maps to Essex / Berea
+  - reference strings, amount received, and actioned datetime are important
+  - available balance can be stored but is not operationally important for matching
+- A second implementation pass executed the backend import plan:
+  - added migration `supabase/migrations/20260629213000_add_bank_import_lookup_tables.sql`
+  - applied it live to Supabase project `ddlykzackuehdexldazv`
+  - added lookup tables:
+    - `bank_import_property_mappings`
+    - `bank_import_unit_match_hints`
+  - extended import/reference schema with:
+    - `bank_import_entries.transaction_type`
+    - `bank_import_entries.destination_account_suffix`
+    - `bank_import_entries.available_balance`
+    - `payment_references.bank_import_entry_id`
+  - seeded live lookup/mailbox rows:
+    - mailbox `info.hambatrading@gmail.com`
+    - property/account mapping `7904 => Essex / Berea` (bound to live property `berea`)
+    - property/account mapping `6088 => Quarry Heights` (currently unbound; no live property row yet)
+  - added server import service:
+    - `src/lib/bank-import.ts`
+    - handles Gmail fetch, forwarded `.eml` extraction, Capitec PDF parsing, lookup resolution, and persistence into `bank_import_*` + `payment_references`
+  - added protected trigger route:
+    - `src/app/api/monthly-payments/import/route.ts`
+    - supports manual authenticated calls and cron-style bearer-secret calls
+    - accepts `billingPeriod` (`YYYY-MM`) and `pullAll`; selected periods use the
+      Hamba working window of previous-month 9th through selected-month 8th
+  - added test coverage:
+    - `src/lib/bank-import.test.ts`
+    - current suite total: **50 passing tests**
+- Added the first manual import UI to `/monthly-payments`:
+  - `src/components/monthly-payments/bank-import-controls.tsx`
+  - month selector
+  - `Pull everything` toggle
+  - `Import` button
+  - success/error summary
+- Billing period rule now implemented in the importer:
+  - May 2026 = 2026-04-09 through 2026-05-08
+  - June 2026 = 2026-05-09 through 2026-06-08
+  - manual historical month pulls ignore `last_synced_at` so backfills are not
+    blocked by a later latest-data sync
+
+Important nuance from the recording:
+
+- The capture is strong enough to define the import/parser shape.
+- It is **not** strong enough to preserve a clean location-by-file mapping from the
+  spoken narration. If that mapping matters for historical backfill, record one
+  tighter follow-up pass or upload representative files directly.
+
+Current blocker for live import execution:
+
+- The route and service are working, but actual Gmail pulls are blocked until these
+  env vars are present in the runtime:
+  - `GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL`
+  - `GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY`
+- Verified current failure mode:
+  - `POST /api/monthly-payments/import` with a selected billing period returns
+    `Missing Gmail service-account env. Set GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL and GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY.`
+
+Verified this session:
+
+- `npm run typecheck` — clean
+- `npm test` — **50/50 passing**
+- Supabase live verification:
+  - new tables exist
+  - mailbox seed row exists
+  - property mappings exist for `6088` and `7904`
+
+Security advisory surfaced by Supabase after verification:
+
+- `public.prompt_settings` still has RLS disabled.
+- Supabase remediation doc:
+  [RLS Disabled in Public](https://supabase.com/docs/guides/database/database-linter?lint=0013_rls_disabled_in_public)
+
 A fresh `npm run audit:vector-pipeline` after the migrations surfaced a regression and
 several audit-script staleness issues. All fixed; the audit now reports **0 findings /
 32 checks** (`docs/audits/vector-pipeline-2026-06-14T20-55-00-371Z.md`).
@@ -278,6 +378,34 @@ These are noted in `docs/ROADMAP.md` as well:
 3. Large-document strategy:
    standard multipart uploads are fine for the first pass, but resumable uploads may be needed if large files are expected regularly.
 
+### 6c. Design-handoff review and payments branch status (2026-06-29)
+
+The sibling folder `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
+has now been reviewed and should be treated as the visual reference for Phase 7.
+
+What it clarified:
+
+- **Payments preferred flow:** entry layer → dashboard home → per-unit table →
+  reference-pool match/sign-off → unit detail drawer with reverse sign-off.
+- **WhatsApp preferred flow:** greet → detect intent → interested / servicing /
+  leaving → human takeover from any branch.
+- **Offboarding preferred flow:** acknowledge → market unit → exit survey →
+  leaving requirements → proof of banking → inspection/deposit → close.
+
+What changed in code on `codex/monthly-payments`:
+
+- `/` now splits into **Property Assistance** and **Monthly Payments**
+- `/property-assistance` preserves the existing `WorkspaceRoute`
+- `/monthly-payments` is live with a local-data admin workspace
+- buildings/units are currently stored in `data/monthly-payments-buildings.json`
+- server actions support create/update/delete for building setup
+
+Important nuance:
+
+- The roadmap docs previously said payments was planning-only.
+- That is no longer true in a strict sense: a first implementation pass exists, but
+  it is still prototype-grade and not yet backed by Supabase payments tables.
+
 ---
 
 ## 7. Tooling / environment notes
@@ -300,13 +428,22 @@ These are noted in `docs/ROADMAP.md` as well:
 1. `cd /Users/macdaddy/Documents/DEV/HambaCustomerService` — confirm branch + clean tree.
 2. **Commit/push the current auth UX follow-up if desired:** files changed after the last
    commit are listed in §10 below (`/auth-test`, login messages, tests, and this handoff).
-3. **Do AUT-14 next:** add the 8 env vars from `.env.local` to Vercel (Production),
+3. **Keep the docs and Linear in sync with the design review:** the reviewed flow is
+   now entry layer → dashboard home → unit table → ref pool → drawer for payments,
+   plus explicit WhatsApp/offboarding sequences.
+4. **Configure Gmail import env next:** set `GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL` and
+   `GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY` locally/Vercel, then run the manual import
+   from `/monthly-payments` for May/June and inspect `bank_import_entries` plus
+   `payment_references`.
+5. **Bind missing property mappings:** `7904` is bound to Berea; `6088` is seeded for
+   Quarry Heights but currently has no live property row id.
+6. **Do AUT-14 next:** add the 8 env vars from `.env.local` to Vercel (Production),
    then redeploy and verify chat/KB/workspace work in prod.
-4. **Resolve AUT-15:** confirm with the owner whether `SAWhatsApp/platform` was meant
+7. **Resolve AUT-15:** confirm with the owner whether `SAWhatsApp/platform` was meant
    to be dropped; update AUT-5/7/8/12 accordingly.
-5. **Then AUT-9:** apply/verify the tenant-register migration on live Supabase and
+8. **Then AUT-9:** apply/verify the tenant-register migration on live Supabase and
    unify the two schema files.
-6. Reference key files: `src/app/api/chat/route.ts` (provider routing + KB grounding),
+9. Reference key files: `src/app/api/chat/route.ts` (provider routing + KB grounding),
    `src/lib/supabase.ts` (client + settings), `supabase/*.sql` (schema).
 
 ---

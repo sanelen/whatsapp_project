@@ -3,17 +3,17 @@ import Link from 'next/link';
 const appLinks = [
   {
     href: '/property-assistance',
-    title: 'Property Assistance',
+    title: 'Chatbox',
     description:
-      'Open the existing workspace for organizations, properties, and tenant-facing assistant flows.',
-    eyebrow: 'Current workspace',
+      'Open the existing assistant workspace for organizations, properties, and tenant-facing chat flows.',
+    eyebrow: 'Existing assistant',
   },
   {
     href: '/monthly-payments',
-    title: 'Monthly Payments',
+    title: 'Dashboard',
     description:
-      'Enter the payments area where we will build monthly rent tracking, reconciliation, and account views.',
-    eyebrow: 'New module',
+      'Enter the payments and CRM view for monthly rent tracking, reconciliation, and account visibility.',
+    eyebrow: 'New view',
   },
 ];
 
@@ -27,11 +27,11 @@ export default function HomePage() {
               Hamba operations
             </p>
             <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-              Choose the part of the platform you want to open.
+              Where do you want to go?
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
-              The current property assistant stays intact. We are simply adding a level above it
-              so the homepage can branch into property support and monthly payments.
+              The entry layer now splits the existing chat workspace from the dashboard so
+              Hamba can move between assistant operations and monthly payments cleanly.
             </p>
           </section>
 
@@ -39,11 +39,11 @@ export default function HomePage() {
             <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
               <div className="rounded-2xl bg-slate-950 px-4 py-4 text-slate-50">
                 <p className="text-xs uppercase tracking-[0.18em] text-sky-200">Live now</p>
-                <p className="mt-2 text-lg font-semibold">Property assistant workspace</p>
+                <p className="mt-2 text-lg font-semibold">Chatbox workspace</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Next build</p>
-                <p className="mt-2 text-lg font-semibold text-slate-900">Monthly payments hub</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900">Dashboard home</p>
               </div>
             </div>
           </section>

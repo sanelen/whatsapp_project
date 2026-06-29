@@ -2,7 +2,9 @@
 
 ## Current Focus
 
-The UI shell is in place, so the next major work is functionality: property-scoped vector knowledge, Supabase Storage uploads, configurable retrieval, and chatbot testing logs.
+The KB/retrieval shell is in place, and a first monthly-payments branch now exists.
+The next major work is to reconcile planning with implementation, then continue the
+tenant-operations build in a deliberate sequence.
 
 ## Execution Status
 
@@ -11,13 +13,17 @@ The UI shell is in place, so the next major work is functionality: property-scop
   modes (`hybrid`/`rolling_window`/`retrieval_only`), graceful handling of corrupt/
   unsupported uploads, and direct (non-HTTP) KB retrieval from the chat route. The
   vector-pipeline audit now reports **0 findings across 32 checks**.
+- Shipped on branch `codex/monthly-payments` (2026-06-29): the new top-level split
+  between **Property Assistance** and **Monthly Payments**, plus a local-data monthly
+  payments admin workspace for building, unit-count, occupancy, price, reference, and
+  keyword setup.
 - Already shipped: restored top navigation, local-storage selection persistence, tablet
   layout improvements, KB text chunk settings UI, retrieval settings, vector audit
   script, and roadmap docs.
 - Still under review (decisions needed, not blocking): `summary_memory` lifecycle
-  (currently falls back to `hybrid`), and large-file upload strategy above standard
-  multipart usage. Unsupported/corrupt binaries are now stored and flagged
-  `unsupported` (excluded from retrieval).
+  (currently falls back to `hybrid`), large-file upload strategy above standard
+  multipart usage, and whether the current monthly-payments local JSON layer should
+  be treated as prototype scaffolding or carried forward into Supabase-backed buildout.
 
 ## Questions For Review
 
@@ -89,8 +95,11 @@ and visual, and standardizes the UI on HeroUI.
 
 Captured from the [2026-06-14 La Lucia Mall session](./voice-notes/2026-06-14-la-lucia-mall-16.md).
 Adds a **layer above organizations** with two entry points — **Chatbox** (existing
-route) and **Dashboard** (new) — and three tenant-operations capabilities. **Planning
-only; not approved for build.**
+route) and **Dashboard** (new) — and three tenant-operations capabilities. The
+wireframe package in `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
+was reviewed on 2026-06-29 and now serves as the primary visual reference. Payments
+has already begun implementation on branch `codex/monthly-payments`; WhatsApp
+assistant and offboarding remain planning-only.
 
 - **WhatsApp tenant assistant** — guardrailed LLM conversations for inquiring,
   servicing (deferred), and leaving tenants, with human takeover. Resolves the
@@ -99,9 +108,24 @@ only; not approved for build.**
   and the [conversation flow diagrams](./roadmap/functionality/tenant-conversation-flows.md).
 - **Payments dashboard** — CRM-style per-unit rent tracking, reference matching /
   sign-off, amber status, and rolling totals. See
-  [payments dashboard](./roadmap/functionality/payments-dashboard.md).
+  [payments dashboard](./roadmap/functionality/payments-dashboard.md) and the
+  [bank import notes](./roadmap/functionality/payments-bank-import.md).
 - **Tenant offboarding** — notice → market the unit → exit survey → deposit/banking
   handling. See [tenant offboarding](./roadmap/functionality/tenant-offboarding.md).
+
+### Reviewed linear flow
+
+1. **Entry layer**: org-level choice between `Chatbox` and `Dashboard`.
+2. **Payments dashboard**: dashboard home with month stepper, recent-month strip,
+   rolling total, by-location cards, and unmatched-reference callout.
+3. **Payments drill-down**: per-location unit table, then reference-pool matching,
+   then unit-detail management and reverse-sign-off audit.
+4. **Bank import**: Gmail mailbox sync, Capitec PDF extraction, dedupe/provenance,
+   then reconciliation into the reference pool.
+5. **WhatsApp assistant**: inbound greeting, intent routing, interested flow, human
+   takeover pane, and later servicing/offboarding branches.
+6. **Offboarding**: leaving stepper, operational tracker, exit survey, and
+   banking/deposit reconciliation screen.
 
 ## Tooling
 

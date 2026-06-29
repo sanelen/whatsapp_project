@@ -1,11 +1,21 @@
 # Tenant Conversation Flows (Decision Trees)
 
 > Derived from [2026-06-14 La Lucia Mall session](../../voice-notes/2026-06-14-la-lucia-mall-16.md).
-> Status: **planning only — not approved for build.** These are the decision trees
+> Status: **planning only, design-reviewed.** These are the decision trees
 > behind the [WhatsApp tenant assistant](./whatsapp-tenant-assistant.md),
 > [payments dashboard](./payments-dashboard.md), and
 > [tenant offboarding](./tenant-offboarding.md). Diagrams use Mermaid (renders on
 > GitHub / most Markdown viewers).
+
+## Reviewed flow order
+
+The wireframe handoff made the intended cross-feature sequence explicit:
+
+1. `Chatbox` vs `Dashboard` split at the org level.
+2. For `Chatbox`, inbound WhatsApp routing runs first.
+3. Interested tenants stay in the inquiry/application flow unless escalated.
+4. Leaving tenants branch directly into offboarding.
+5. Human takeover can interrupt any branch.
 
 ## 1. Inbound routing — top-level decision tree
 

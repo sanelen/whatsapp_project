@@ -1,7 +1,7 @@
 # Tenant Offboarding Roadmap
 
 > Derived from [2026-06-14 La Lucia Mall session](../../voice-notes/2026-06-14-la-lucia-mall-16.md).
-> Status: **planning only — not approved for build.**
+> Status: **planning only, but now aligned to the reviewed wireframe sequence.**
 
 ## Goal
 
@@ -37,6 +37,18 @@ month." The assistant recognizes intent and starts the offboarding process.
 6. **Close:** thank the tenant and wish them well; archive the conversation with a
    summary.
 
+## Reviewed screen flow
+
+The wireframe handoff breaks the offboarding experience into four connected screens:
+
+1. **Leaving stepper**: the end-to-end tenant flow from notice through closure.
+2. **Offboarding tracker**: the staff-side operational board for `notice`,
+   `marketed`, `inspection`, `deposit_pending`, and `closed`.
+3. **Exit survey**: the branch point for performance-related departures and retention
+   escalation.
+4. **Deposit & banking**: private proof-of-banking upload, masked synthesized details,
+   inspection-based deduction, and refund confirmation.
+
 ## Data touchpoints
 
 - **Unit:** `is_available = true`, expected vacancy date (property/unit model).
@@ -55,6 +67,8 @@ month." The assistant recognizes intent and starts the offboarding process.
 - Treat banking/ID documents as **sensitive**: private storage, restricted access,
   no echoing back full numbers in chat.
 - Performance-related exits escalate to a human (retention opportunity).
+- Banking confirmation views must mask full account numbers and require human review
+  before payout is marked complete.
 
 ## Open questions (need owner input / more voice notes)
 

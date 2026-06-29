@@ -7,7 +7,9 @@ This folder is the planning and implementation strategy hub for the project.
 1. **[Roadmap](./ROADMAP.md)** — the single source of truth for phases and status.
 2. **[Latest voice-note brief](./voice-notes/2026-06-14-la-lucia-mall-16.md)** — the
    current product vision in the owner's words.
-3. Then dive into the themed sections below.
+3. **Design handoff package** — `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
+   contains the reviewed wireframe canvas and screen exports for the Phase 7 work.
+4. Then dive into the themed sections below.
 
 ## Tenant operations (current vision)
 
@@ -17,7 +19,23 @@ The big push: a layer above organizations with two entry points — **Chatbox**
 - [WhatsApp tenant assistant](./roadmap/functionality/whatsapp-tenant-assistant.md) — guardrailed LLM flow for inquiring / servicing / leaving tenants, with human takeover.
 - [Tenant conversation flows](./roadmap/functionality/tenant-conversation-flows.md) — **decision trees / flow diagrams** for routing, inquiring, leaving, and human takeover.
 - [Payments dashboard](./roadmap/functionality/payments-dashboard.md) — CRM-style per-unit rent tracking, reference matching, rolling totals.
+- [Payments bank import notes](./roadmap/functionality/payments-bank-import.md) — observed Gmail/Capitec attachment evidence and the parser/import shape it implies.
 - [Tenant offboarding](./roadmap/functionality/tenant-offboarding.md) — the "leaving" process: notice, exit survey, deposit/banking handling.
+
+## Reviewed design flow
+
+The June 29 design review clarified the preferred linear flow across the planned
+tenant-operations work:
+
+- **Payments**: entry layer → dashboard home → location/unit table → reference pool
+  match/sign-off → unit detail drawer for reversals and audit.
+- **WhatsApp assistant**: greet → detect intent → interested / servicing / leaving →
+  human takeover from any branch.
+- **Offboarding**: acknowledge → market unit → exit survey → leaving requirements →
+  proof of banking → inspection/deposit → close.
+
+Use the roadmap docs below as the written companion to that flow; the wireframe HTML
+is now the visual reference, not a separate competing plan.
 
 ## Knowledge base & data
 
