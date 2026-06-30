@@ -24,11 +24,14 @@ The big push: a layer above organizations with two entry points — **Chatbox**
 
 ## Reviewed design flow
 
-The June 29 design review clarified the preferred linear flow across the planned
-tenant-operations work:
+The June 29 design review, plus the later operator-loop review, clarified the
+preferred linear flow across the planned tenant-operations work:
 
-- **Payments**: entry layer → dashboard home → location/unit table → reference pool
-  match/sign-off → unit detail drawer for reversals and audit.
+- **Payments**: entry layer → dashboard home → location/unit table → inline
+  match/sign-off drawer inside the unit table → reverse / audit. The reviewed
+  per-unit table now explicitly includes a deposit `Date` column sourced from the
+  matched payment reference, and the standalone global reference-pool page is no
+  longer the v1 primary path.
 - **WhatsApp assistant**: greet → detect intent → interested / servicing / leaving →
   human takeover from any branch.
 - **Offboarding**: acknowledge → market unit → exit survey → leaving requirements →

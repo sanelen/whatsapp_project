@@ -1,0 +1,152 @@
+'use client';
+
+import type { ReactNode } from 'react';
+import Link from 'next/link';
+import { Building2, ClipboardList, Landmark, ReceiptText } from 'lucide-react';
+
+type MonthlyPaymentsShellSection =
+  | 'dashboard'
+  | 'locations'
+  | 'units'
+  | 'reference-pool'
+  | 'room-manager';
+
+type MonthlyPaymentsShellProps = {
+  active: MonthlyPaymentsShellSection;
+  children: ReactNode;
+  operationsHref?: string;
+  referencePoolHref?: string;
+};
+
+function navCardClass(isActive: boolean) {
+  if (isActive) {
+    return 'border-sky-300 bg-sky-400/20 text-white';
+  }
+
+  return 'border-slate-800 bg-slate-900/70 text-slate-300 transition hover:border-sky-300 hover:text-white';
+}
+
+function iconWrapClass(isActive: boolean) {
+  if (isActive) {
+    return 'bg-sky-300/20 text-sky-100';
+  }
+
+  return 'bg-slate-800 text-slate-300';
+}
+
+export function MonthlyPaymentsShell({
+  active,
+  children,
+  operationsHref = '/monthly-payments',
+  referencePoolHref = '/monthly-payments/reference-pool',
+}: MonthlyPaymentsShellProps) {
+  const locationsActive = active === 'locations' || active === 'room-manager';
+  const operationsActive = active === 'units';
+  const referencePoolActive = active === 'reference-pool';
+
+  return (
+    <main className="payments-page-scroll min-h-screen overflow-y-auto bg-[linear-gradient(180deg,#e0f2fe_0%,#f8fafc_42%,#dbeafe_100%)] px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
+      <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="self-start rounded-[28px] border border-white/70 bg-slate-950 p-5 text-white shadow-[0_24px_90px_rgba(15,23,42,0.22)] lg:sticky lg:top-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
+            Monthly Payments
+          </p>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Workspace</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-300">
+            One navigation spine for imports, dashboard review, unit operations, and room setup.
+          </p>
+
+          <div className="mt-8 space-y-3">
+            <Link
+              href="/monthly-payments"
+              className={`block rounded-[22px] border px-4 py-4 ${navCardClass(active === 'dashboard')}`}
+            >
+              <div className="flex items-start gap-3">
+                <span className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl ${iconWrapClass(active === 'dashboard')}`}>
+                  <Landmark size={18} />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Dashboard</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-300">
+                    Month overview, imports, rolling totals, and location performance.
+                  </p>
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              href="/monthly-payments/locations"
+              className={`block rounded-[22px] border px-4 py-4 ${navCardClass(locationsActive)}`}
+            >
+              <div className="flex items-start gap-3">
+                <span className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl ${iconWrapClass(locationsActive)}`}>
+                  <Building2 size={18} />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Locations</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Manage locations, rooms, references, and the source data behind matching.
+                  </p>
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              href={operationsHref}
+              className={`block rounded-[22px] border px-4 py-4 ${navCardClass(operationsActive)}`}
+            >
+              <div className="flex items-start gap-3">
+                <span className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl ${iconWrapClass(operationsActive)}`}>
+                  <ReceiptText size={18} />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Match & sign off</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Open a property and work the monthly unit table without leaving the flow.
+                  </p>
+                </div>
+              </div>
+            </Link>
+
+            <Link
+              href={referencePoolHref}
+              className={`block rounded-[22px] border px-4 py-4 ${navCardClass(referencePoolActive)}`}
+            >
+              <div className="flex items-start gap-3">
+                <span className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl ${iconWrapClass(referencePoolActive)}`}>
+                  <ClipboardList size={18} />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Reference pool</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Review unmatched deposits and jump straight back into the right property.
+                  </p>
+                </div>
+              </div>
+            </Link>
+          </div>
+
+          <div className="mt-8 rounded-[22px] border border-slate-800 bg-slate-900/80 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Quick links</p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Link
+                href="/"
+                className="inline-flex items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-100"
+              >
+                Home
+              </Link>
+              <Link
+                href="/property-assistance"
+                className="inline-flex items-center rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-white transition hover:border-sky-300 hover:text-sky-100"
+              >
+                Chatbox
+              </Link>
+            </div>
+          </div>
+        </aside>
+
+        <div className="min-w-0">{children}</div>
+      </div>
+    </main>
+  );
+}

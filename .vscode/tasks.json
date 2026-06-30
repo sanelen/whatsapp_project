@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "E2E Tests (visible browser)",
+      "type": "shell",
+      "command": "npx playwright install chromium && npm run test:e2e",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "E2E Tests (headless CI)",
+      "type": "shell",
+      "command": "npm run test:e2e:ci",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -26,6 +26,34 @@ test('monthly payments page renders the monthly payments hub', () => {
   assert.match(source, /await requireUser\(\)/);
 });
 
+test('monthly payments property page renders the per-unit units table', () => {
+  const source = readFileSync('src/app/monthly-payments/[propertyId]/page.tsx', 'utf8');
+  assert.match(source, /<UnitsTable table={table} \/>/);
+  assert.match(source, /readPropertyUnitsTable/);
+  assert.match(source, /await requireUser\(\)/);
+});
+
+test('monthly payments reference pool page renders the reference pool view', () => {
+  const source = readFileSync('src/app/monthly-payments/reference-pool/page.tsx', 'utf8');
+  assert.match(source, /<ReferencePoolViewPanel view={view} \/>/);
+  assert.match(source, /readReferencePoolView/);
+  assert.match(source, /await requireUser\(\)/);
+});
+
+test('monthly payments locations page renders the locations admin view', () => {
+  const source = readFileSync('src/app/monthly-payments/locations/page.tsx', 'utf8');
+  assert.match(source, /<LocationsAdmin view={view} \/>/);
+  assert.match(source, /readMonthlyPaymentsLocations/);
+  assert.match(source, /await requireUser\(\)/);
+});
+
+test('monthly payments room manager page renders the room manager view', () => {
+  const source = readFileSync('src/app/monthly-payments/locations/[propertyId]/page.tsx', 'utf8');
+  assert.match(source, /<RoomManagerPanel view={view} initialUnitId={unitId} \/>/);
+  assert.match(source, /readRoomManagerView/);
+  assert.match(source, /await requireUser\(\)/);
+});
+
 test('organization page renders the organization view with its id', () => {
   const source = readFileSync('src/app/organizations/[organizationId]/page.tsx', 'utf8');
   assert.match(source, /<WorkspaceRoute view="organization" organizationId={organizationId}/);

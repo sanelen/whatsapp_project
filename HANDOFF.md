@@ -1,6 +1,6 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
-**Last updated:** 2026-06-30 — windowed-import fix (§6d) + refresh-from-DB, categorization, dashboard visuals, Gmail→Drive archive with source toggle (§6e). Next: Drive→Supabase re-import. Prior: 2026-06-29 — monthly-payments dashboard, bank-import schema/service, Google Cloud Gmail API setup, manual import UI, and Gmail/PDF evidence captured into docs (see §6b and §12)
+**Last updated:** 2026-06-30 — Claude operator-loop review adopted: period auto-creation, inline match/sign-off inside the unit table, and dashboard CTA wiring now lead the build; room manager follows after the operational loop. Prior: 2026-06-30 — Drive→Supabase re-import completed, reference-pool route added, and next-phase plan realigned to repo wireframes: locations → room manager → reference pool match flow.
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`
 **Working branch:** `codex/monthly-payments`
@@ -515,12 +515,13 @@ Supabase** (so files manually dropped into Drive flow into the dashboard). Needs
 to share the per-PDF parse/upsert path between the Gmail and Drive importers. The `source='drive'`
 branch currently only *builds/syncs* the archive.
 
-### 6f. Match & sign-off data model (per-unit table) — schema created 2026-06-30
+### 6f. Match & sign-off data model (per-unit table) — schema + first operator loop live 2026-06-30
 
 The next section is the **per-unit table / match & sign-off** view
 (`Hamba Trading › <Property> › Units`, columns: Unit · Contact · Exp R · Reference ·
 Recv R · Status · action). Most of it was already modelled; this session added the
-remaining schema. **DB only — UI/server actions are the next build.**
+remaining schema, then wired the first live operator loop: auto-create periods, match
+from an inline property-scoped pool, sign off, and reverse back into the pool.
 
 How the wireframe maps to tables:
 
@@ -538,7 +539,7 @@ How the wireframe maps to tables:
   plus actor + reference/amount/status snapshots). FKs are ON DELETE SET NULL so the log
   survives deletes; RLS enabled (admin/service-role bypasses, like the other dashboard tables).
 
-State machine the server actions should implement:
+State machine now implemented in server actions:
 
 1. **Match**: set `unit_id`/`unit_payment_period_id`/`matched_*` on a pool reference →
    log `matched`. Status derives: recv==exp → ready to sign; recv≠exp → `mismatch`.
@@ -554,6 +555,22 @@ unpaid past `due_date`; partial = recv<exp; paid = signed off). Store the base
 (`unpaid`/`paid`/`blocked`); derive the rest in the read layer (extend
 `src/lib/monthly-payments.ts`).
 
+Latest implementation notes:
+
+- `src/lib/monthly-payments-ops.ts` now owns:
+  - `ensurePaymentPeriodsForPeriod`
+  - `matchReferenceToUnit`
+  - `signOffMatchedReference`
+  - `reverseSignOffAndUnmatch`
+- `/api/monthly-payments/import` now auto-creates `unit_payment_periods` for the
+  imported / loaded billing period.
+- `/api/monthly-payments/references` exposes `match`, `sign_off`, and
+  `reverse_sign_off`.
+- `src/components/monthly-payments/units-table.tsx` now embeds the unmatched pool
+  into the unit table instead of forcing operators to leave for a global pool page.
+- The dashboard CTA now points operators into a property unit table (`Match & sign off`)
+  instead of the standalone reference-pool page.
+
 Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (applied live as
 `add_match_signoff_audit`).
 
@@ -565,6 +582,10 @@ Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (app
 
 ## 7. Tooling / environment notes
 
+- **Dev server port is 3001, NOT 3000.** Port 3000 is taken by **Hermes** on this machine,
+  and the OAuth redirect (`GMAIL_OAUTH_REDIRECT_URI`) + all local URLs assume 3001. The
+  `dev` script is pinned with `-p 3001` so Next never falls back to 3000. Always use
+  `http://localhost:3001`.
 - **`gh` CLI: NOT installed.** PRs were not creatable programmatically; pushes done via git.
 - **Vercel CLI**: present (v54.x) but **not logged in**.
 - **Supabase CLI**: available via `npx` but **not logged in**. The Supabase **MCP** IS
@@ -581,26 +602,38 @@ Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (app
 ## 8. Pick up here (fastest resume path)
 
 1. `cd /Users/macdaddy/Documents/DEV/HambaCustomerService` — confirm branch + clean tree.
-2. **Commit/push the current auth UX follow-up if desired:** files changed after the last
-   commit are listed in §10 below (`/auth-test`, login messages, tests, and this handoff).
-3. **Keep the docs and Linear in sync with the design review:** the reviewed flow is
-   now entry layer → dashboard home → unit table → ref pool → drawer for payments,
-   plus explicit WhatsApp/offboarding sequences.
-4. **Configure Google Cloud Gmail API env next:** set `GMAIL_OAUTH_CLIENT_ID` and
-   `GMAIL_OAUTH_CLIENT_SECRET`, use `/api/monthly-payments/import/google-cloud` or
-   the dashboard Google Cloud setup action to get `GMAIL_OAUTH_REFRESH_TOKEN`, then
-   run the manual import from `/monthly-payments` for May/June and inspect
-   `bank_import_entries` plus `payment_references`.
-5. **Bind missing property mappings:** `7904` is bound to Berea; `6088` is seeded for
-   Quarry Heights but currently has no live property row id.
-6. **Do AUT-14 next:** add the 8 env vars from `.env.local` to Vercel (Production),
-   then redeploy and verify chat/KB/workspace work in prod.
-7. **Resolve AUT-15:** confirm with the owner whether `SAWhatsApp/platform` was meant
-   to be dropped; update AUT-5/7/8/12 accordingly.
-8. **Then AUT-9:** apply/verify the tenant-register migration on live Supabase and
-   unify the two schema files.
-9. Reference key files: `src/app/api/chat/route.ts` (provider routing + KB grounding),
-   `src/lib/supabase.ts` (client + settings), `supabase/*.sql` (schema).
+2. **Start the next payments slice from the operator loop, in this order:**
+   - stabilize `period auto-creation`
+   - refine inline `match & sign off`
+   - wire dashboard CTAs and remaining row states
+   - then return to `Room manager`
+3. **Operator loop is now the primary path:**
+   - `Import` → `Dashboard` → click a location → `Units`
+   - `+ match ref` opens the property-scoped unmatched pool inline
+   - sign-off happens on the row; reverse returns the reference to the pool
+4. **Import layer is ready for that loop:**
+   - Drive→Supabase import now works
+   - imported rows now have `reference`, `transaction_date`, and `transactionId`
+   - month loads/imports auto-create `unit_payment_periods`
+5. **Room manager is now the follow-up admin branch:**
+   - implement the room list + room create/edit flow from screens `15`, `16`, `17`
+   - treat `property_units` as the source of truth for payments
+   - wire room reference rules onto:
+     - `bank_import_unit_match_hints`
+     - `property_units.expected_reference`
+     - `property_units.match_keywords`
+6. **Standalone reference-pool page is no longer the v1 primary path:**
+   - it can remain as a support/debug surface
+   - operators should resolve matches from inside the unit table
+7. **Then continue platform chores as needed:**
+   - AUT-14: add the env vars from `.env.local` to Vercel and verify prod
+   - AUT-15: resolve the WhatsApp/Twilio platform direction
+   - AUT-9: reconcile schema/migration drift locally vs remote
+8. Reference key files for the next monthly-payments slice:
+   - `src/lib/monthly-payments.ts`
+   - `src/components/monthly-payments/monthly-payments-hub.tsx`
+   - `src/components/monthly-payments/reference-pool-view.tsx`
+   - `docs/repo_wireframes/docs/roadmap/wireframes/README.md`
 
 ---
 

@@ -149,6 +149,21 @@ split:
 That means account mapping should happen before unit-level matching whenever the
 destination account is present.
 
+## Per-unit table date flow
+
+The reviewed per-unit table now includes an explicit **Date** column. For imported
+bank references, that date should flow like this:
+
+1. Capitec PDF `Date Time Actioned`
+2. parsed `bank_import_entries.transaction_date`
+3. copied into `payment_references.received_at`
+4. displayed in the per-unit row `Date` cell after the reference is matched
+
+This keeps the visible row date anchored to the actual bank transaction instead of
+an operator-entered status note. If a manual reference is created outside the bank
+import path, `payment_references.received_at` remains the canonical display date for
+the per-unit table.
+
 ## What is still missing
 
 - The recording did **not** reliably preserve the spoken mapping of which files

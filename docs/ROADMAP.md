@@ -117,15 +117,40 @@ assistant and offboarding remain planning-only.
 
 1. **Entry layer**: org-level choice between `Chatbox` and `Dashboard`.
 2. **Payments dashboard**: dashboard home with month stepper, recent-month strip,
-   rolling total, by-location cards, and unmatched-reference callout.
-3. **Payments drill-down**: per-location unit table, then reference-pool matching,
-   then unit-detail management and reverse-sign-off audit.
-4. **Bank import**: Gmail mailbox sync, Capitec PDF extraction, dedupe/provenance,
-   then reconciliation into the reference pool.
-5. **WhatsApp assistant**: inbound greeting, intent routing, interested flow, human
+   rolling total, by-location cards, and a CTA into the operator loop.
+3. **Payments drill-down**: clicking a location opens the per-location unit table
+   with the deposit `Date` column and inline row states.
+4. **Inline match/sign-off**: `+ match ref` opens a property-scoped unmatched pool
+   beside the target unit, then sign-off happens back on the row.
+5. **Reverse / audit**: mistaken sign-offs reverse back into the pool with the
+   audit trail preserved.
+6. **Room manager**: admin setup for unit metadata and reference rules comes after
+   the operator loop is working end to end.
+7. **Bank import**: Gmail / Drive sync, Capitec PDF extraction, dedupe/provenance,
+   and auto-created unit payment periods feed the loop.
+8. **WhatsApp assistant**: inbound greeting, intent routing, interested flow, human
    takeover pane, and later servicing/offboarding branches.
-6. **Offboarding**: leaving stepper, operational tracker, exit survey, and
+9. **Offboarding**: leaving stepper, operational tracker, exit survey, and
    banking/deposit reconciliation screen.
+
+### Immediate implementation order
+
+For the next monthly-payments execution slice, the agreed order is:
+
+1. **Period auto-creation**
+   - ensure `unit_payment_periods` exist for every occupied, non-blocked unit when
+     a month is imported or loaded
+2. **Match interaction**
+   - wire `+ match ref` to a property-scoped pool inside the unit table
+   - rank likely references using `expected_reference`, `match_keywords`, and amount
+3. **Sign-off + reverse sign-off**
+   - lock the row after sign-off
+   - reverse back to the pool with an audit event when a mistake is corrected
+4. **Dashboard CTA wiring**
+   - send operators from the dashboard straight into the property unit table, not
+     a global reference-pool page
+5. **Room manager**
+   - keep admin setup as the follow-up branch once the operational loop is stable
 
 ## Tooling
 

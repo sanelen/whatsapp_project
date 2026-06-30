@@ -1,10 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ClipboardList, Landmark, ReceiptText, RefreshCw } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowRight, RefreshCw } from 'lucide-react';
 import type { MonthlyPaymentsDashboardSnapshot } from '@/lib/monthly-payments';
 import { BankImportControls } from './bank-import-controls';
+import { MonthlyPaymentsShell } from './monthly-payments-shell';
 
 type MonthlyPaymentsHubProps = {
   dashboard: MonthlyPaymentsDashboardSnapshot;
@@ -25,17 +27,64 @@ function progressWidth(value: number): string {
   return `${Math.max(0, Math.min(100, Math.round(value * 100)))}%`;
 }
 
+// Compact rand for tight spaces (month cards): R21k, R1.5k, R750.
+function formatCompactCurrency(amount: number): string {
+  if (amount >= 1000) {
+    const thousands = amount / 1000;
+    return `R${thousands % 1 === 0 ? thousands.toFixed(0) : thousands.toFixed(1)}k`;
+  }
+  return `R${Math.round(amount)}`;
+}
+
+// When no expected target is set, a collected/expected percentage is undefined.
+// Show "—" instead of a misleading 0% so the rand amounts carry the meaning.
+function rateLabel(collected: number, expected: number, rate: number): string {
+  if (expected > 0) return `${Math.round(rate * 100)}%`;
+  return collected > 0 ? '—' : '0%';
+}
+
+// Fill the bar from collected money even when there is no expected target,
+// so deposits are visually reflected rather than leaving the bar empty.
+function barWidth(collected: number, expected: number, rate: number): string {
+  if (expected > 0) return progressWidth(rate);
+  return collected > 0 ? '100%' : '0%';
+}
+
 export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
   const isMissingTables = dashboard.setupState === 'missing_tables';
   const isEmpty = dashboard.setupState === 'empty' || dashboard.locations.length === 0;
   const currentPeriod = dashboard.recentMonths.find((month) => month.isCurrent)?.key ?? dashboard.recentMonths.at(-1)?.key ?? '';
   const [selectedPeriod, setSelectedPeriod] = useState(currentPeriod);
-  const [runRequestToken, setRunRequestToken] = useState(0);
+  const router = useRouter();
+  const [isRefreshing, startRefresh] = useTransition();
+  // Refresh re-reads the dashboard snapshot from the database (server component).
+  // It must NOT trigger a bank import — importing only happens via the Import button.
+  function refreshFromDatabase() {
+    startRefresh(() => {
+      router.refresh();
+    });
+  }
   const selectedMonth = useMemo(
     () => dashboard.recentMonths.find((month) => month.key === selectedPeriod) ?? dashboard.recentMonths.at(2),
     [dashboard.recentMonths, selectedPeriod]
   );
+  const primaryLocationLink = useMemo(() => {
+    const propertyLocation = dashboard.locations.find((location) => !location.id.startsWith('inferred:'));
+    if (!propertyLocation) return '/monthly-payments/locations';
+    return `/monthly-payments/${propertyLocation.id}?period=${selectedPeriod}`;
+  }, [dashboard.locations, selectedPeriod]);
   const selectedMonthIndex = dashboard.recentMonths.findIndex((month) => month.key === selectedPeriod);
+  // For months with no expected target, size the mini-bars by collected money
+  // relative to the busiest month so you can still compare where money came in.
+  const maxMonthCollected = Math.max(0, ...dashboard.recentMonths.map((month) => month.collectedAmount));
+
+  function monthBarHeight(month: MonthlyPaymentsDashboardSnapshot['recentMonths'][number]): string {
+    if (month.expectedAmount > 0) return progressWidth(month.collectionRate);
+    if (month.collectedAmount > 0 && maxMonthCollected > 0) {
+      return progressWidth(month.collectedAmount / maxMonthCollected);
+    }
+    return '0%';
+  }
 
   function moveSelectedMonth(direction: -1 | 1) {
     if (selectedMonthIndex === -1) return;
@@ -46,80 +95,8 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
   }
 
   return (
-    <main className="payments-page-scroll min-h-screen overflow-y-auto bg-[linear-gradient(180deg,#e0f2fe_0%,#f8fafc_42%,#dbeafe_100%)] px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="self-start rounded-[28px] border border-white/70 bg-slate-950 p-5 text-white shadow-[0_24px_90px_rgba(15,23,42,0.22)] lg:sticky lg:top-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
-            Monthly Payments
-          </p>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-300">
-            Approach A is live first: a month view over rolling totals, recent history,
-            location performance, and the unmatched reference pool.
-          </p>
-
-          <div className="mt-8 space-y-3">
-            <div className="rounded-[22px] border border-sky-300 bg-sky-400/20 px-4 py-4 text-white">
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-300/20 text-sky-100">
-                  <Landmark size={18} />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold">Approach A</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-300">
-                    Dashboard home with month history, rolling total, and location cards.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-[22px] border border-slate-800 bg-slate-900/70 px-4 py-4 text-slate-300">
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-slate-300">
-                  <ReceiptText size={18} />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold">Reference Pool</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">
-                    The match and sign-off flow is next after the dashboard home settles.
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-[22px] border border-slate-800 bg-slate-900/70 px-4 py-4 text-slate-300">
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-slate-300">
-                  <ClipboardList size={18} />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold">Status Board</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Kanban and per-unit states will come after the dashboard summary layer.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 rounded-[22px] border border-slate-800 bg-slate-900/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Quick links</p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Link
-                href="/"
-                className="inline-flex items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-100"
-              >
-                Home
-              </Link>
-              <Link
-                href="/property-assistance"
-                className="inline-flex items-center rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-white transition hover:border-sky-300 hover:text-sky-100"
-              >
-                Chatbox
-              </Link>
-            </div>
-          </div>
-        </aside>
-
-        <section className="rounded-[30px] border border-white/80 bg-white/88 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:p-8">
+    <MonthlyPaymentsShell active="dashboard" operationsHref={primaryLocationLink}>
+      <section className="rounded-[30px] border border-white/80 bg-white/88 p-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:p-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
@@ -159,7 +136,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               defaultPeriod={currentPeriod}
               selectedPeriod={selectedPeriod}
               onSelectedPeriodChange={setSelectedPeriod}
-              runRequestToken={runRequestToken}
+              onImported={refreshFromDatabase}
               periods={dashboard.recentMonths.map((month) => ({
                 key: month.key,
                 label: month.label,
@@ -175,10 +152,11 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               </p>
               <button
                 type="button"
-                onClick={() => setRunRequestToken((token) => token + 1)}
-                className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-400 hover:text-sky-800"
+                onClick={refreshFromDatabase}
+                disabled={isRefreshing}
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-400 hover:text-sky-800 disabled:cursor-wait disabled:text-slate-400"
               >
-                <RefreshCw size={13} />
+                <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : undefined} />
                 Refresh {selectedMonth?.label ?? 'month'}
               </button>
             </div>
@@ -202,7 +180,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                             ? 'bg-[repeating-linear-gradient(45deg,rgba(14,165,233,0.35),rgba(14,165,233,0.35)_8px,rgba(15,118,110,0.25)_8px,rgba(15,118,110,0.25)_16px)]'
                             : 'bg-slate-300/80'
                         }`}
-                        style={{ height: progressWidth(month.collectionRate) }}
+                        style={{ height: monthBarHeight(month) }}
                       />
                     </div>
                   </div>
@@ -214,7 +192,15 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                     {month.label}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    {month.key === selectedPeriod ? `${formatPercent(month.collectionRate)} ●` : formatPercent(month.collectionRate)}
+                    {(() => {
+                      const value =
+                        month.expectedAmount > 0
+                          ? formatPercent(month.collectionRate)
+                          : month.collectedAmount > 0
+                            ? formatCompactCurrency(month.collectedAmount)
+                            : '0%';
+                      return month.key === selectedPeriod ? `${value} ●` : value;
+                    })()}
                   </p>
                 </button>
               ))}
@@ -227,7 +213,11 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                 Rolling total - collected vs expected
               </p>
               <p className="text-sm font-semibold text-slate-500">
-                {formatPercent(dashboard.rollingTotal.collectionRate)}
+                {rateLabel(
+                  dashboard.rollingTotal.collectedAmount,
+                  dashboard.rollingTotal.expectedAmount,
+                  dashboard.rollingTotal.collectionRate
+                )}
               </p>
             </div>
 
@@ -259,7 +249,13 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
             <div className="mt-4 h-4 overflow-hidden rounded-full border border-slate-300 bg-white">
               <div
                 className="h-full bg-[repeating-linear-gradient(45deg,#0ea5e9,#0ea5e9_8px,#0f766e_8px,#0f766e_16px)]"
-                style={{ width: progressWidth(dashboard.rollingTotal.collectionRate) }}
+                style={{
+                  width: barWidth(
+                    dashboard.rollingTotal.collectedAmount,
+                    dashboard.rollingTotal.expectedAmount,
+                    dashboard.rollingTotal.collectionRate
+                  ),
+                }}
               />
             </div>
           </section>
@@ -296,11 +292,13 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               </div>
             ) : (
               <div className="mt-5 grid gap-4 lg:grid-cols-3">
-                {dashboard.locations.map((location) => (
-                  <article
-                    key={location.id}
-                    className="rounded-[20px] border border-slate-300 bg-[#fcfcfa] p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
-                  >
+                {dashboard.locations.map((location) => {
+                  const isProperty = !location.id.startsWith('inferred:');
+                  const cardClassName =
+                    'block rounded-[20px] border border-slate-300 bg-[#fcfcfa] p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]' +
+                    (isProperty ? ' transition hover:-translate-y-0.5 hover:border-sky-400 hover:shadow-md' : '');
+                  const cardBody = (
+                    <>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="text-lg font-semibold text-slate-950">{location.name}</h3>
@@ -309,14 +307,14 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                         </p>
                       </div>
                       <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-                        {formatPercent(location.collectionRate)}
+                        {rateLabel(location.collectedAmount, location.expectedAmount, location.collectionRate)}
                       </span>
                     </div>
 
                     <div className="mt-4 h-3 overflow-hidden rounded-full border border-slate-300 bg-white">
                       <div
                         className="h-full bg-[linear-gradient(90deg,#0ea5e9_0%,#0f766e_100%)]"
-                        style={{ width: progressWidth(location.collectionRate) }}
+                        style={{ width: barWidth(location.collectedAmount, location.expectedAmount, location.collectionRate) }}
                       />
                     </div>
 
@@ -333,8 +331,33 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                         </span>
                       ) : null}
                     </div>
-                  </article>
-                ))}
+                    {isProperty ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Link
+                          href={`/monthly-payments/${location.id}?period=${selectedPeriod}`}
+                          className="inline-flex items-center rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white"
+                        >
+                          Open units
+                        </Link>
+                        <Link
+                          href={`/monthly-payments/locations/${location.id}?period=${selectedPeriod}`}
+                          className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-800"
+                        >
+                          Manage rooms
+                        </Link>
+                      </div>
+                    ) : null}
+                    </>
+                  );
+                  return (
+                    <article
+                      key={location.id}
+                      className={cardClassName + (isProperty ? '' : ' opacity-95')}
+                    >
+                      {cardBody}
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -349,17 +372,19 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                   </span>
                 </p>
                 <p className="mt-2 text-sm leading-6 text-sky-800/80">
-                  Match and sign-off is the next dashboard slice after this home view.
+                  Match and sign-off now happens inside the property unit table instead of a separate queue screen.
                 </p>
               </div>
-              <span className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white">
-                Match & sign off
+              <Link
+                href={primaryLocationLink}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+              >
+                Open unit table
                 <ArrowRight size={16} />
-              </span>
+              </Link>
             </div>
           </section>
-        </section>
-      </div>
-    </main>
+      </section>
+    </MonthlyPaymentsShell>
   );
 }

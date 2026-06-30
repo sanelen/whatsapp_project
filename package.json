@@ -10,7 +10,7 @@
   "scripts": {
     "check:runtime": "node scripts/check-runtime.mjs",
     "predev": "npm run check:runtime",
-    "dev": "NODE_ENV=development next dev --webpack",
+    "dev": "NODE_ENV=development next dev --webpack -p 3001",
     "prebuild": "npm run check:runtime",
     "build": "NODE_ENV=production next build",
     "prestart": "npm run check:runtime",
@@ -20,7 +20,11 @@
     "typecheck": "tsc --noEmit --incremental false",
     "test": "node --import tsx --test 'src/**/*.test.ts' 'src/**/*.test.tsx'",
     "audit:vector-pipeline": "node scripts/audit-vector-pipeline.mjs",
-    "transcribe": "node scripts/transcribe.mjs"
+    "transcribe": "node scripts/transcribe.mjs",
+    "test:e2e": "npx playwright test --project=local",
+    "test:e2e:ci": "CI=true npx playwright test --project=local",
+    "test:e2e:vercel": "npx playwright test --project=vercel",
+    "test:e2e:report": "npx playwright show-report playwright-report"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.94.0",
@@ -38,6 +42,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

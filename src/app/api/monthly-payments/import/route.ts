@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireApiAuth } from '@/lib/auth/api-guard';
-import { runBankImport } from '@/lib/bank-import';
+import { runBankImport, type BankImportSource } from '@/lib/bank-import';
+import { ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
+
+function normalizeSource(value: string | null | undefined): BankImportSource {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === 'gmail' || normalized === 'drive' ? normalized : 'both';
+}
 
 function isCronAuthorized(request: NextRequest) {
   const expected = process.env.BANK_IMPORT_CRON_SECRET?.trim();
@@ -22,6 +28,7 @@ export async function GET(request: NextRequest) {
   const mailboxId = request.nextUrl.searchParams.get('mailboxId')?.trim() ?? undefined;
   const billingPeriod = request.nextUrl.searchParams.get('billingPeriod')?.trim() ?? undefined;
   const pullAll = request.nextUrl.searchParams.get('pullAll') === 'true';
+  const source = normalizeSource(request.nextUrl.searchParams.get('source'));
   const maxMessagesParam = request.nextUrl.searchParams.get('maxMessages')?.trim();
   const maxMessages = maxMessagesParam ? Number(maxMessagesParam) : undefined;
 
@@ -31,8 +38,12 @@ export async function GET(request: NextRequest) {
       mailboxId,
       billingPeriod,
       pullAll,
+      source,
       maxMessages: Number.isFinite(maxMessages) ? maxMessages : undefined,
     });
+    if (billingPeriod) {
+      await ensurePaymentPeriodsForPeriod({ periodKey: billingPeriod });
+    }
 
     return NextResponse.json({
       success: true,
@@ -61,6 +72,7 @@ export async function POST(request: NextRequest) {
     mailboxId?: string;
     billingPeriod?: string;
     pullAll?: boolean;
+    source?: string;
     maxMessages?: number;
   };
 
@@ -70,8 +82,12 @@ export async function POST(request: NextRequest) {
       mailboxId: body.mailboxId?.trim() || undefined,
       billingPeriod: body.billingPeriod?.trim() || undefined,
       pullAll: body.pullAll === true,
+      source: normalizeSource(body.source),
       maxMessages: Number.isFinite(Number(body.maxMessages)) ? Number(body.maxMessages) : undefined,
     });
+    if (body.billingPeriod?.trim()) {
+      await ensurePaymentPeriodsForPeriod({ periodKey: body.billingPeriod.trim() });
+    }
 
     return NextResponse.json({
       success: true,

@@ -7,6 +7,7 @@ import {
   getBillingWindowForPeriod,
   getGmailIntegrationStatus,
   parseCapitecTransactionText,
+  resolveImportContext,
 } from './bank-import';
 
 function withGmailEnv<T>(values: Record<string, string | undefined>, run: () => T) {
@@ -72,6 +73,23 @@ test('parseCapitecTransactionText preserves non-incoming transaction types for f
   assert.equal(parsed?.destinationAccountSuffix, '7904');
 });
 
+test('parseCapitecTransactionText reads transaction IDs when the PDF text places the label after the value', () => {
+  const parsed = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 28/04/2026 13:10:00
+    : 002501559 Transaction ID
+    Account Paid To : ****7904
+    Amount Received : R 5,000.00
+    Reference : ESSEX ROOM 1
+    Available Balance : R 23,511.29
+  `);
+
+  assert.ok(parsed);
+  assert.equal(parsed?.transactionId, '002501559');
+  assert.equal(parsed?.transactionDate, '2026-04-28');
+  assert.equal(parsed?.reference, 'ESSEX ROOM 1');
+});
+
 test('buildGmailSearchQuery combines attachment, subject, label, and after filters', () => {
   const query = buildGmailSearchQuery({
     subject_filter: 'Capitec Business Transaction Notification',
@@ -94,7 +112,7 @@ test('getBillingWindowForPeriod maps a month to the 9th-through-8th working wind
   assert.equal(window.gmailBeforeDate, '2026-06-09');
 });
 
-test('buildGmailSearchQuery adds billing-window date guards', () => {
+test('buildGmailSearchQuery uses a generous after floor and no before guard for billing windows', () => {
   const query = buildGmailSearchQuery(
     {
       subject_filter: 'Capitec Business Transaction Notification',
@@ -104,8 +122,12 @@ test('buildGmailSearchQuery adds billing-window date guards', () => {
     getBillingWindowForPeriod('2026-05')
   );
 
+  // Forwarded Capitec mail arrives after the transaction, so the Gmail search must
+  // keep only a lower `after:` floor and rely on transaction-date filtering. A tight
+  // `before:` received-date guard would drop the forwarded notifications entirely.
   assert.match(query, /after:2026\/04\/08/);
-  assert.match(query, /before:2026\/05\/09/);
+  assert.doesNotMatch(query, /before:/);
+  // The billing window overrides the last_synced_at after-filter.
   assert.doesNotMatch(query, /after:2026\/06\/29/);
 });
 
@@ -146,7 +168,10 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
       assert.equal(url.origin, 'https://accounts.google.com');
       assert.equal(url.searchParams.get('client_id'), 'client-id.apps.googleusercontent.com');
       assert.equal(url.searchParams.get('response_type'), 'code');
-      assert.equal(url.searchParams.get('scope'), 'https://www.googleapis.com/auth/gmail.readonly');
+      assert.equal(
+        url.searchParams.get('scope'),
+        'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file'
+      );
       assert.equal(url.searchParams.get('access_type'), 'offline');
       assert.equal(url.searchParams.get('prompt'), 'consent');
       assert.equal(url.searchParams.get('state'), 'monthly-payments-bank-import');
@@ -184,4 +209,50 @@ test('extractAttachmentsFromEml recovers nested PDF attachments from a forwarded
   assert.match(attachments[0].sourceId, /^eml:forwarded\.eml:70006Capitec\.pdf:/);
   assert.equal(attachments[0].nestedFrom, 'forwarded.eml');
   assert.deepEqual(attachments[0].data, pdfBytes);
+});
+
+test('resolveImportContext supports regex-based Essex room matching', () => {
+  const parsed = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 28/04/2026 09:15:00
+    Transaction ID : 002062531
+    Account Paid To : ****7904
+    Amount Received : R 5,000.00
+    Reference : ESSEX ROOM 1
+    Available Balance : R 24,461.14
+  `);
+
+  assert.ok(parsed);
+
+  const resolved = resolveImportContext({
+    entry: parsed,
+    organizationId: 'org-1',
+    propertyMappings: [
+      {
+        id: 'map-1',
+        organization_id: 'org-1',
+        property_id: 'berea-property',
+        account_number_suffix: '7904',
+        property_name: 'Essex / Berea',
+        is_active: true,
+      },
+    ],
+    unitMatchHints: [
+      {
+        id: 'hint-1',
+        property_id: 'berea-property',
+        unit_id: 'unit-room-01',
+        matcher_type: 'reference_regex',
+        matcher_value: 'ESSEX\\s*(?:ROOM|NO\\.?)[\\s-]*0?1\\b',
+        amount_value: null,
+        priority: 1,
+        is_active: true,
+      },
+    ],
+  });
+
+  assert.equal(resolved.propertyId, 'berea-property');
+  assert.equal(resolved.unitHints.length, 1);
+  assert.equal(resolved.unitHints[0]?.unitId, 'unit-room-01');
+  assert.equal(resolved.unitHints[0]?.matcherType, 'reference_regex');
 });

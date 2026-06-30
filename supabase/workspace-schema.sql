@@ -42,14 +42,33 @@ create table if not exists public.property_units (
   contact_primary text not null default '',
   contact_secondary text not null default '',
   rent_amount numeric(12,2) not null default 0 check (rent_amount >= 0),
+  deposit_amount numeric(12,2) not null default 0 check (deposit_amount >= 0),
   occupancy_status text not null default 'occupied' check (occupancy_status in ('occupied', 'vacant')),
   is_blocked boolean not null default false,
+  parking text not null default '',
+  ensuite boolean not null default false,
+  max_occupants integer not null default 1 check (max_occupants >= 0),
+  is_available boolean not null default false,
+  features text[] not null default '{}',
   expected_reference text not null default '',
   match_keywords text[] not null default '{}',
   display_order integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (property_id, label)
+);
+
+create table if not exists public.property_media (
+  id uuid primary key default gen_random_uuid(),
+  property_id uuid references public.properties(id) on delete cascade,
+  unit_id uuid references public.property_units(id) on delete cascade,
+  kind text not null default 'photo'
+    check (kind in ('photo', 'floorplan', 'video', 'document')),
+  storage_path text not null default '',
+  caption text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (property_id is not null or unit_id is not null)
 );
 
 create table if not exists public.unit_payment_periods (
@@ -75,6 +94,7 @@ create table if not exists public.payment_references (
   reference text not null,
   amount numeric(12,2) not null default 0 check (amount >= 0),
   received_at date not null,
+  transaction_at timestamptz,
   bank text not null default '',
   signed_off boolean not null default false,
   signed_off_at timestamptz,
@@ -185,7 +205,7 @@ create table if not exists public.bank_import_unit_match_hints (
   property_id uuid references public.properties(id) on delete set null,
   unit_id uuid references public.property_units(id) on delete set null,
   matcher_type text not null
-    check (matcher_type in ('reference_contains', 'reference_equals', 'payer_name_contains', 'amount_equals')),
+    check (matcher_type in ('reference_contains', 'reference_equals', 'reference_regex', 'payer_name_contains', 'amount_equals')),
   matcher_value text not null default '',
   amount_value numeric(12,2),
   priority integer not null default 100,
@@ -197,6 +217,8 @@ create table if not exists public.bank_import_unit_match_hints (
 
 create index if not exists idx_properties_organization_id on public.properties(organization_id);
 create index if not exists idx_property_units_property_id on public.property_units(property_id);
+create index if not exists idx_property_media_property_id on public.property_media(property_id);
+create index if not exists idx_property_media_unit_id on public.property_media(unit_id);
 create index if not exists idx_unit_payment_periods_unit_id on public.unit_payment_periods(unit_id);
 create index if not exists idx_unit_payment_periods_period_start on public.unit_payment_periods(period_start);
 create index if not exists idx_payment_references_organization_id on public.payment_references(organization_id);
@@ -225,6 +247,7 @@ alter table public.property_chatbot_settings enable row level security;
 alter table public.property_units enable row level security;
 alter table public.unit_payment_periods enable row level security;
 alter table public.payment_references enable row level security;
+alter table public.property_media enable row level security;
 alter table public.bank_import_mailboxes enable row level security;
 alter table public.bank_import_messages enable row level security;
 alter table public.bank_import_files enable row level security;
@@ -261,6 +284,13 @@ create policy "Service role can manage payment references"
 on public.payment_references for all
 using (auth.role() = 'service_role')
 with check (auth.role() = 'service_role');
+
+drop policy if exists "Service role can manage property media" on public.property_media;
+create policy "Service role can manage property media"
+on public.property_media for all
+to service_role
+using (true)
+with check (true);
 
 create policy "Service role can manage bank import mailboxes"
 on public.bank_import_mailboxes for all

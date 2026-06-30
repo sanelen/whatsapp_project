@@ -112,8 +112,14 @@ CREATE TABLE public.property_units (
   contact_primary text NOT NULL DEFAULT ''::text,
   contact_secondary text NOT NULL DEFAULT ''::text,
   rent_amount numeric(12,2) NOT NULL DEFAULT 0 CHECK (rent_amount >= 0::numeric),
+  deposit_amount numeric(12,2) NOT NULL DEFAULT 0 CHECK (deposit_amount >= 0::numeric),
   occupancy_status text NOT NULL DEFAULT 'occupied'::text CHECK (occupancy_status = ANY (ARRAY['occupied'::text, 'vacant'::text])),
   is_blocked boolean NOT NULL DEFAULT false,
+  parking text NOT NULL DEFAULT ''::text,
+  ensuite boolean NOT NULL DEFAULT false,
+  max_occupants integer NOT NULL DEFAULT 1 CHECK (max_occupants >= 0),
+  is_available boolean NOT NULL DEFAULT false,
+  features text[] NOT NULL DEFAULT '{}'::text[],
   expected_reference text NOT NULL DEFAULT ''::text,
   match_keywords text[] NOT NULL DEFAULT '{}'::text[],
   display_order integer NOT NULL DEFAULT 0,
@@ -122,6 +128,20 @@ CREATE TABLE public.property_units (
   CONSTRAINT property_units_pkey PRIMARY KEY (id),
   CONSTRAINT property_units_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id) ON DELETE CASCADE,
   CONSTRAINT property_units_property_label_key UNIQUE (property_id, label)
+);
+CREATE TABLE public.property_media (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  property_id uuid,
+  unit_id uuid,
+  kind text NOT NULL DEFAULT 'photo'::text CHECK (kind = ANY (ARRAY['photo'::text, 'floorplan'::text, 'video'::text, 'document'::text])),
+  storage_path text NOT NULL DEFAULT ''::text,
+  caption text NOT NULL DEFAULT ''::text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT property_media_pkey PRIMARY KEY (id),
+  CONSTRAINT property_media_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id) ON DELETE CASCADE,
+  CONSTRAINT property_media_unit_id_fkey FOREIGN KEY (unit_id) REFERENCES public.property_units(id) ON DELETE CASCADE,
+  CONSTRAINT property_media_scope_check CHECK ((property_id IS NOT NULL) OR (unit_id IS NOT NULL))
 );
 CREATE TABLE public.property_chatbot_settings (
   property_id uuid NOT NULL,
@@ -165,6 +185,7 @@ CREATE TABLE public.payment_references (
   reference text NOT NULL,
   amount numeric(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0::numeric),
   received_at date NOT NULL,
+  transaction_at timestamp with time zone,
   bank text NOT NULL DEFAULT ''::text,
   signed_off boolean NOT NULL DEFAULT false,
   signed_off_at timestamp with time zone,
@@ -286,7 +307,7 @@ CREATE TABLE public.bank_import_unit_match_hints (
   organization_id uuid NOT NULL,
   property_id uuid,
   unit_id uuid,
-  matcher_type text NOT NULL CHECK (matcher_type = ANY (ARRAY['reference_contains'::text, 'reference_equals'::text, 'payer_name_contains'::text, 'amount_equals'::text])),
+  matcher_type text NOT NULL CHECK (matcher_type = ANY (ARRAY['reference_contains'::text, 'reference_equals'::text, 'reference_regex'::text, 'payer_name_contains'::text, 'amount_equals'::text])),
   matcher_value text NOT NULL DEFAULT ''::text,
   amount_value numeric(12,2),
   priority integer NOT NULL DEFAULT 100,

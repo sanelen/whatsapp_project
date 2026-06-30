@@ -124,12 +124,12 @@ test('buildMonthlyPaymentsDashboardSnapshot summarizes rolling totals and unmatc
 
   assert.equal(snapshot.organizationLabel, 'Hamba Trading');
   assert.equal(snapshot.monthLabel, 'June 2026');
-  assert.equal(snapshot.rollingTotal.collectedAmount, 6700);
+  assert.equal(snapshot.rollingTotal.collectedAmount, 4500);
   assert.equal(snapshot.rollingTotal.expectedAmount, 6700);
   assert.equal(snapshot.rollingTotal.blockedCount, 1);
   assert.equal(snapshot.rollingTotal.overdueCount, 1);
-  assert.equal(snapshot.unmatchedReferenceCount, 1);
-  assert.equal(snapshot.recentMonths.find((month) => month.key === '2026-06')?.collectionRate, 1);
+  assert.equal(snapshot.unmatchedReferenceCount, 0);
+  assert.equal(snapshot.recentMonths.find((month) => month.key === '2026-06')?.collectedAmount, 4500);
   assert.equal(snapshot.locations[0].name, 'Query Heights');
   assert.equal(snapshot.locations[0].paidCount, 1);
   assert.equal(snapshot.locations[0].dueCount, 0);
