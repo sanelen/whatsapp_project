@@ -1,8 +1,7 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { ArrowRight, ClipboardList, Landmark, ReceiptText, RefreshCw } from 'lucide-react';
 import type { MonthlyPaymentsDashboardSnapshot } from '@/lib/monthly-payments';
 import { BankImportControls } from './bank-import-controls';
@@ -26,59 +25,17 @@ function progressWidth(value: number): string {
   return `${Math.max(0, Math.min(100, Math.round(value * 100)))}%`;
 }
 
-// Compact rand for tight spaces (month cards): R21k, R1.5k, R750.
-function formatCompactCurrency(amount: number): string {
-  if (amount >= 1000) {
-    const thousands = amount / 1000;
-    return `R${thousands % 1 === 0 ? thousands.toFixed(0) : thousands.toFixed(1)}k`;
-  }
-  return `R${Math.round(amount)}`;
-}
-
-// When no expected target is set, a collected/expected percentage is undefined.
-// Show "—" instead of a misleading 0% so the rand amounts carry the meaning.
-function rateLabel(collected: number, expected: number, rate: number): string {
-  if (expected > 0) return `${Math.round(rate * 100)}%`;
-  return collected > 0 ? '—' : '0%';
-}
-
-// Fill the bar from collected money even when there is no expected target,
-// so deposits are visually reflected rather than leaving the bar empty.
-function barWidth(collected: number, expected: number, rate: number): string {
-  if (expected > 0) return progressWidth(rate);
-  return collected > 0 ? '100%' : '0%';
-}
-
 export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
   const isMissingTables = dashboard.setupState === 'missing_tables';
   const isEmpty = dashboard.setupState === 'empty' || dashboard.locations.length === 0;
   const currentPeriod = dashboard.recentMonths.find((month) => month.isCurrent)?.key ?? dashboard.recentMonths.at(-1)?.key ?? '';
   const [selectedPeriod, setSelectedPeriod] = useState(currentPeriod);
-  const router = useRouter();
-  const [isRefreshing, startRefresh] = useTransition();
-  // Refresh re-reads the dashboard snapshot from the database (server component).
-  // It must NOT trigger a bank import — importing only happens via the Import button.
-  function refreshFromDatabase() {
-    startRefresh(() => {
-      router.refresh();
-    });
-  }
+  const [runRequestToken, setRunRequestToken] = useState(0);
   const selectedMonth = useMemo(
     () => dashboard.recentMonths.find((month) => month.key === selectedPeriod) ?? dashboard.recentMonths.at(2),
     [dashboard.recentMonths, selectedPeriod]
   );
   const selectedMonthIndex = dashboard.recentMonths.findIndex((month) => month.key === selectedPeriod);
-  // For months with no expected target, size the mini-bars by collected money
-  // relative to the busiest month so you can still compare where money came in.
-  const maxMonthCollected = Math.max(0, ...dashboard.recentMonths.map((month) => month.collectedAmount));
-
-  function monthBarHeight(month: MonthlyPaymentsDashboardSnapshot['recentMonths'][number]): string {
-    if (month.expectedAmount > 0) return progressWidth(month.collectionRate);
-    if (month.collectedAmount > 0 && maxMonthCollected > 0) {
-      return progressWidth(month.collectedAmount / maxMonthCollected);
-    }
-    return '0%';
-  }
 
   function moveSelectedMonth(direction: -1 | 1) {
     if (selectedMonthIndex === -1) return;
@@ -202,7 +159,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               defaultPeriod={currentPeriod}
               selectedPeriod={selectedPeriod}
               onSelectedPeriodChange={setSelectedPeriod}
-              onImported={refreshFromDatabase}
+              runRequestToken={runRequestToken}
               periods={dashboard.recentMonths.map((month) => ({
                 key: month.key,
                 label: month.label,
@@ -218,11 +175,10 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               </p>
               <button
                 type="button"
-                onClick={refreshFromDatabase}
-                disabled={isRefreshing}
-                className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-400 hover:text-sky-800 disabled:cursor-wait disabled:text-slate-400"
+                onClick={() => setRunRequestToken((token) => token + 1)}
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-400 hover:text-sky-800"
               >
-                <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : undefined} />
+                <RefreshCw size={13} />
                 Refresh {selectedMonth?.label ?? 'month'}
               </button>
             </div>
@@ -246,7 +202,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                             ? 'bg-[repeating-linear-gradient(45deg,rgba(14,165,233,0.35),rgba(14,165,233,0.35)_8px,rgba(15,118,110,0.25)_8px,rgba(15,118,110,0.25)_16px)]'
                             : 'bg-slate-300/80'
                         }`}
-                        style={{ height: monthBarHeight(month) }}
+                        style={{ height: progressWidth(month.collectionRate) }}
                       />
                     </div>
                   </div>
@@ -258,15 +214,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                     {month.label}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    {(() => {
-                      const value =
-                        month.expectedAmount > 0
-                          ? formatPercent(month.collectionRate)
-                          : month.collectedAmount > 0
-                            ? formatCompactCurrency(month.collectedAmount)
-                            : '0%';
-                      return month.key === selectedPeriod ? `${value} ●` : value;
-                    })()}
+                    {month.key === selectedPeriod ? `${formatPercent(month.collectionRate)} ●` : formatPercent(month.collectionRate)}
                   </p>
                 </button>
               ))}
@@ -279,11 +227,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                 Rolling total - collected vs expected
               </p>
               <p className="text-sm font-semibold text-slate-500">
-                {rateLabel(
-                  dashboard.rollingTotal.collectedAmount,
-                  dashboard.rollingTotal.expectedAmount,
-                  dashboard.rollingTotal.collectionRate
-                )}
+                {formatPercent(dashboard.rollingTotal.collectionRate)}
               </p>
             </div>
 
@@ -315,13 +259,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
             <div className="mt-4 h-4 overflow-hidden rounded-full border border-slate-300 bg-white">
               <div
                 className="h-full bg-[repeating-linear-gradient(45deg,#0ea5e9,#0ea5e9_8px,#0f766e_8px,#0f766e_16px)]"
-                style={{
-                  width: barWidth(
-                    dashboard.rollingTotal.collectedAmount,
-                    dashboard.rollingTotal.expectedAmount,
-                    dashboard.rollingTotal.collectionRate
-                  ),
-                }}
+                style={{ width: progressWidth(dashboard.rollingTotal.collectionRate) }}
               />
             </div>
           </section>
@@ -371,14 +309,14 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                         </p>
                       </div>
                       <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-                        {rateLabel(location.collectedAmount, location.expectedAmount, location.collectionRate)}
+                        {formatPercent(location.collectionRate)}
                       </span>
                     </div>
 
                     <div className="mt-4 h-3 overflow-hidden rounded-full border border-slate-300 bg-white">
                       <div
                         className="h-full bg-[linear-gradient(90deg,#0ea5e9_0%,#0f766e_100%)]"
-                        style={{ width: barWidth(location.collectedAmount, location.expectedAmount, location.collectionRate) }}
+                        style={{ width: progressWidth(location.collectionRate) }}
                       />
                     </div>
 

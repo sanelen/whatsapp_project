@@ -1,10 +1,5 @@
 import { createHash, createSign } from 'node:crypto';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import {
-  DRIVE_ARCHIVE_ROOT_FOLDER,
-  ensureFolderPath,
-  uploadFile as uploadDriveFile,
-} from '@/lib/google-drive';
 
 type BankImportMailboxRow = {
   id: string;
@@ -142,10 +137,7 @@ export type BankImportRunSummary = {
   paymentReferencesCreated: number;
   ignoredEntries: number;
   failedMessages: number;
-  filesArchivedToDrive: number;
 };
-
-export type BankImportSource = 'gmail' | 'drive' | 'both';
 
 export type BillingWindow = {
   period: string;
@@ -156,11 +148,6 @@ export type BillingWindow = {
 };
 
 const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
-// drive.file = least privilege: the app may only read/write files it creates,
-// which is exactly the "Hamba Trading Bank Files" archive it builds.
-const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-// Scopes requested when (re-)consenting for the bank-import + Drive-archive flow.
-const BANK_IMPORT_OAUTH_SCOPES = [GMAIL_READONLY_SCOPE, DRIVE_FILE_SCOPE].join(' ');
 const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 function base64UrlEncode(input: string | Buffer) {
@@ -280,21 +267,6 @@ function addUtcDays(input: Date, days: number) {
   return new Date(Date.UTC(input.getUTCFullYear(), input.getUTCMonth(), input.getUTCDate() + days));
 }
 
-// Inverse of getBillingWindowForPeriod: which billing period (YYYY-MM) does a
-// transaction date fall into, given the Hamba 09-of-previous-month → 08 window.
-// Day 1–8 belongs to that calendar month's period; day 9+ belongs to the next.
-export function getBillingPeriodForDate(transactionDate: string): string {
-  const match = transactionDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) {
-    throw new Error('Transaction date must use YYYY-MM-DD format');
-  }
-  const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1;
-  const day = Number(match[3]);
-  const period = new Date(Date.UTC(year, monthIndex + (day >= 9 ? 1 : 0), 1));
-  return `${period.getUTCFullYear()}-${String(period.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
 export function getBillingWindowForPeriod(period: string): BillingWindow {
   const match = period.match(/^(\d{4})-(\d{2})$/);
   if (!match) {
@@ -344,15 +316,8 @@ export function buildGmailSearchQuery(
     }
   }
   if (billingWindow) {
-    // Capitec notifications are FORWARDED into the collection mailbox, so a
-    // message's Gmail received-date is the forward date — typically days or weeks
-    // AFTER the transaction it reports. Scoping the Gmail search by received-date
-    // (a tight before:/after: around the billing window) therefore drops exactly
-    // the forwarded mail we want. We instead keep only a generous `after:` floor
-    // to bound API volume (a forward can never arrive before the transaction, so
-    // received-date >= the window start) and let `isEntryInsideBillingWindow`
-    // scope results by the parsed transaction date downstream. No `before:` guard.
     parts.push(`after:${billingWindow.gmailAfterDate.replace(/-/g, '/')}`);
+    parts.push(`before:${billingWindow.gmailBeforeDate.replace(/-/g, '/')}`);
   }
   return parts.join(' ');
 }
@@ -535,7 +500,7 @@ export function buildGmailOAuthConsentUrl(input: { redirectUri: string; state?: 
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', input.redirectUri);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', BANK_IMPORT_OAUTH_SCOPES);
+  url.searchParams.set('scope', GMAIL_READONLY_SCOPE);
   url.searchParams.set('access_type', 'offline');
   url.searchParams.set('prompt', 'consent');
   if (input.state) {
@@ -1101,7 +1066,6 @@ export async function importMailboxPayments(
     paymentReferencesCreated: 0,
     ignoredEntries: 0,
     failedMessages: 0,
-    filesArchivedToDrive: 0,
   };
 
   for (const listedMessage of listResponse.messages ?? []) {
@@ -1227,159 +1191,13 @@ export async function importMailboxPayments(
   return summary;
 }
 
-function sanitizeDriveFolderName(value: string) {
-  const cleaned = value.replace(/[\\/]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return cleaned || 'Uncategorized';
-}
-
-async function downloadStoredFile(storagePath: string): Promise<Buffer | null> {
-  const admin = getSupabaseAdmin();
-  const { data, error } = await admin.storage.from('uploads').download(storagePath);
-  if (error || !data) return null;
-  return Buffer.from(await data.arrayBuffer());
-}
-
-export type DriveArchiveSummary = {
-  filesArchived: number;
-  filesSkipped: number;
-  foldersTouched: string[];
-};
-
-// Mirror every stored bank-import PDF that is not yet on Drive into
-// `Hamba Trading Bank Files / <billing-period> / <building>`. Each file is
-// re-parsed for its own transaction date + account (the entry↔file link is
-// lossy), so foldering is robust. Idempotent: a file with drive_file_id set is
-// skipped, so re-running never re-uploads.
-export async function archiveStoredFilesToDrive(options?: {
-  mailboxEmail?: string;
-}): Promise<DriveArchiveSummary> {
-  const mailboxes = await listActiveBankImportMailboxes();
-  const mailbox =
-    mailboxes.find((m) =>
-      options?.mailboxEmail ? m.email_address.toLowerCase() === options.mailboxEmail.toLowerCase() : true
-    ) ?? mailboxes[0];
-  if (!mailbox?.organization_id) {
-    return { filesArchived: 0, filesSkipped: 0, foldersTouched: [] };
-  }
-
-  const { accessToken } = await getGoogleAccessToken(mailbox.email_address);
-  const { propertyMappings } = await loadImportLookups(mailbox.organization_id);
-  const suffixToBuilding = new Map<string, string>();
-  for (const mapping of propertyMappings) {
-    suffixToBuilding.set(mapping.account_number_suffix, mapping.property_name);
-  }
-
-  const admin = getSupabaseAdmin();
-  const { data: files, error } = await admin
-    .from('bank_import_files')
-    .select('id,file_name,mime_type,storage_path')
-    .is('drive_file_id', null);
-  if (error) throw new Error(`Failed to load files for Drive archive: ${error.message}`);
-
-  await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER]);
-  const folderCache = new Map<string, string>();
-  const foldersTouched = new Set<string>();
-  let filesArchived = 0;
-  let filesSkipped = 0;
-
-  for (const file of (files ?? []) as Array<{
-    id: string;
-    file_name: string;
-    mime_type: string;
-    storage_path: string;
-  }>) {
-    try {
-      const bytes = await downloadStoredFile(file.storage_path);
-      if (!bytes) {
-        filesSkipped += 1;
-        continue;
-      }
-
-      let period = 'Uncategorized';
-      let building = 'Uncategorized';
-      const isPdf =
-        file.mime_type === 'application/pdf' || file.file_name.toLowerCase().endsWith('.pdf');
-      if (isPdf) {
-        try {
-          const parsed = parseCapitecTransactionText(await extractPdfText(bytes));
-          if (parsed?.transactionDate) period = getBillingPeriodForDate(parsed.transactionDate);
-          if (parsed?.destinationAccountSuffix) {
-            building = sanitizeDriveFolderName(
-              suffixToBuilding.get(parsed.destinationAccountSuffix) ?? 'Uncategorized'
-            );
-          }
-        } catch {
-          // unparseable -> stays under Uncategorized
-        }
-      }
-
-      const folderPath = `${DRIVE_ARCHIVE_ROOT_FOLDER}/${period}/${building}`;
-      let folderId = folderCache.get(folderPath);
-      if (!folderId) {
-        folderId = await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER, period, building]);
-        folderCache.set(folderPath, folderId);
-      }
-      foldersTouched.add(`${period}/${building}`);
-
-      const driveFileId = await uploadDriveFile({
-        accessToken,
-        parentId: folderId,
-        name: file.file_name,
-        mimeType: file.mime_type || 'application/pdf',
-        data: bytes,
-        appProperties: { hambaFileId: file.id },
-      });
-
-      await admin
-        .from('bank_import_files')
-        .update({
-          drive_file_id: driveFileId,
-          drive_folder_path: folderPath,
-          drive_archived_at: new Date().toISOString(),
-        })
-        .eq('id', file.id);
-      filesArchived += 1;
-    } catch (archiveError) {
-      filesSkipped += 1;
-      console.error(
-        `Drive archive failed for file ${file.id}:`,
-        archiveError instanceof Error ? archiveError.message : archiveError
-      );
-    }
-  }
-
-  return { filesArchived, filesSkipped, foldersTouched: Array.from(foldersTouched) };
-}
-
-function emptyRunSummary(mailboxEmail: string, billingWindow?: BillingWindow): BankImportRunSummary {
-  return {
-    mailboxEmail,
-    authMode: null,
-    billingPeriod: billingWindow?.period ?? null,
-    billingWindowStart: billingWindow?.startDate ?? null,
-    billingWindowEnd: billingWindow?.endDate ?? null,
-    messagesScanned: 0,
-    messagesImported: 0,
-    attachmentsProcessed: 0,
-    filesStored: 0,
-    duplicateFiles: 0,
-    entriesCreated: 0,
-    paymentReferencesCreated: 0,
-    ignoredEntries: 0,
-    failedMessages: 0,
-    filesArchivedToDrive: 0,
-  };
-}
-
 export async function runBankImport(input?: {
   mailboxEmail?: string;
   mailboxId?: string;
   maxMessages?: number;
   billingPeriod?: string;
   pullAll?: boolean;
-  source?: BankImportSource;
 }) {
-  const source = input?.source ?? 'both';
   const billingWindow =
     input?.billingPeriod && !input.pullAll ? getBillingWindowForPeriod(input.billingPeriod) : undefined;
   const mailboxes = await listActiveBankImportMailboxes();
@@ -1394,24 +1212,8 @@ export async function runBankImport(input?: {
   }
 
   const results: BankImportRunSummary[] = [];
-  if (source === 'gmail' || source === 'both') {
-    for (const mailbox of targetMailboxes) {
-      results.push(await importMailboxPayments(mailbox, { maxMessages: input?.maxMessages, billingWindow }));
-    }
+  for (const mailbox of targetMailboxes) {
+    results.push(await importMailboxPayments(mailbox, { maxMessages: input?.maxMessages, billingWindow }));
   }
-
-  // Drive is the durable archive: when it's part of the selected source, mirror
-  // any not-yet-archived stored files into the month/building folder tree.
-  if (source === 'drive' || source === 'both') {
-    const archive = await archiveStoredFilesToDrive({ mailboxEmail: input?.mailboxEmail });
-    if (results.length > 0) {
-      results[results.length - 1].filesArchivedToDrive += archive.filesArchived;
-    } else {
-      const summary = emptyRunSummary(targetMailboxes[0].email_address, billingWindow);
-      summary.filesArchivedToDrive = archive.filesArchived;
-      results.push(summary);
-    }
-  }
-
   return results;
 }

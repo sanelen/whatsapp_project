@@ -94,7 +94,7 @@ test('getBillingWindowForPeriod maps a month to the 9th-through-8th working wind
   assert.equal(window.gmailBeforeDate, '2026-06-09');
 });
 
-test('buildGmailSearchQuery uses a generous after floor and no before guard for billing windows', () => {
+test('buildGmailSearchQuery adds billing-window date guards', () => {
   const query = buildGmailSearchQuery(
     {
       subject_filter: 'Capitec Business Transaction Notification',
@@ -104,12 +104,8 @@ test('buildGmailSearchQuery uses a generous after floor and no before guard for 
     getBillingWindowForPeriod('2026-05')
   );
 
-  // Forwarded Capitec mail arrives after the transaction, so the Gmail search must
-  // keep only a lower `after:` floor and rely on transaction-date filtering. A tight
-  // `before:` received-date guard would drop the forwarded notifications entirely.
   assert.match(query, /after:2026\/04\/08/);
-  assert.doesNotMatch(query, /before:/);
-  // The billing window overrides the last_synced_at after-filter.
+  assert.match(query, /before:2026\/05\/09/);
   assert.doesNotMatch(query, /after:2026\/06\/29/);
 });
 

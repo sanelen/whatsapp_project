@@ -515,6 +515,52 @@ Supabase** (so files manually dropped into Drive flow into the dashboard). Needs
 to share the per-PDF parse/upsert path between the Gmail and Drive importers. The `source='drive'`
 branch currently only *builds/syncs* the archive.
 
+### 6f. Match & sign-off data model (per-unit table) — schema created 2026-06-30
+
+The next section is the **per-unit table / match & sign-off** view
+(`Hamba Trading › <Property> › Units`, columns: Unit · Contact · Exp R · Reference ·
+Recv R · Status · action). Most of it was already modelled; this session added the
+remaining schema. **DB only — UI/server actions are the next build.**
+
+How the wireframe maps to tables:
+
+- **Unit row** → `property_units`: `label` (Unit), `contact_primary`/`contact_secondary`
+  (the two phone numbers), `rent_amount` (Exp R), `expected_reference` + `match_keywords[]`
+  (auto-match hints), `is_blocked` (→ blocked/excluded row), `display_order`.
+- **Per-period cell** → `unit_payment_periods`: `expected_amount`, `status`, `is_blocked`,
+  `note`, and new **`due_date`** (drives "overdue Nd").
+- **Reference / Recv R / sign-off** → `payment_references`: a reference is **matched** by
+  setting `unit_id` + `unit_payment_period_id`; **signed off** via `signed_off` /
+  `signed_off_at` / `signed_off_by` (signed_off == the 🔒 "locked"). New provenance:
+  **`matched_at`, `matched_by`, `match_method`** (`manual|auto_reference|auto_keyword|auto_amount`).
+- **"all logged" + Reverse sign-off** → new append-only **`payment_match_events`**
+  (event_type: `matched|unmatched|signed_off|reverse_signed_off|blocked|unblocked|status_changed|note_added`,
+  plus actor + reference/amount/status snapshots). FKs are ON DELETE SET NULL so the log
+  survives deletes; RLS enabled (admin/service-role bypasses, like the other dashboard tables).
+
+State machine the server actions should implement:
+
+1. **Match**: set `unit_id`/`unit_payment_period_id`/`matched_*` on a pool reference →
+   log `matched`. Status derives: recv==exp → ready to sign; recv≠exp → `mismatch`.
+2. **Sign off**: `signed_off=true`, stamp `signed_off_at/by` → period `status='paid'`,
+   reference locked → log `signed_off`.
+3. **Reverse sign-off** (sticky note): clear `signed_off` AND the match
+   (`unit_id`/`unit_payment_period_id` → null) so the reference "drops back into the pool",
+   the row unlocks, the period recalculates to `unpaid` → log `reverse_signed_off`.
+4. **Block/unblock** a unit-period → `is_blocked` + `status` `blocked`/`excluded` → log.
+
+Status is largely **derived** at read time (mismatch = matched recv≠exp; overdue =
+unpaid past `due_date`; partial = recv<exp; paid = signed off). Store the base
+(`unpaid`/`paid`/`blocked`); derive the rest in the read layer (extend
+`src/lib/monthly-payments.ts`).
+
+Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (applied live as
+`add_match_signoff_audit`).
+
+> Repo/remote migration drift to fix: the Drive-archive columns from §6e were applied to the
+> remote via MCP (`add_drive_archive_tracking_to_bank_import_files`) but have **no local
+> migration file** yet — backfill one so `supabase/migrations/` matches the live DB.
+
 ---
 
 ## 7. Tooling / environment notes

@@ -47,8 +47,6 @@ export type MonthlyPaymentsReferenceRow = {
 export type MonthlyPaymentsMonthSummary = {
   key: string;
   label: string;
-  collectedAmount: number;
-  expectedAmount: number;
   collectionRate: number;
   isCurrent: boolean;
 };
@@ -291,8 +289,6 @@ export function buildMonthlyPaymentsDashboardSnapshot(
         month: 'short',
         timeZone: 'UTC',
       }).format(monthStart),
-      collectedAmount,
-      expectedAmount,
       collectionRate: expectedAmount > 0 ? collectedAmount / expectedAmount : 0,
       isCurrent: monthKey === currentMonthKey,
     };

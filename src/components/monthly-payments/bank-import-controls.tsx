@@ -1,22 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { Download, ExternalLink, Loader2, MailCheck } from 'lucide-react';
-
-type BankImportSource = 'gmail' | 'drive' | 'both';
-
-const SOURCE_OPTIONS: Array<{ value: BankImportSource; label: string }> = [
-  { value: 'gmail', label: 'Gmail' },
-  { value: 'drive', label: 'Drive' },
-  { value: 'both', label: 'Both' },
-];
 
 type BankImportControlsProps = {
   defaultPeriod: string;
   periods: Array<{ key: string; label: string; isCurrent: boolean }>;
   selectedPeriod?: string;
   onSelectedPeriodChange?: (period: string) => void;
-  onImported?: () => void;
+  runRequestToken?: number;
 };
 
 type ImportResponse = {
@@ -33,7 +25,6 @@ type ImportResponse = {
     ignoredEntries: number;
     duplicateFiles: number;
     failedMessages: number;
-    filesArchivedToDrive: number;
   }>;
 };
 
@@ -72,15 +63,15 @@ export function BankImportControls({
   periods,
   selectedPeriod,
   onSelectedPeriodChange,
-  onImported,
+  runRequestToken,
 }: BankImportControlsProps) {
   const [internalSelectedPeriod, setInternalSelectedPeriod] = useState(defaultPeriod);
   const [pullAll, setPullAll] = useState(false);
-  const [source, setSource] = useState<BankImportSource>('both');
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [googleCloudStatus, setGoogleCloudStatus] = useState<GoogleCloudIntegrationResponse | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isConnecting, startConnecting] = useTransition();
+  const lastRunRequestToken = useRef<number | undefined>(runRequestToken);
 
   const activePeriod = selectedPeriod ?? internalSelectedPeriod;
 
@@ -147,18 +138,22 @@ export function BankImportControls({
         body: JSON.stringify({
           billingPeriod: resolvedPeriod ?? activePeriod,
           pullAll,
-          source,
           maxMessages: pullAll ? 100 : 50,
         }),
       });
       const payload = (await response.json()) as ImportResponse;
       setResult(payload);
-      // Pull the freshly-written rows from the database into the dashboard.
-      if (payload.success) {
-        onImported?.();
-      }
     });
   }
+
+  useEffect(() => {
+    if (runRequestToken === undefined) return;
+    if (lastRunRequestToken.current === runRequestToken) return;
+    lastRunRequestToken.current = runRequestToken;
+    if (runRequestToken > 0) {
+      runImport();
+    }
+  }, [runRequestToken, activePeriod, pullAll]);
 
   const totals = result?.data?.reduce(
     (summary, mailbox) => ({
@@ -168,7 +163,6 @@ export function BankImportControls({
       ignoredEntries: summary.ignoredEntries + mailbox.ignoredEntries,
       duplicateFiles: summary.duplicateFiles + mailbox.duplicateFiles,
       failedMessages: summary.failedMessages + mailbox.failedMessages,
-      filesArchivedToDrive: summary.filesArchivedToDrive + mailbox.filesArchivedToDrive,
     }),
     {
       messagesScanned: 0,
@@ -177,7 +171,6 @@ export function BankImportControls({
       ignoredEntries: 0,
       duplicateFiles: 0,
       failedMessages: 0,
-      filesArchivedToDrive: 0,
     }
   );
 
@@ -213,29 +206,6 @@ export function BankImportControls({
                 />
                 Pull everything
               </label>
-
-              <div
-                role="group"
-                aria-label="Import source"
-                className="inline-flex h-10 items-center rounded-2xl border border-slate-300 bg-white p-1 shadow-sm"
-              >
-                {SOURCE_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setSource(option.value)}
-                    disabled={isPending}
-                    aria-pressed={source === option.value}
-                    className={`inline-flex h-8 items-center rounded-xl px-3 text-sm font-semibold transition disabled:cursor-wait ${
-                      source === option.value
-                        ? 'bg-slate-950 text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <button
@@ -292,7 +262,6 @@ export function BankImportControls({
               Imported {totals.paymentReferencesCreated} references from {totals.messagesScanned} messages.
               {totals.ignoredEntries ? ` ${totals.ignoredEntries} entries were ignored.` : ''}
               {totals.duplicateFiles ? ` ${totals.duplicateFiles} duplicate files were skipped.` : ''}
-              {totals.filesArchivedToDrive ? ` ${totals.filesArchivedToDrive} files archived to Drive.` : ''}
             </p>
           ) : (
             <p>{result.error ?? 'Import failed'}</p>
