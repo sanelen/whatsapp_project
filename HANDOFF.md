@@ -1,6 +1,6 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
-**Last updated:** 2026-06-30 — Claude operator-loop review adopted: period auto-creation, inline match/sign-off inside the unit table, and dashboard CTA wiring now lead the build; room manager follows after the operational loop. Prior: 2026-06-30 — Drive→Supabase re-import completed, reference-pool route added, and next-phase plan realigned to repo wireframes: locations → room manager → reference pool match flow.
+**Last updated:** 2026-07-01 — operator-loop stabilization pass: dashboard rollups were split into matched vs unmatched money, property drill-down now preserves period context, room-manager create/save flows were extended, and the units-table matching drawer runtime error (duplicate React keys in hint chips) was fixed and browser-verified. Prior: 2026-06-30 — Claude operator-loop review adopted: period auto-creation, inline match/sign-off inside the unit table, and dashboard CTA wiring now lead the build; room manager follows after the operational loop.
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`
 **Working branch:** `codex/monthly-payments`
@@ -302,6 +302,83 @@ Work completed in the current monthly-payments pass:
     - current suite total: **52 passing tests**
 - Added the first manual import UI to `/monthly-payments`:
   - `src/components/monthly-payments/bank-import-controls.tsx`
+
+### 6c. Operator loop stabilization pass (2026-07-01)
+
+This session focused on making the monthly-payments flow behave more like an
+operator tool and less like a visual prototype.
+
+What changed:
+
+- **Dashboard rollups were corrected to separate matched vs unmatched money.**
+  - Property cards and the rolling-total strip now show `matchedCollectedAmount`
+    against expected rent.
+  - Unmatched imported money is still visible, but it is called out separately
+    instead of silently inflating the property "paid" story.
+- **Month-aware property drill-down was tightened.**
+  - Dashboard cards push straight into the property units table while preserving
+    `?period=YYYY-MM`.
+  - Property summaries now carry explicit `paid`, `due`, `overdue`, and
+    `unmatched` context for the selected billing window.
+- **Room manager create/edit flow was extended.**
+  - `/api/monthly-payments/rooms` can now create a new `property_units` row, not
+    only update existing rows.
+  - Room manager now exposes a visible **Create room** action.
+  - Saving from room manager preserves property/month context when routing back
+    into units or locations.
+- **Units-table matching drawer was hardened.**
+  - `match ref` now opens against the selected unit with candidate references
+    scored from expected reference, keyword hints, match rules, payer, and amount.
+  - Duplicate hint-chip keys were causing the Next dev overlay to appear while
+    clicking around the matching drawer. That runtime issue is now fixed by
+    de-duplicating the rendered hint list and using stable composite keys.
+- **Density pass (partial).**
+  - Shell, dashboard, room manager, and units table spacing/font sizes were
+    reduced to better fit operator-heavy screens.
+
+Key read-model changes:
+
+- `src/lib/monthly-payments.ts`
+  - `MonthlyPaymentsLocationSummary` now carries:
+    - `matchedCollectedAmount`
+    - `unmatchedCollectedAmount`
+    - `unmatchedReferenceCount`
+  - Dashboard month summaries now carry month-local `rollingTotal`, `locations`,
+    and `unmatchedReferenceCount`.
+  - Property units totals now expose:
+    - `paidCount`
+    - `dueCount`
+    - `overdueCount`
+    - `unmatchedCount`
+    - `unmatchedAmount`
+    - plus `matchRules` per row for the inline matching panel.
+
+What was explicitly verified:
+
+- `npm run typecheck`
+- `npm test -- src/app/workspace-pages.test.tsx src/lib/monthly-payments.test.ts`
+- `npm run build`
+- live browser verification on:
+  - `/monthly-payments`
+  - `/monthly-payments/[propertyId]?period=2026-07`
+  - `/monthly-payments/locations/[propertyId]?period=2026-07&unitId=...`
+- Browser console/runtime check:
+  - fixed the duplicate-key error thrown from
+    `src/components/monthly-payments/units-table.tsx`
+  - reloaded and re-clicked the matching drawer
+  - confirmed the console overlay no longer appears in the current page state
+
+Open product gaps after this pass:
+
+- `match ref` works structurally, but still needs more obvious operator feedback
+  after matching/sign-off actions.
+- The room manager still needs the full "where do I edit this room and why?"
+  polish pass; it is functional but not yet self-explanatory.
+- Deposit split / partial-payment logic is still not implemented. Overpayments can
+  already surface as mismatches, but the "rent + deposit contribution" rule is
+  still a future business-rule slice.
+- Some docs still contain stale assumptions from the old `3001` local port phase.
+  Current live work in this repo has been verified on `http://localhost:3000`.
   - Google Cloud configuration status and setup action
   - month selector
   - `Pull everything` toggle
@@ -582,10 +659,11 @@ Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (app
 
 ## 7. Tooling / environment notes
 
-- **Dev server port is 3001, NOT 3000.** Port 3000 is taken by **Hermes** on this machine,
-  and the OAuth redirect (`GMAIL_OAUTH_REDIRECT_URI`) + all local URLs assume 3001. The
-  `dev` script is pinned with `-p 3001` so Next never falls back to 3000. Always use
-  `http://localhost:3001`.
+- **Current verified local app URL is `http://localhost:3000`.**
+  Older handoff notes referenced a temporary `3001` phase while local OAuth/import
+  work was being stabilized. The monthly-payments flows verified in the latest pass
+  were all run against `3000`, so treat that as the current default unless the next
+  session intentionally changes it again.
 - **`gh` CLI: NOT installed.** PRs were not creatable programmatically; pushes done via git.
 - **Vercel CLI**: present (v54.x) but **not logged in**.
 - **Supabase CLI**: available via `npx` but **not logged in**. The Supabase **MCP** IS
@@ -603,10 +681,10 @@ Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (app
 
 1. `cd /Users/macdaddy/Documents/DEV/HambaCustomerService` — confirm branch + clean tree.
 2. **Start the next payments slice from the operator loop, in this order:**
-   - stabilize `period auto-creation`
-   - refine inline `match & sign off`
-   - wire dashboard CTAs and remaining row states
-   - then return to `Room manager`
+   - refine the live `match ref` interaction feedback
+   - finish `sign off` / reverse / re-match operator states
+   - tighten the room-manager explanation + create-room flow
+   - then implement deposit-split / partial-payment business rules
 3. **Operator loop is now the primary path:**
    - `Import` → `Dashboard` → click a location → `Units`
    - `+ match ref` opens the property-scoped unmatched pool inline
@@ -615,13 +693,14 @@ Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (app
    - Drive→Supabase import now works
    - imported rows now have `reference`, `transaction_date`, and `transactionId`
    - month loads/imports auto-create `unit_payment_periods`
-5. **Room manager is now the follow-up admin branch:**
-   - implement the room list + room create/edit flow from screens `15`, `16`, `17`
-   - treat `property_units` as the source of truth for payments
-   - wire room reference rules onto:
+5. **Room manager is now functional but still needs product polish:**
+   - keep `property_units` as the source of truth for room/payment setup
+   - make create/edit flows more obvious to operators
+   - keep room reference rules wired onto:
      - `bank_import_unit_match_hints`
      - `property_units.expected_reference`
      - `property_units.match_keywords`
+   - ensure saving a room clearly feeds back into later matching suggestions
 6. **Standalone reference-pool page is no longer the v1 primary path:**
    - it can remain as a support/debug surface
    - operators should resolve matches from inside the unit table
@@ -633,6 +712,8 @@ Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (app
    - `src/lib/monthly-payments.ts`
    - `src/components/monthly-payments/monthly-payments-hub.tsx`
    - `src/components/monthly-payments/reference-pool-view.tsx`
+   - `src/components/monthly-payments/units-table.tsx`
+   - `src/components/monthly-payments/room-manager-view.tsx`
    - `docs/repo_wireframes/docs/roadmap/wireframes/README.md`
 
 ---

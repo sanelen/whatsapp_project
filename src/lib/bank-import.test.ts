@@ -4,6 +4,7 @@ import {
   buildGmailSearchQuery,
   buildGmailOAuthConsentUrl,
   extractAttachmentsFromEml,
+  getBillingPeriodForDate,
   getBillingWindowForPeriod,
   getGmailIntegrationStatus,
   parseCapitecTransactionText,
@@ -209,6 +210,121 @@ test('extractAttachmentsFromEml recovers nested PDF attachments from a forwarded
   assert.match(attachments[0].sourceId, /^eml:forwarded\.eml:70006Capitec\.pdf:/);
   assert.equal(attachments[0].nestedFrom, 'forwarded.eml');
   assert.deepEqual(attachments[0].data, pdfBytes);
+});
+
+// ─── Billing period / window edge cases (discovered during July 1 import debugging) ───
+
+test('getBillingPeriodForDate: day 1-8 belongs to the current calendar month', () => {
+  assert.equal(getBillingPeriodForDate('2026-07-01'), '2026-07');
+  assert.equal(getBillingPeriodForDate('2026-07-08'), '2026-07');
+});
+
+test('getBillingPeriodForDate: day 9+ belongs to the next calendar month', () => {
+  assert.equal(getBillingPeriodForDate('2026-07-09'), '2026-08');
+  assert.equal(getBillingPeriodForDate('2026-07-31'), '2026-08');
+});
+
+test('getBillingPeriodForDate: December 9+ rolls into the next year', () => {
+  assert.equal(getBillingPeriodForDate('2026-12-09'), '2027-01');
+  assert.equal(getBillingPeriodForDate('2026-12-31'), '2027-01');
+});
+
+test('getBillingWindowForPeriod: July 2026 window spans June 9 to July 8', () => {
+  const window = getBillingWindowForPeriod('2026-07');
+  assert.equal(window.startDate, '2026-06-09');
+  assert.equal(window.endDate, '2026-07-08');
+});
+
+test('getBillingWindowForPeriod: January window crosses year boundary', () => {
+  const window = getBillingWindowForPeriod('2027-01');
+  assert.equal(window.startDate, '2026-12-09');
+  assert.equal(window.endDate, '2027-01-08');
+});
+
+test('a July 1 transaction is inside the July 2026 billing window', () => {
+  const window = getBillingWindowForPeriod('2026-07');
+  const parsed = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 01/07/2026 14:30:00
+    Transaction ID : 003000001
+    Account Paid To : ****6088
+    Amount Received : R 2,200.00
+    Reference : QHRoom14
+    Available Balance : R 30,000.00
+  `);
+  assert.ok(parsed);
+  assert.equal(parsed!.transactionDate, '2026-07-01');
+  // July 1 is inside June 9 – July 8
+  assert.ok(parsed!.transactionDate! >= window.startDate);
+  assert.ok(parsed!.transactionDate! <= window.endDate);
+});
+
+test('a July 1 transaction is OUTSIDE the June 2026 billing window', () => {
+  const window = getBillingWindowForPeriod('2026-06');
+  // June window: May 9 – June 8
+  assert.equal(window.startDate, '2026-05-09');
+  assert.equal(window.endDate, '2026-06-08');
+  // July 1 > June 8
+  assert.ok('2026-07-01' > window.endDate);
+});
+
+// ─── Parser edge cases ───
+
+test('parseCapitecTransactionText returns null for PDFs without Transaction Type', () => {
+  const parsed = parseCapitecTransactionText(`
+    Some other PDF content
+    Date: 01/07/2026
+    Amount: R 500.00
+  `);
+  assert.equal(parsed, null);
+});
+
+test('parseCapitecTransactionText handles Quarry Heights room references', () => {
+  const parsed = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 01/07/2026 09:00:00
+    Transaction ID : 003000002
+    Account Paid To : ****6088
+    Amount Received : R 2,200.00
+    Reference : QHRoom14
+    Available Balance : R 25,000.00
+  `);
+  assert.ok(parsed);
+  assert.equal(parsed!.reference, 'QHRoom14');
+  assert.equal(parsed!.destinationAccountSuffix, '6088');
+  assert.equal(parsed!.amount, 2200);
+});
+
+test('resolveImportContext: unmapped account suffix still resolves with null propertyId', () => {
+  const parsed = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 01/07/2026 10:00:00
+    Transaction ID : 003000003
+    Account Paid To : ****7467
+    Amount Received : R 3,000.00
+    Reference : QHROOM08
+    Available Balance : R 20,000.00
+  `);
+  assert.ok(parsed);
+
+  const resolved = resolveImportContext({
+    entry: parsed,
+    organizationId: 'org-1',
+    propertyMappings: [
+      {
+        id: 'map-1',
+        organization_id: 'org-1',
+        property_id: 'quarry-heights',
+        account_number_suffix: '6088',
+        property_name: 'Quarry Heights',
+        is_active: true,
+      },
+    ],
+    unitMatchHints: [],
+  });
+
+  // Account 7467 has no mapping → propertyId should be null
+  assert.equal(resolved.propertyId, null);
 });
 
 test('resolveImportContext supports regex-based Essex room matching', () => {

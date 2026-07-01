@@ -1,10 +1,26 @@
 # Project Roadmap
 
+Last updated: 2026-07-01
+
+See also: [Architecture](./ARCHITECTURE.md) (structural view), [Requirements](./REQUIREMENTS.md)
+(what each capability must do, with shipped/partial/planned status), and
+[Linear sync](./LINEAR-SYNC.md) (ticket ↔ phase mapping).
+
 ## Current Focus
 
 The KB/retrieval shell is in place, and a first monthly-payments branch now exists.
 The next major work is to reconcile planning with implementation, then continue the
 tenant-operations build in a deliberate sequence.
+
+As of 2026-07-01, the monthly-payments branch has moved from wireframe scaffolding
+into an operator-loop stabilization phase:
+
+- dashboard rollups now distinguish matched money from unmatched money
+- property drill-down preserves billing-period context
+- room manager can now create rooms as well as edit them
+- the inline units matching drawer is the primary v1 matching surface
+- current focus is to finish match/sign-off/reverse behavior before adding more
+  admin polish
 
 ## Execution Status
 
@@ -137,20 +153,20 @@ assistant and offboarding remain planning-only.
 
 For the next monthly-payments execution slice, the agreed order is:
 
-1. **Period auto-creation**
-   - ensure `unit_payment_periods` exist for every occupied, non-blocked unit when
-     a month is imported or loaded
-2. **Match interaction**
-   - wire `+ match ref` to a property-scoped pool inside the unit table
-   - rank likely references using `expected_reference`, `match_keywords`, and amount
-3. **Sign-off + reverse sign-off**
-   - lock the row after sign-off
-   - reverse back to the pool with an audit event when a mistake is corrected
-4. **Dashboard CTA wiring**
-   - send operators from the dashboard straight into the property unit table, not
-     a global reference-pool page
-5. **Room manager**
-   - keep admin setup as the follow-up branch once the operational loop is stable
+1. **Match / sign-off loop completion**
+   - finish inline `match ref`
+   - make sign-off and reverse-sign-off feel explicit and trustworthy
+   - keep row state, totals, and unmatched counts in sync without reload confusion
+2. **Operator feedback and state clarity**
+   - make row/payment/workflow states easier to read
+   - show unmatched money clearly when it explains dashboard totals
+3. **Room manager polish**
+   - keep room editing centralized there
+   - make create/edit/source-rule flows more obvious
+   - ensure saved room rules feed back into later matching suggestions
+4. **Deposit split / partial-payment rules**
+   - handle overpayments that include rent plus deposit contribution
+   - avoid treating every overpayment as a simple mismatch
 
 ## Tooling
 

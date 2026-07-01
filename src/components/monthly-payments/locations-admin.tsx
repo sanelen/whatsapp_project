@@ -114,7 +114,7 @@ export function LocationsAdmin({ view }: { view: MonthlyPaymentsLocationsView })
 
                 <div className="mt-5 flex flex-wrap gap-3">
                   <Link
-                    href={`/monthly-payments/locations/${card.propertyId}`}
+                    href={`/monthly-payments/locations/${card.propertyId}?period=${view.periodKey}`}
                     className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"
                   >
                     <Settings2 size={15} />

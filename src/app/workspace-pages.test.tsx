@@ -28,7 +28,7 @@ test('monthly payments page renders the monthly payments hub', () => {
 
 test('monthly payments property page renders the per-unit units table', () => {
   const source = readFileSync('src/app/monthly-payments/[propertyId]/page.tsx', 'utf8');
-  assert.match(source, /<UnitsTable table={table} \/>/);
+  assert.match(source, /<UnitsTable table={table} initialUnitId={unitId} \/>/);
   assert.match(source, /readPropertyUnitsTable/);
   assert.match(source, /await requireUser\(\)/);
 });

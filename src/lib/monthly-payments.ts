@@ -53,6 +53,18 @@ export type MonthlyPaymentsMonthSummary = {
   expectedAmount: number;
   collectionRate: number;
   isCurrent: boolean;
+  rollingTotal: {
+    collectedAmount: number;
+    expectedAmount: number;
+    collectionRate: number;
+    occupiedCount: number;
+    blockedCount: number;
+    overdueCount: number;
+    paidCount: number;
+    dueCount: number;
+  };
+  locations: MonthlyPaymentsLocationSummary[];
+  unmatchedReferenceCount: number;
 };
 
 export type MonthlyPaymentsLocationSummary = {
@@ -60,6 +72,8 @@ export type MonthlyPaymentsLocationSummary = {
   name: string;
   location: string;
   collectedAmount: number;
+  matchedCollectedAmount: number;
+  unmatchedCollectedAmount: number;
   expectedAmount: number;
   collectionRate: number;
   occupiedCount: number;
@@ -68,6 +82,7 @@ export type MonthlyPaymentsLocationSummary = {
   overdueCount: number;
   blockedCount: number;
   unitCount: number;
+  unmatchedReferenceCount: number;
 };
 
 export type MonthlyPaymentsDashboardSnapshot = {
@@ -82,6 +97,8 @@ export type MonthlyPaymentsDashboardSnapshot = {
     occupiedCount: number;
     blockedCount: number;
     overdueCount: number;
+    paidCount: number;
+    dueCount: number;
   };
   locations: MonthlyPaymentsLocationSummary[];
   unmatchedReferenceCount: number;
@@ -93,6 +110,28 @@ type MonthlyPaymentsSnapshotInput = {
   units: MonthlyPaymentsUnitRow[];
   periods: MonthlyPaymentsPeriodRow[];
   references: MonthlyPaymentsReferenceRow[];
+};
+
+type ComputedUnitStatus = {
+  status: UnitTableStatus;
+  overdueDays: number | null;
+  receivedAmount: number | null;
+  hasMatchedPayment: boolean;
+  hasExactPayment: boolean;
+  signedOff: boolean;
+};
+
+export type UnitTableMatchRule = {
+  id: string;
+  matcherType:
+    | 'reference_contains'
+    | 'reference_equals'
+    | 'reference_regex'
+    | 'payer_name_contains'
+    | 'amount_equals';
+  matcherValue: string;
+  amountValue: number | null;
+  isActive: boolean;
 };
 
 function toMonthStart(input: Date): Date {
@@ -132,6 +171,80 @@ function billingPeriodKeyForReferenceDate(value: string): string {
   }
 }
 
+function computeUnitStatus(input: {
+  occupancyStatus: 'occupied' | 'vacant';
+  isBlocked: boolean;
+  expectedAmount: number;
+  matchedReferences: Array<{
+    amount: number | string;
+    signed_off: boolean;
+  }>;
+  dueDate: string | null;
+  now: Date;
+}): ComputedUnitStatus {
+  if (input.isBlocked || input.occupancyStatus === 'vacant') {
+    return {
+      status: 'blocked',
+      overdueDays: null,
+      receivedAmount: null,
+      hasMatchedPayment: false,
+      hasExactPayment: false,
+      signedOff: false,
+    };
+  }
+
+  const receivedAmount = input.matchedReferences.length
+    ? input.matchedReferences.reduce((sum, reference) => sum + toMoney(reference.amount), 0)
+    : null;
+  const hasMatchedPayment = receivedAmount !== null;
+  const hasExactPayment =
+    receivedAmount !== null && Math.abs(receivedAmount - input.expectedAmount) <= 0.001;
+  const signedOff = input.matchedReferences.length > 0 && input.matchedReferences.every((reference) => reference.signed_off);
+
+  if (hasExactPayment) {
+    return {
+      status: 'paid',
+      overdueDays: null,
+      receivedAmount,
+      hasMatchedPayment,
+      hasExactPayment,
+      signedOff,
+    };
+  }
+
+  if (hasMatchedPayment) {
+    return {
+      status: 'mismatch',
+      overdueDays: null,
+      receivedAmount,
+      hasMatchedPayment,
+      hasExactPayment,
+      signedOff,
+    };
+  }
+
+  const overdueDays = input.dueDate ? diffDaysUtc(input.dueDate, input.now) : 0;
+  if (overdueDays > 0) {
+    return {
+      status: 'overdue',
+      overdueDays,
+      receivedAmount: null,
+      hasMatchedPayment: false,
+      hasExactPayment: false,
+      signedOff: false,
+    };
+  }
+
+  return {
+    status: 'unpaid',
+    overdueDays: null,
+    receivedAmount: null,
+    hasMatchedPayment: false,
+    hasExactPayment: false,
+    signedOff: false,
+  };
+}
+
 function buildMonthStarts(currentMonthStart: Date): Date[] {
   return Array.from({ length: 5 }, (_, index) => addMonths(currentMonthStart, index - 2));
 }
@@ -151,6 +264,7 @@ export function buildMonthlyPaymentsDashboardSnapshot(
   const referencesByPropertyAndMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
   const referencesByMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
   const referencesByInferredLocationAndMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
+  const referencesByUnitAndMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
 
   for (const unit of input.units) {
     const current = unitsByProperty.get(unit.property_id) ?? [];
@@ -182,118 +296,156 @@ export function buildMonthlyPaymentsDashboardSnapshot(
       referencesByPropertyAndMonth.set(propertyMonthKey, propertyMonthReferences);
     }
 
+    if (reference.unit_id) {
+      const unitMonthKey = `${reference.unit_id}:${monthKey}`;
+      const unitMonthReferences = referencesByUnitAndMonth.get(unitMonthKey) ?? [];
+      unitMonthReferences.push(reference);
+      referencesByUnitAndMonth.set(unitMonthKey, unitMonthReferences);
+    }
+
     if (!reference.unit_payment_period_id) continue;
     const current = referencesByPeriod.get(reference.unit_payment_period_id) ?? [];
     current.push(reference);
     referencesByPeriod.set(reference.unit_payment_period_id, current);
   }
+  function buildLocationsForMonth(monthKey: string): MonthlyPaymentsLocationSummary[] {
+    const propertyLocations = properties.map((property) => {
+      const units = unitsByProperty.get(property.id) ?? [];
+      const propertyReferences = referencesByPropertyAndMonth.get(`${property.id}:${monthKey}`) ?? [];
+      const matchedPropertyReferences = propertyReferences.filter((reference) => Boolean(reference.unit_id));
+      const unmatchedPropertyReferences = propertyReferences.filter((reference) => !reference.unit_id);
+      let expectedAmount = 0;
+      let occupiedCount = 0;
+      let blockedCount = 0;
+      let overdueCount = 0;
+      let paidCount = 0;
+      let dueCount = 0;
 
-  const propertyLocations = properties.map((property) => {
-    const units = unitsByProperty.get(property.id) ?? [];
-    const currentMonthReferences =
-      referencesByPropertyAndMonth.get(`${property.id}:${currentMonthKey}`) ?? [];
-    let expectedAmount = 0;
-    let occupiedCount = 0;
-    let blockedCount = 0;
-    let overdueCount = 0;
-    let paidCount = 0;
-    let dueCount = 0;
+      for (const unit of units) {
+        const period = periodsByUnitAndMonth.get(`${unit.id}:${monthKey}`);
+        const isBlocked = period?.is_blocked ?? unit.is_blocked;
+        const expected = isBlocked
+          ? 0
+          : toMoney(
+              period?.expected_amount ?? (unit.occupancy_status === 'occupied' ? unit.rent_amount : 0)
+            );
+        const status = computeUnitStatus({
+          occupancyStatus: unit.occupancy_status,
+          isBlocked,
+          expectedAmount: expected,
+          matchedReferences: referencesByUnitAndMonth.get(`${unit.id}:${monthKey}`) ?? [],
+          dueDate: getBillingWindowForPeriod(monthKey).endDate,
+          now: currentDate,
+        }).status;
 
-    for (const unit of units) {
-      const period = periodsByUnitAndMonth.get(`${unit.id}:${currentMonthKey}`);
-      const isBlocked = period?.is_blocked ?? unit.is_blocked;
-      const expected = isBlocked
-        ? 0
-        : toMoney(
-            period?.expected_amount ?? (unit.occupancy_status === 'occupied' ? unit.rent_amount : 0)
-          );
-      const status =
-        period?.status ?? (isBlocked ? 'blocked' : unit.occupancy_status === 'occupied' ? 'unpaid' : 'blocked');
+        expectedAmount += expected;
 
-      expectedAmount += expected;
+        if (isBlocked || status === 'blocked') {
+          blockedCount += 1;
+        } else if (unit.occupancy_status === 'occupied') {
+          occupiedCount += 1;
+        }
 
-      if (isBlocked || status === 'blocked') {
-        blockedCount += 1;
-      } else if (unit.occupancy_status === 'occupied') {
-        occupiedCount += 1;
+        if (status === 'paid') paidCount += 1;
+        if (status === 'overdue') overdueCount += 1;
+        if (status !== 'paid' && status !== 'blocked') dueCount += 1;
       }
 
-      if (status === 'overdue') overdueCount += 1;
-      if (status === 'paid') paidCount += 1;
-      if (status === 'unpaid' || status === 'partial' || status === 'mismatch') dueCount += 1;
-    }
+      const matchedCollectedAmount = matchedPropertyReferences.reduce(
+        (sum, reference) => sum + toMoney(reference.amount),
+        0
+      );
+      const unmatchedCollectedAmount = unmatchedPropertyReferences.reduce(
+        (sum, reference) => sum + toMoney(reference.amount),
+        0
+      );
+      const collectedAmount = matchedCollectedAmount + unmatchedCollectedAmount;
 
-    const collectedAmount = currentMonthReferences.reduce(
-      (sum, reference) => sum + toMoney(reference.amount),
-      0
+      return {
+        id: property.id,
+        name: property.name,
+        location: property.location,
+        collectedAmount,
+        matchedCollectedAmount,
+        unmatchedCollectedAmount,
+        expectedAmount,
+        collectionRate: expectedAmount > 0 ? matchedCollectedAmount / expectedAmount : 0,
+        occupiedCount,
+        paidCount,
+        dueCount,
+        overdueCount,
+        blockedCount,
+        unitCount: units.length,
+        unmatchedReferenceCount: unmatchedPropertyReferences.length,
+      };
+    });
+
+    const inferredLocationNames = Array.from(
+      new Set(
+        (referencesByMonth.get(monthKey) ?? [])
+          .filter((reference) => !reference.property_id && reference.inferred_location_name)
+          .map((reference) => reference.inferred_location_name as string)
+      )
     );
 
-    return {
-      id: property.id,
-      name: property.name,
-      location: property.location,
-      collectedAmount,
-      expectedAmount,
-      collectionRate: expectedAmount > 0 ? collectedAmount / expectedAmount : 0,
-      occupiedCount,
-      paidCount,
-      dueCount,
-      overdueCount,
-      blockedCount,
-      unitCount: units.length,
-    };
-  });
+    const inferredLocations = inferredLocationNames.map((name) => {
+      const references = referencesByInferredLocationAndMonth.get(`${name}:${monthKey}`) ?? [];
+      const collectedAmount = references.reduce((sum, reference) => sum + toMoney(reference.amount), 0);
 
-  const inferredLocationNames = Array.from(
-    new Set(
-      (referencesByMonth.get(currentMonthKey) ?? [])
-        .filter((reference) => !reference.property_id && reference.inferred_location_name)
-        .map((reference) => reference.inferred_location_name as string)
-    )
-  );
+      return {
+        id: `inferred:${name}`,
+        name,
+        location: 'Imported bank references',
+        collectedAmount,
+        matchedCollectedAmount: 0,
+        unmatchedCollectedAmount: collectedAmount,
+        expectedAmount: 0,
+        collectionRate: 0,
+        occupiedCount: 0,
+        paidCount: 0,
+        dueCount: references.length,
+        overdueCount: 0,
+        blockedCount: 0,
+        unitCount: 0,
+        unmatchedReferenceCount: references.length,
+      };
+    });
 
-  const inferredLocations = inferredLocationNames.map((name) => {
-    const references = referencesByInferredLocationAndMonth.get(`${name}:${currentMonthKey}`) ?? [];
-    const collectedAmount = references.reduce((sum, reference) => sum + toMoney(reference.amount), 0);
-
-    return {
-      id: `inferred:${name}`,
-      name,
-      location: 'Imported bank references',
-      collectedAmount,
-      expectedAmount: 0,
-      collectionRate: 0,
-      occupiedCount: 0,
-      paidCount: 0,
-      dueCount: references.length,
-      overdueCount: 0,
-      blockedCount: 0,
-      unitCount: 0,
-    };
-  });
-
-  const locations = [...propertyLocations, ...inferredLocations];
+    return [...propertyLocations, ...inferredLocations].sort((left, right) => right.expectedAmount - left.expectedAmount);
+  }
 
   const recentMonths = monthStarts.map((monthStart) => {
     const monthKey = formatMonthKey(monthStart);
-    let expectedAmount = 0;
-
-    for (const unit of input.units) {
-      const period = periodsByUnitAndMonth.get(`${unit.id}:${monthKey}`);
-      const isCurrentMonth = monthKey === currentMonthKey;
-      const isBlocked = period?.is_blocked ?? unit.is_blocked;
-      expectedAmount += isBlocked
-        ? 0
-        : toMoney(
-            period?.expected_amount ??
-              (isCurrentMonth && unit.occupancy_status === 'occupied' ? unit.rent_amount : 0)
-          );
-    }
-
-    const collectedAmount = (referencesByMonth.get(monthKey) ?? []).reduce(
-      (sum, reference) => sum + toMoney(reference.amount),
-      0
+    const locations = buildLocationsForMonth(monthKey);
+    const rollingTotal = locations.reduce(
+      (summary, location) => ({
+        collectedAmount: summary.collectedAmount + location.collectedAmount,
+        expectedAmount: summary.expectedAmount + location.expectedAmount,
+        occupiedCount: summary.occupiedCount + location.occupiedCount,
+        blockedCount: summary.blockedCount + location.blockedCount,
+        overdueCount: summary.overdueCount + location.overdueCount,
+        paidCount: summary.paidCount + location.paidCount,
+        dueCount: summary.dueCount + location.dueCount,
+      }),
+      {
+        collectedAmount: 0,
+        expectedAmount: 0,
+        occupiedCount: 0,
+        blockedCount: 0,
+        overdueCount: 0,
+        paidCount: 0,
+        dueCount: 0,
+      }
     );
+
+    const unmatchedPropertylessCollectedAmount = (referencesByMonth.get(monthKey) ?? [])
+      .filter((reference) => !reference.property_id && !reference.inferred_location_name)
+      .reduce((sum, reference) => sum + toMoney(reference.amount), 0);
+
+    const unmatchedReferenceCount = input.references.filter(
+      (reference) =>
+        billingPeriodKeyForReferenceDate(reference.received_at) === monthKey && !reference.unit_payment_period_id
+    ).length;
 
     return {
       key: monthKey,
@@ -301,38 +453,39 @@ export function buildMonthlyPaymentsDashboardSnapshot(
         month: 'short',
         timeZone: 'UTC',
       }).format(monthStart),
-      collectedAmount,
-      expectedAmount,
-      collectionRate: expectedAmount > 0 ? collectedAmount / expectedAmount : 0,
+      collectedAmount: rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount,
+      expectedAmount: rollingTotal.expectedAmount,
+      collectionRate:
+        rollingTotal.expectedAmount > 0
+          ? (rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount) / rollingTotal.expectedAmount
+          : 0,
       isCurrent: monthKey === currentMonthKey,
+      rollingTotal: {
+        ...rollingTotal,
+        collectedAmount: rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount,
+        collectionRate:
+          rollingTotal.expectedAmount > 0
+            ? (rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount) / rollingTotal.expectedAmount
+            : 0,
+      },
+      locations,
+      unmatchedReferenceCount,
     };
   });
 
-  const rollingTotal = locations.reduce(
-    (summary, location) => ({
-      collectedAmount: summary.collectedAmount + location.collectedAmount,
-      expectedAmount: summary.expectedAmount + location.expectedAmount,
-      occupiedCount: summary.occupiedCount + location.occupiedCount,
-      blockedCount: summary.blockedCount + location.blockedCount,
-      overdueCount: summary.overdueCount + location.overdueCount,
-    }),
-    {
-      collectedAmount: 0,
-      expectedAmount: 0,
-      occupiedCount: 0,
-      blockedCount: 0,
-      overdueCount: 0,
-    }
-  );
-
-  const unmatchedPropertylessCollectedAmount = (referencesByMonth.get(currentMonthKey) ?? [])
-    .filter((reference) => !reference.property_id && !reference.inferred_location_name)
-    .reduce((sum, reference) => sum + toMoney(reference.amount), 0);
-
-  const unmatchedReferenceCount = input.references.filter(
-    (reference) =>
-      billingPeriodKeyForReferenceDate(reference.received_at) === currentMonthKey && !reference.unit_payment_period_id
-  ).length;
+  const selectedMonth = recentMonths.find((month) => month.key === currentMonthKey) ?? recentMonths.at(2);
+  const rollingTotal = selectedMonth?.rollingTotal ?? {
+    collectedAmount: 0,
+    expectedAmount: 0,
+    collectionRate: 0,
+    occupiedCount: 0,
+    blockedCount: 0,
+    overdueCount: 0,
+    paidCount: 0,
+    dueCount: 0,
+  };
+  const locations = selectedMonth?.locations ?? [];
+  const unmatchedReferenceCount = selectedMonth?.unmatchedReferenceCount ?? 0;
 
   return {
     setupState: options?.setupState ?? (properties.length === 0 ? 'empty' : 'ready'),
@@ -344,15 +497,8 @@ export function buildMonthlyPaymentsDashboardSnapshot(
           : 'Hamba Trading',
     monthLabel: formatMonthLabel(currentMonthStart),
     recentMonths,
-    rollingTotal: {
-      ...rollingTotal,
-      collectedAmount: rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount,
-      collectionRate:
-        rollingTotal.expectedAmount > 0
-          ? (rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount) / rollingTotal.expectedAmount
-          : 0,
-    },
-    locations: locations.sort((left, right) => right.expectedAmount - left.expectedAmount),
+    rollingTotal,
+    locations,
     unmatchedReferenceCount,
   };
 }
@@ -468,6 +614,7 @@ export type UnitTableRow = {
   expectedAmount: number;
   expectedReference: string;
   matchKeywords: string[];
+  matchRules: UnitTableMatchRule[];
   periodId: string | null;
   reference: string | null;
   referenceId: string | null;
@@ -500,7 +647,17 @@ export type PropertyUnitsTable = {
   activityHint: string | null;
   rows: UnitTableRow[];
   referencePool: ReferencePoolRow[];
-  totals: { unitCount: number; blockedCount: number; collected: number; expected: number };
+  totals: {
+    unitCount: number;
+    blockedCount: number;
+    paidCount: number;
+    dueCount: number;
+    overdueCount: number;
+    collected: number;
+    expected: number;
+    unmatchedCount: number;
+    unmatchedAmount: number;
+  };
 };
 
 export type ReferencePoolViewRow = {
@@ -1015,7 +1172,7 @@ export async function readPropertyUnitsTable(
   const periodLabel = formatMonthLabel(monthStart);
   const billingWindow = getBillingWindowForPeriod(resolvedPeriodKey);
 
-  const [propertyResult, unitsResult, referencesResult] = await Promise.all([
+  const [propertyResult, unitsResult, referencesResult, hintsResult] = await Promise.all([
     admin
       .from('properties')
       .select('id,organization_id,name, organizations(name)')
@@ -1032,9 +1189,19 @@ export async function readPropertyUnitsTable(
       .eq('property_id', propertyId)
       .gte('received_at', billingWindow.startDate)
       .lte('received_at', billingWindow.endDate),
+    admin
+      .from('bank_import_unit_match_hints')
+      .select('id,unit_id,matcher_type,matcher_value,amount_value,is_active,priority')
+      .eq('property_id', propertyId)
+      .eq('is_active', true)
+      .order('priority', { ascending: true }),
   ]);
 
-  if (unitsResult.error?.code === '42P01' || referencesResult.error?.code === '42P01') {
+  if (
+    unitsResult.error?.code === '42P01' ||
+    referencesResult.error?.code === '42P01' ||
+    hintsResult.error?.code === '42P01'
+  ) {
     return {
       setupState: 'missing_tables',
       organizationLabel: propertyResult.data?.organizations?.name ?? 'Hamba Trading',
@@ -1046,12 +1213,23 @@ export async function readPropertyUnitsTable(
       activityHint: null,
       rows: [],
       referencePool: [],
-      totals: { unitCount: 0, blockedCount: 0, collected: 0, expected: 0 },
+      totals: {
+        unitCount: 0,
+        blockedCount: 0,
+        paidCount: 0,
+        dueCount: 0,
+        overdueCount: 0,
+        collected: 0,
+        expected: 0,
+        unmatchedCount: 0,
+        unmatchedAmount: 0,
+      },
     };
   }
   if (propertyResult.error) throw new Error(`Failed to load property: ${propertyResult.error.message}`);
   if (unitsResult.error) throw new Error(`Failed to load property units: ${unitsResult.error.message}`);
   if (referencesResult.error) throw new Error(`Failed to load payment references: ${referencesResult.error.message}`);
+  if (hintsResult.error) throw new Error(`Failed to load unit match hints: ${hintsResult.error.message}`);
 
   const units = (unitsResult.data ?? []) as Array<{
     id: string;
@@ -1075,6 +1253,23 @@ export async function readPropertyUnitsTable(
     transaction_at: string | null;
     signed_off: boolean;
   }>;
+  const rulesByUnit = new Map<string, UnitTableMatchRule[]>();
+  for (const hint of hintsResult.data ?? []) {
+    const key = hint.unit_id as string | null;
+    if (!key) continue;
+    const rules = rulesByUnit.get(key) ?? [];
+    rules.push({
+      id: hint.id as string,
+      matcherType: hint.matcher_type as UnitTableMatchRule['matcherType'],
+      matcherValue: (hint.matcher_value as string) ?? '',
+      amountValue:
+        hint.amount_value === null || hint.amount_value === undefined
+          ? null
+          : toMoney(hint.amount_value as number | string),
+      isActive: Boolean(hint.is_active),
+    });
+    rulesByUnit.set(key, rules);
+  }
 
   // Periods for these units in the selected month.
   const unitIds = units.map((unit) => unit.id);
@@ -1125,6 +1320,9 @@ export async function readPropertyUnitsTable(
   let collected = 0;
   let expectedTotal = 0;
   let blockedCount = 0;
+  let paidCount = 0;
+  let dueCount = 0;
+  let overdueCount = 0;
 
   const rows: UnitTableRow[] = units.map((unit) => {
     const period = periodsByUnit.get(unit.id);
@@ -1135,24 +1333,18 @@ export async function readPropertyUnitsTable(
 
     const matched = (referencesByUnit.get(unit.id) ?? []).slice().sort((a, b) => (a.received_at < b.received_at ? 1 : -1));
     const primary = matched[0] ?? null;
-    const receivedAmount = matched.length ? matched.reduce((sum, r) => sum + toMoney(r.amount), 0) : null;
-    const signedOff = matched.length > 0 && matched.every((r) => r.signed_off);
-    if (signedOff && receivedAmount) collected += receivedAmount;
-
-    let status: UnitTableStatus;
-    let overdueDays: number | null = null;
-    if (isBlocked) {
-      status = 'blocked';
-    } else if (primary) {
-      status = receivedAmount !== null && Math.abs(receivedAmount - expectedAmount) <= 0.001
-        ? (signedOff ? 'paid' : 'unpaid')
-        : 'mismatch';
-    } else if (period?.due_date && diffDaysUtc(period.due_date, now) > 0) {
-      status = 'overdue';
-      overdueDays = diffDaysUtc(period.due_date, now);
-    } else {
-      status = 'unpaid';
-    }
+    const statusState = computeUnitStatus({
+      occupancyStatus: unit.occupancy_status,
+      isBlocked,
+      expectedAmount,
+      matchedReferences: matched,
+      dueDate: period?.due_date ?? billingWindow.endDate,
+      now,
+    });
+    if (statusState.receivedAmount !== null) collected += statusState.receivedAmount;
+    if (statusState.status === 'paid') paidCount += 1;
+    if (statusState.status === 'overdue') overdueCount += 1;
+    if (statusState.status !== 'paid' && statusState.status !== 'blocked') dueCount += 1;
 
     return {
       unitId: unit.id,
@@ -1162,15 +1354,16 @@ export async function readPropertyUnitsTable(
       expectedAmount,
       expectedReference: unit.expected_reference ?? '',
       matchKeywords: unit.match_keywords ?? [],
+      matchRules: rulesByUnit.get(unit.id) ?? [],
       periodId: period?.id ?? null,
       reference: primary?.reference ?? null,
       referenceId: primary?.id ?? null,
       transactionDate: transactionDateOnly(primary?.transaction_at, primary?.received_at),
-      receivedAmount,
-      signedOff,
-      locked: signedOff,
-      status,
-      overdueDays,
+      receivedAmount: statusState.receivedAmount,
+      signedOff: statusState.signedOff,
+      locked: statusState.signedOff,
+      status: statusState.status,
+      overdueDays: statusState.overdueDays,
     };
   });
 
@@ -1189,6 +1382,7 @@ export async function readPropertyUnitsTable(
         signedOff: reference.signed_off,
       };
     });
+  const unmatchedAmount = referencePool.reduce((sum, reference) => sum + reference.amount, 0);
 
   const matchedCount = rows.filter((row) => row.reference).length;
   let activityHint: string | null = null;
@@ -1227,7 +1421,17 @@ export async function readPropertyUnitsTable(
     activityHint,
     rows,
     referencePool,
-    totals: { unitCount: units.length, blockedCount, collected, expected: expectedTotal },
+    totals: {
+      unitCount: units.length,
+      blockedCount,
+      paidCount,
+      dueCount,
+      overdueCount,
+      collected,
+      expected: expectedTotal,
+      unmatchedCount: referencePool.length,
+      unmatchedAmount,
+    },
   };
 }
 

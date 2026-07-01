@@ -55,8 +55,6 @@ test('E2E: Navigation safety — Dashboard has forward and back paths', async ({
 
   // ─── Dashboard should have navigation to Locations and Reference Pool
   const navToLocations = page.getByText('Locations').first();
-  const navToReferencePool = page.getByText('Reference pool', { exact: false }).first();
-  const navToChatbox = page.getByText('Chatbox', { exact: false }).first();
 
   expect(await navToLocations.isVisible()).toBe(true);
   

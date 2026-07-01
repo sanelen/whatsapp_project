@@ -1,15 +1,23 @@
 # Hamba Customer Service Docs
 
+Last updated: 2026-07-01
+
 This folder is the planning and implementation strategy hub for the project.
 
 ## Start here
 
 1. **[Roadmap](./ROADMAP.md)** — the single source of truth for phases and status.
-2. **[Latest voice-note brief](./voice-notes/2026-06-14-la-lucia-mall-16.md)** — the
+2. **[Architecture](./ARCHITECTURE.md)** — the structural view: what runs where,
+   data model, and pipelines per capability.
+3. **[Requirements](./REQUIREMENTS.md)** — functional/non-functional requirements
+   per capability, with shipped/partial/planned status.
+4. **[Linear sync](./LINEAR-SYNC.md)** — how tickets map to roadmap phases and the
+   process for keeping them in sync.
+5. **[Latest voice-note brief](./voice-notes/2026-06-14-la-lucia-mall-16.md)** — the
    current product vision in the owner's words.
-3. **Design handoff package** — `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
+6. **Design handoff package** — `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
    contains the reviewed wireframe canvas and screen exports for the Phase 7 work.
-4. Then dive into the themed sections below.
+7. Then dive into the themed sections below.
 
 ## Tenant operations (current vision)
 
@@ -52,6 +60,23 @@ is now the visual reference, not a separate competing plan.
 - [UI roadmap](./roadmap/ui/README.md) — navigation, tablet layout, workspace UX.
 - [HeroUI adoption](./roadmap/ui/heroui.md) — standard component layer (spike done).
 - [Forms enhancement protocol](./roadmap/ui/forms.md) — validation, typed inputs, uploads, accessibility, multi-step forms.
+
+## Testing
+
+- [Monthly payments flow tests](./testing/monthly-payments-flow-tests.md) —
+  flow-first QA and automation reference for the operator loop, room setup, and
+  cross-page state checks.
+- [Functional loop review — 2026-07-01](./testing/functional-loop-review-2026-07-01.md) —
+  pass/fail verdicts per flow, evidence, and a screenshot checklist for owner review.
+
+## Full flow reviews
+
+- **[Full flow review skill](/Users/macdaddy/Documents/DEV/HambaCustomerService/.claude/skills/full-flow-review/SKILL.md)** —
+  orchestrates architecture/flow, QA, UI/UX, and a roadmap-fit check into one
+  synthesized report with cross-lens tensions and a prioritized action list.
+  Run before merge points, releases, and periodic health checks. Reports land
+  in `docs/reviews/` (created on first run) as
+  `full-flow-review-<date>-<scope-slug>.md`.
 
 ## Voice-note planning sessions
 

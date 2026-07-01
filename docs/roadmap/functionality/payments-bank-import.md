@@ -1,5 +1,7 @@
 # Payments Bank Import Notes
 
+Last updated: 2026-06-30
+
 > Evidence captured from the 2026-06-29 Record and Replay session.
 > Status: **schema, importer/parser, first manual dashboard trigger, and Google
 > Cloud Gmail API setup route are in place; live Gmail execution still needs runtime

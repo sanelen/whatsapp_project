@@ -1,5 +1,7 @@
 # Vector Embeddings Roadmap
 
+Last updated: 2026-06-14
+
 ## Goals
 
 - Make every property chatbot retrieve only its own property knowledge by default.

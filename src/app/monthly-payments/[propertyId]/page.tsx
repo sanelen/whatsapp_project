@@ -7,11 +7,11 @@ export default async function PropertyUnitsPage({
   searchParams,
 }: {
   params: Promise<{ propertyId: string }>;
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; unitId?: string }>;
 }) {
   await requireUser();
   const { propertyId } = await params;
-  const { period } = await searchParams;
+  const { period, unitId } = await searchParams;
   const table = await readPropertyUnitsTable(propertyId, period);
-  return <UnitsTable table={table} />;
+  return <UnitsTable table={table} initialUnitId={unitId} />;
 }

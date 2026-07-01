@@ -132,7 +132,8 @@ test('buildMonthlyPaymentsDashboardSnapshot summarizes rolling totals and unmatc
   assert.equal(snapshot.recentMonths.find((month) => month.key === '2026-06')?.collectedAmount, 4500);
   assert.equal(snapshot.locations[0].name, 'Query Heights');
   assert.equal(snapshot.locations[0].paidCount, 1);
-  assert.equal(snapshot.locations[0].dueCount, 0);
+  assert.equal(snapshot.locations[0].dueCount, 1);
+  assert.equal(snapshot.recentMonths.find((month) => month.key === '2026-06')?.rollingTotal.paidCount, 1);
 });
 
 test('buildMonthlyPaymentsDashboardSnapshot marks missing properties as empty setup', () => {

@@ -1,5 +1,7 @@
 # Tenant Offboarding Roadmap
 
+Last updated: 2026-06-29
+
 > Derived from [2026-06-14 La Lucia Mall session](../../voice-notes/2026-06-14-la-lucia-mall-16.md).
 > Status: **planning only, but now aligned to the reviewed wireframe sequence.**
 

@@ -55,7 +55,7 @@ test('E2E: Reference pool filters by property when accessed from units page', as
 
   // Record the property name from the breadcrumb or header
   const propertyHeader = page.getByText(/Property|Location/).first();
-  const propertyName = await propertyHeader.textContent();
+  await propertyHeader.textContent();
 
   // ─── Open the reference pool from the units page ──────────────────
   // The pool might be accessed via a button or inline drawer
@@ -108,8 +108,8 @@ test('E2E: Match a reference to an unpaid unit and verify state changes', async 
   console.log(`Found unpaid row: ${unpaidRow.text?.slice(0, 100)}`);
 
   // Capture initial state
-  const unitsTable = page.locator('table, div[role="table"]').first();
-  const initialRowCount = await page.locator('tr').filter({ has: page.locator('td') }).count();
+  await page.locator('table, div[role="table"]').first().count();
+  await page.locator('tr').filter({ has: page.locator('td') }).count();
 
   // ─── Trigger match action ───────────────────────────────────────
   const matchBtn = unpaidRow.row.getByText(/match|select|reference/i).first();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -40,7 +40,7 @@ type EditableRule = {
 };
 
 type RoomDraft = {
-  unitId: string;
+  unitId: string | null;
   label: string;
   contactPrimary: string;
   contactSecondary: string;
@@ -57,6 +57,8 @@ type RoomDraft = {
   matchKeywordsText: string;
   rules: EditableRule[];
 };
+
+type EditorMode = 'edit' | 'create';
 
 function createDraft(room: RoomManagerRoomRow): RoomDraft {
   return {
@@ -92,6 +94,35 @@ function createDraft(room: RoomManagerRoomRow): RoomDraft {
               isActive: true,
             },
           ],
+  };
+}
+
+function createNewDraft(view: RoomManagerView): RoomDraft {
+  const nextRoomNumber = String(view.summary.roomCount + 1).padStart(2, '0');
+  return {
+    unitId: null,
+    label: `Room ${nextRoomNumber}`,
+    contactPrimary: '',
+    contactSecondary: '',
+    rentAmount: '0',
+    depositAmount: '0',
+    occupancy: 'occupied',
+    isBlocked: false,
+    isAvailable: false,
+    parking: '',
+    ensuite: false,
+    maxOccupants: '1',
+    featuresText: '',
+    expectedReference: '',
+    matchKeywordsText: '',
+    rules: [
+      {
+        matcherType: 'reference_contains',
+        matcherValue: '',
+        amountValue: '',
+        isActive: true,
+      },
+    ],
   };
 }
 
@@ -138,6 +169,8 @@ async function saveRoom(body: Record<string, unknown>) {
   if (!response.ok) {
     throw new Error(payload.error ?? 'Failed to save room');
   }
+
+  return payload as { success: true; unitId?: string };
 }
 
 export function RoomManagerPanel({
@@ -148,22 +181,27 @@ export function RoomManagerPanel({
   initialUnitId?: string;
 }) {
   const router = useRouter();
+  const launchedFromUnits = Boolean(initialUnitId);
   const initialTarget =
     initialUnitId ? view.rooms.find((room) => room.unitId === initialUnitId) ?? null : null;
+  const [editorMode, setEditorMode] = useState<EditorMode>(initialTarget ? 'edit' : 'create');
   const [editingUnitId, setEditingUnitId] = useState<string | null>(initialTarget?.unitId ?? null);
   const [draft, setDraft] = useState<RoomDraft | null>(initialTarget ? createDraft(initialTarget) : null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, startSaving] = useTransition();
   const advancedFieldsLocked = view.setupState === 'missing_tables';
 
-  const activeRoom = useMemo(
-    () => view.rooms.find((room) => room.unitId === editingUnitId) ?? null,
-    [editingUnitId, view.rooms]
-  );
-
   function openEditor(room: RoomManagerRoomRow) {
+    setEditorMode('edit');
     setEditingUnitId(room.unitId);
     setDraft(createDraft(room));
+    setErrorMessage(null);
+  }
+
+  function openCreateEditor() {
+    setEditorMode('create');
+    setEditingUnitId(null);
+    setDraft(createNewDraft(view));
     setErrorMessage(null);
   }
 
@@ -171,6 +209,12 @@ export function RoomManagerPanel({
     setEditingUnitId(null);
     setDraft(null);
     setErrorMessage(null);
+    if (launchedFromUnits) {
+      router.replace(`/monthly-payments/${view.propertyId}?period=${view.periodKey}&unitId=${initialUnitId}`, {
+        scroll: false,
+      });
+      return;
+    }
     router.replace(`/monthly-payments/locations/${view.propertyId}?period=${view.periodKey}`, {
       scroll: false,
     });
@@ -202,13 +246,14 @@ export function RoomManagerPanel({
   }
 
   function handleSave() {
-    if (!draft || !activeRoom) return;
+    if (!draft) return;
 
     startSaving(async () => {
       try {
-        await saveRoom({
-          unitId: draft.unitId,
+        const response = await saveRoom({
+          unitId: draft.unitId ?? undefined,
           propertyId: view.propertyId,
+          create: editorMode === 'create',
           label: draft.label,
           contactPrimary: draft.contactPrimary,
           contactSecondary: draft.contactSecondary,
@@ -231,8 +276,23 @@ export function RoomManagerPanel({
           isAvailable: draft.isAvailable,
           features: parseCommaList(draft.featuresText),
         });
-        closeEditor();
-        router.refresh();
+        const savedUnitId =
+          response && typeof response === 'object' && 'unitId' in response && typeof response.unitId === 'string'
+            ? response.unitId
+            : draft.unitId;
+        if (launchedFromUnits) {
+          router.push(`/monthly-payments/${view.propertyId}?period=${view.periodKey}&unitId=${savedUnitId}`, {
+            scroll: false,
+          });
+        } else {
+          setEditingUnitId(null);
+          setDraft(null);
+          setErrorMessage(null);
+          router.push(`/monthly-payments/locations/${view.propertyId}?period=${view.periodKey}`, {
+            scroll: false,
+          });
+          router.refresh();
+        }
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to save room');
       }
@@ -245,10 +305,10 @@ export function RoomManagerPanel({
       operationsHref={`/monthly-payments/${view.propertyId}?period=${view.periodKey}`}
       referencePoolHref={`/monthly-payments/reference-pool?period=${view.periodKey}`}
     >
-      <div className="rounded-[30px] border border-white/80 bg-white/88 px-6 py-8 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:px-9">
+      <div className="rounded-[30px] border border-white/80 bg-white/88 px-5 py-6 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:px-7">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <nav className="text-[1.05rem] font-medium text-slate-500">
+            <nav className="text-[0.96rem] font-medium text-slate-500">
               <Link href="/monthly-payments" className="hover:text-slate-800">
                 {view.organizationLabel}
               </Link>
@@ -261,7 +321,7 @@ export function RoomManagerPanel({
               <span className="px-2 text-slate-400">›</span>
               <span className="font-semibold text-slate-950">Rooms</span>
             </nav>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
+            <h1 className="mt-3 text-[2.2rem] font-semibold tracking-tight text-slate-950">
               {view.propertyName} room manager
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
@@ -275,6 +335,14 @@ export function RoomManagerPanel({
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={openCreateEditor}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900"
+            >
+              <Plus size={15} />
+              Create room
+            </button>
             <Link
               href="/monthly-payments/locations"
               className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900"
@@ -292,22 +360,22 @@ export function RoomManagerPanel({
           </div>
         </div>
 
-        <div className="mt-7 grid gap-4 md:grid-cols-4">
-          <div className="rounded-[20px] border border-stone-300 bg-white px-4 py-4">
+        <div className="mt-6 grid gap-3 md:grid-cols-4">
+          <div className="rounded-[18px] border border-stone-300 bg-white px-4 py-3">
             <p className="text-sm text-stone-500">Rooms</p>
-            <p className="mt-1 text-2xl font-semibold text-stone-950">{view.summary.roomCount}</p>
+            <p className="mt-1 text-xl font-semibold text-stone-950">{view.summary.roomCount}</p>
           </div>
-          <div className="rounded-[20px] border border-stone-300 bg-white px-4 py-4">
+          <div className="rounded-[18px] border border-stone-300 bg-white px-4 py-3">
             <p className="text-sm text-stone-500">Occupied</p>
-            <p className="mt-1 text-2xl font-semibold text-stone-950">{view.summary.occupiedCount}</p>
+            <p className="mt-1 text-xl font-semibold text-stone-950">{view.summary.occupiedCount}</p>
           </div>
-          <div className="rounded-[20px] border border-stone-300 bg-white px-4 py-4">
+          <div className="rounded-[18px] border border-stone-300 bg-white px-4 py-3">
             <p className="text-sm text-stone-500">Vacant</p>
-            <p className="mt-1 text-2xl font-semibold text-stone-950">{view.summary.vacantCount}</p>
+            <p className="mt-1 text-xl font-semibold text-stone-950">{view.summary.vacantCount}</p>
           </div>
-          <div className="rounded-[20px] border border-stone-300 bg-white px-4 py-4">
+          <div className="rounded-[18px] border border-stone-300 bg-white px-4 py-3">
             <p className="text-sm text-stone-500">Blocked</p>
-            <p className="mt-1 text-2xl font-semibold text-stone-950">{view.summary.blockedCount}</p>
+            <p className="mt-1 text-xl font-semibold text-stone-950">{view.summary.blockedCount}</p>
           </div>
         </div>
 
@@ -319,14 +387,14 @@ export function RoomManagerPanel({
           </section>
         ) : null}
 
-        {activeRoom && draft ? (
-          <section className="mt-8 rounded-[28px] border-[3px] border-stone-700 bg-white px-5 py-5 shadow-[0_10px_24px_rgba(120,113,108,0.08)]">
+        {draft ? (
+          <section className="mt-7 rounded-[24px] border-2 border-stone-700 bg-white px-4 py-4 shadow-[0_10px_24px_rgba(120,113,108,0.08)]">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
-                  Editing room
+                  {editorMode === 'create' ? 'Create room' : 'Editing room'}
                 </p>
-                <h2 className="mt-2 text-2xl font-semibold text-stone-950">{activeRoom.label}</h2>
+                <h2 className="mt-2 text-xl font-semibold text-stone-950">{draft.label}</h2>
                 <p className="mt-2 max-w-3xl text-sm text-stone-500">
                   This saves back to <code>property_units</code> plus
                   <code> bank_import_unit_match_hints</code>. The units table and monthly matching
@@ -351,7 +419,7 @@ export function RoomManagerPanel({
                   className="inline-flex items-center gap-2 rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-wait disabled:bg-stone-500"
                 >
                   <Save size={14} />
-                  Save room
+                  {editorMode === 'create' ? 'Create room' : 'Save room'}
                 </button>
               </div>
             </div>
@@ -687,9 +755,9 @@ export function RoomManagerPanel({
 
                 {room.features.length > 0 ? (
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {room.features.map((feature) => (
+                    {room.features.map((feature, index) => (
                       <span
-                        key={feature}
+                        key={`${room.unitId}-feature-${index}-${feature}`}
                         className="rounded-full border border-stone-300 px-3 py-1 text-xs font-medium text-stone-700"
                       >
                         {feature}
@@ -722,8 +790,11 @@ export function RoomManagerPanel({
 
                 {room.matchKeywords.length > 0 ? (
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {room.matchKeywords.map((keyword) => (
-                      <span key={keyword} className="rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
+                    {room.matchKeywords.map((keyword, index) => (
+                      <span
+                        key={`${room.unitId}-keyword-${index}-${keyword}`}
+                        className="rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700"
+                      >
                         {keyword}
                       </span>
                     ))}

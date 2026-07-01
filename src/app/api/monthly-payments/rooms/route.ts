@@ -12,8 +12,9 @@ type RoomRuleInput = {
 };
 
 type UpdateRoomPayload = {
-  unitId: string;
+  unitId?: string;
   propertyId: string;
+  create?: boolean;
   label: string;
   contactPrimary?: string;
   contactSecondary?: string;
@@ -67,13 +68,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  if (!body?.unitId || !body?.propertyId) {
-    return NextResponse.json({ error: 'unitId and propertyId are required' }, { status: 400 });
+  if (!body?.propertyId) {
+    return NextResponse.json({ error: 'propertyId is required' }, { status: 400 });
   }
 
   const payload = {
     unitId: cleanText(body.unitId),
     propertyId: cleanText(body.propertyId),
+    create: Boolean(body.create),
     label: cleanText(body.label),
     contactPrimary: cleanText(body.contactPrimary),
     contactSecondary: cleanText(body.contactSecondary),
@@ -133,43 +135,97 @@ export async function POST(request: Request) {
     expected_reference: payload.expectedReference,
     match_keywords: payload.matchKeywords,
   };
+  let targetUnitId = payload.unitId;
 
-  const richResult = await admin
-    .from('property_units')
-    .update(richUpdate)
-    .eq('id', payload.unitId)
-    .eq('property_id', payload.propertyId)
-    .select('id')
-    .maybeSingle();
-
-  if (richResult.error && !isMissingRelation(richResult.error)) {
-    return NextResponse.json({ error: `Failed to update room: ${richResult.error.message}` }, { status: 500 });
-  }
-
-  if (richResult.error && isMissingRelation(richResult.error)) {
-    const fallbackResult = await admin
+  if (payload.create) {
+    const { data: existingUnits, error: orderError } = await admin
       .from('property_units')
-      .update(fallbackUpdate)
+      .select('display_order')
+      .eq('property_id', payload.propertyId)
+      .order('display_order', { ascending: false })
+      .limit(1);
+    if (orderError && !isMissingRelation(orderError)) {
+      return NextResponse.json({ error: `Failed to load room ordering: ${orderError.message}` }, { status: 500 });
+    }
+    const nextDisplayOrder = Number(existingUnits?.[0]?.display_order ?? 0) + 10;
+
+    const richInsert = await admin
+      .from('property_units')
+      .insert({
+        property_id: payload.propertyId,
+        display_order: nextDisplayOrder,
+        ...richUpdate,
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (richInsert.error && !isMissingRelation(richInsert.error)) {
+      return NextResponse.json({ error: `Failed to create room: ${richInsert.error.message}` }, { status: 500 });
+    }
+
+    if (richInsert.error && isMissingRelation(richInsert.error)) {
+      const fallbackInsert = await admin
+        .from('property_units')
+        .insert({
+          property_id: payload.propertyId,
+          display_order: nextDisplayOrder,
+          ...fallbackUpdate,
+        })
+        .select('id')
+        .maybeSingle();
+
+      if (fallbackInsert.error || !fallbackInsert.data) {
+        return NextResponse.json(
+          { error: fallbackInsert.error?.message ?? 'Room create fallback failed' },
+          { status: 500 }
+        );
+      }
+      targetUnitId = fallbackInsert.data.id;
+    } else {
+      targetUnitId = richInsert.data?.id ?? '';
+    }
+  } else {
+    if (!payload.unitId) {
+      return NextResponse.json({ error: 'unitId is required for room updates' }, { status: 400 });
+    }
+
+    const richResult = await admin
+      .from('property_units')
+      .update(richUpdate)
       .eq('id', payload.unitId)
       .eq('property_id', payload.propertyId)
       .select('id')
       .maybeSingle();
 
-    if (fallbackResult.error || !fallbackResult.data) {
-      return NextResponse.json(
-        { error: fallbackResult.error?.message ?? 'Room update fallback failed' },
-        { status: 500 }
-      );
+    if (richResult.error && !isMissingRelation(richResult.error)) {
+      return NextResponse.json({ error: `Failed to update room: ${richResult.error.message}` }, { status: 500 });
     }
-  } else if (!richResult.data) {
-    return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+
+    if (richResult.error && isMissingRelation(richResult.error)) {
+      const fallbackResult = await admin
+        .from('property_units')
+        .update(fallbackUpdate)
+        .eq('id', payload.unitId)
+        .eq('property_id', payload.propertyId)
+        .select('id')
+        .maybeSingle();
+
+      if (fallbackResult.error || !fallbackResult.data) {
+        return NextResponse.json(
+          { error: fallbackResult.error?.message ?? 'Room update fallback failed' },
+          { status: 500 }
+        );
+      }
+    } else if (!richResult.data) {
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+    }
   }
 
   const rules = payload.rules
     .map((rule, index) => ({
       organization_id: property.organization_id,
       property_id: payload.propertyId,
-      unit_id: payload.unitId,
+      unit_id: targetUnitId,
       matcher_type: rule.matcherType,
       matcher_value: cleanText(rule.matcherValue),
       amount_value: rule.matcherType === 'amount_equals' ? cleanMoney(rule.amountValue, 0) : null,
@@ -183,7 +239,7 @@ export async function POST(request: Request) {
   const { error: deleteHintsError } = await admin
     .from('bank_import_unit_match_hints')
     .delete()
-    .eq('unit_id', payload.unitId);
+    .eq('unit_id', targetUnitId);
   if (deleteHintsError && !isMissingRelation(deleteHintsError)) {
     return NextResponse.json({ error: `Failed to replace room rules: ${deleteHintsError.message}` }, { status: 500 });
   }
@@ -198,5 +254,6 @@ export async function POST(request: Request) {
   return NextResponse.json({
     success: true,
     updatedBy: user.email ?? user.id,
+    unitId: targetUnitId,
   });
 }

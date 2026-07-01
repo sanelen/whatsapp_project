@@ -1,5 +1,7 @@
 # Forms Enhancement Protocol
 
+Last updated: 2026-06-15
+
 A standard protocol for every form in the workspace. We do not have a consistent
 form pattern today (inputs are ad-hoc Tailwind markup with little validation), so
 this is the baseline all current and future forms should follow. It builds on

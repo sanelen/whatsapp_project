@@ -198,14 +198,34 @@ After implementing, run a bank import and verify:
 
 **UPDATE THIS SECTION after implementing:**
 
-- [ ] Fix 1: Message-level early skip in Gmail import
-- [ ] Fix 2: Drive import — skip app-archived files
-- [ ] Fix 3: Drive import — skip already-processed Drive file IDs  
-- [ ] Fix 4: Update summary counters for skipped messages
+- [x] Fix 1: Message-level early skip in Gmail import — **REVISED**: now only skips messages that are processed AND have at least one entry (via files). Messages processed under a different billing window but with no entries are re-processed.
+- [x] Fix 2: Drive import — skip app-archived files — Checks `driveFile.appProperties?.hambaFileId`, skips if present
+- [x] Fix 3: Drive import — skip already-processed Drive file IDs — Pre-loads processed `drive:*` message IDs, skips matching files
+- [x] Fix 4: Update summary counters for skipped messages — Added `messagesSkipped` to `BankImportRunSummary` type, both import functions, and `emptyRunSummary()`
 - [ ] Tested manually / verified
 
-If the session ran out before completing implementation, the next session should:
-1. Read this file
-2. Read `src/lib/bank-import.ts` (the full 1781-line file)
-3. Apply the 4 fixes as described above
-4. Update the checkboxes in this section
+**Implemented on 2026-07-01.** All 4 fixes applied to `src/lib/bank-import.ts`.
+
+### Bug found during testing (same day):
+The original Fix 1 skipped ALL messages marked `import_status = 'processed'`. This broke the old code's self-healing behavior: when a message was first imported under the wrong billing window (e.g., June), its files were parsed but entries were rejected by the billing window filter. The old code would re-process these messages on a second run with the correct window, creating entries through the duplicate-file path. Fix 1 prevented this re-processing.
+
+**Resolution:** Fix 1 was revised to only skip messages that have at least one `bank_import_entry` linked through their files. Messages with no entries are always re-processed, regardless of `import_status`. Also reset 10 July messages in the DB that were stuck in "processed" state without entries.
+
+### Also discovered:
+- Account suffix `7467` is NOT in `bank_import_property_mappings` but appears in 3 of today's transactions (QHROOM06Reversal, QHROOM08, QH Room 06 refund). These will create entries but with null `property_id`. **Not yet fixed** — needs a mapping row added.
+- 5 of 10 PDFs are marked "unsupported" (~40.6 KB vs ~43.9 KB for parsed ones). These are likely a different transaction type (outgoing/debit) that `parseCapitecTransactionText` doesn't handle.
+
+### Unsupported file archiving (implemented same day):
+The `archiveStoredFilesToDrive` function now routes unsupported and failed files to a dedicated `Unsupported` folder in Google Drive instead of mixing them into `Uncategorized`. The folder structure is:
+```
+Hamba Trading Bank Files/
+  2026-07/
+    Essex-Berea/        ← parsed, mapped files
+    Quarry Heights/     ← parsed, mapped files
+    Unsupported/        ← files the parser can't handle
+    Uncategorized/      ← parsed but unmapped account
+```
+This makes unsupported files visible for human review. Over time, support for new transaction types can be added to `parseCapitecTransactionText`.
+
+### Troubleshooting skill added:
+Created `.claude/skills/bank-import-debug/SKILL.md` — a reusable skill that documents the full pipeline, common failure modes, and step-by-step SQL diagnosis queries. Added to `AGENTS.md` so future sessions automatically use it when investigating import issues.

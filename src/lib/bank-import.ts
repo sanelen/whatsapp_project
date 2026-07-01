@@ -150,6 +150,7 @@ export type BankImportRunSummary = {
   paymentReferencesCreated: number;
   ignoredEntries: number;
   failedMessages: number;
+  messagesSkipped: number;
   filesArchivedToDrive: number;
 };
 
@@ -1430,6 +1431,50 @@ export async function importMailboxPayments(
     }
   );
 
+  // Pre-load message IDs that are safe to skip. A message is only safe to skip
+  // when it is marked "processed" AND its files have produced at least one entry.
+  // Messages processed under a different billing window may have parsed files but
+  // no entries for the current window — those must be re-processed.
+  const admin = getSupabaseAdmin();
+  const { data: processedMessages } = await admin
+    .from('bank_import_messages')
+    .select('id, gmail_message_id')
+    .eq('mailbox_id', mailbox.id)
+    .eq('import_status', 'processed');
+  const processedRows = processedMessages ?? [];
+  const processedMessageIds = new Set<string>();
+
+  if (processedRows.length > 0) {
+    const msgDbIds = processedRows.map((m) => m.id);
+
+    // Get all files belonging to these messages
+    const { data: msgFiles } = await admin
+      .from('bank_import_files')
+      .select('id, message_id')
+      .in('message_id', msgDbIds);
+
+    // Get all file IDs that have entries
+    const { data: entryRows } = await admin
+      .from('bank_import_entries')
+      .select('file_id');
+    const fileIdsWithEntries = new Set(
+      (entryRows ?? []).map((e: { file_id: string }) => e.file_id)
+    );
+
+    // A message is safe to skip if ANY of its files has an entry
+    const msgDbIdsWithEntries = new Set<string>();
+    for (const f of msgFiles ?? []) {
+      if (fileIdsWithEntries.has(f.id)) {
+        msgDbIdsWithEntries.add(f.message_id);
+      }
+    }
+    for (const row of processedRows) {
+      if (msgDbIdsWithEntries.has(row.id)) {
+        processedMessageIds.add(row.gmail_message_id);
+      }
+    }
+  }
+
   const summary: BankImportRunSummary = {
     mailboxEmail: mailbox.email_address,
     authMode: googleAuth.authMode,
@@ -1445,11 +1490,18 @@ export async function importMailboxPayments(
     paymentReferencesCreated: 0,
     ignoredEntries: 0,
     failedMessages: 0,
+    messagesSkipped: 0,
     filesArchivedToDrive: 0,
   };
 
   for (const listedMessage of listResponse.messages ?? []) {
     summary.messagesScanned += 1;
+
+    // Fix 1: Skip messages already fully processed — no Gmail API fetch needed
+    if (processedMessageIds.has(listedMessage.id)) {
+      summary.messagesSkipped += 1;
+      continue;
+    }
 
     try {
       const message = await gmailRequest<GmailMessage>(
@@ -1520,6 +1572,18 @@ export async function importDrivePayments(
   const rootId = await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER]);
   const driveFiles = await listPdfFilesUnder(accessToken, rootId);
 
+  // Pre-load processed Drive file IDs to skip already-handled files
+  const admin = getSupabaseAdmin();
+  const { data: processedDriveMessages } = await admin
+    .from('bank_import_messages')
+    .select('gmail_message_id')
+    .eq('mailbox_id', mailbox.id)
+    .eq('import_status', 'processed')
+    .like('gmail_message_id', 'drive:%');
+  const processedDriveIds = new Set(
+    (processedDriveMessages ?? []).map((m: { gmail_message_id: string }) => m.gmail_message_id)
+  );
+
   const summary: BankImportRunSummary = {
     mailboxEmail: mailbox.email_address,
     authMode: googleAuth.authMode,
@@ -1535,10 +1599,23 @@ export async function importDrivePayments(
     paymentReferencesCreated: 0,
     ignoredEntries: 0,
     failedMessages: 0,
+    messagesSkipped: 0,
     filesArchivedToDrive: 0,
   };
 
   for (const driveFile of driveFiles) {
+    // Fix 2: Skip files archived by our own app — they're already in the DB
+    if (driveFile.appProperties?.hambaFileId) {
+      summary.messagesSkipped += 1;
+      continue;
+    }
+
+    // Fix 3: Skip Drive files already fully processed
+    if (processedDriveIds.has(`drive:${driveFile.id}`)) {
+      summary.messagesSkipped += 1;
+      continue;
+    }
+
     summary.attachmentsProcessed += 1;
 
     try {
@@ -1629,7 +1706,7 @@ export async function archiveStoredFilesToDrive(options?: {
   const admin = getSupabaseAdmin();
   const { data: files, error } = await admin
     .from('bank_import_files')
-    .select('id,file_name,mime_type,storage_path')
+    .select('id,file_name,mime_type,storage_path,parser_status')
     .is('drive_file_id', null);
   if (error) throw new Error(`Failed to load files for Drive archive: ${error.message}`);
 
@@ -1644,6 +1721,7 @@ export async function archiveStoredFilesToDrive(options?: {
     file_name: string;
     mime_type: string;
     storage_path: string;
+    parser_status: string | null;
   }>) {
     try {
       const bytes = await downloadStoredFile(file.storage_path);
@@ -1654,20 +1732,38 @@ export async function archiveStoredFilesToDrive(options?: {
 
       let period = 'Uncategorized';
       let building = 'Uncategorized';
+      const isUnsupported = file.parser_status === 'unsupported' || file.parser_status === 'failed';
       const isPdf =
         file.mime_type === 'application/pdf' || file.file_name.toLowerCase().endsWith('.pdf');
       if (isPdf) {
         try {
-          const parsed = parseCapitecTransactionText(await extractPdfText(bytes));
+          const extractedText = await extractPdfText(bytes);
+          const parsed = parseCapitecTransactionText(extractedText);
           if (parsed?.transactionDate) period = getBillingPeriodForDate(parsed.transactionDate);
-          if (parsed?.destinationAccountSuffix) {
+          if (isUnsupported) {
+            // Unsupported/failed files go to a dedicated folder for human review.
+            // We still try to extract a date for period grouping, but the building
+            // is always "Unsupported" so they're easy to find.
+            building = 'Unsupported';
+            // If the parser couldn't get a date, try a raw date extraction as fallback
+            if (period === 'Uncategorized' && !parsed?.transactionDate) {
+              const rawDate = extractedText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+              if (rawDate) {
+                const { transactionDate } = parseSouthAfricanDateTime(`${rawDate[0]} 00:00:00`);
+                if (transactionDate) period = getBillingPeriodForDate(transactionDate);
+              }
+            }
+          } else if (parsed?.destinationAccountSuffix) {
             building = sanitizeDriveFolderName(
               suffixToBuilding.get(parsed.destinationAccountSuffix) ?? 'Uncategorized'
             );
           }
         } catch {
-          // unparseable -> stays under Uncategorized
+          // unparseable -> use Unsupported if status says so, otherwise Uncategorized
+          if (isUnsupported) building = 'Unsupported';
         }
+      } else if (isUnsupported) {
+        building = 'Unsupported';
       }
 
       const folderPath = `${DRIVE_ARCHIVE_ROOT_FOLDER}/${period}/${building}`;
@@ -1724,6 +1820,7 @@ function emptyRunSummary(mailboxEmail: string, billingWindow?: BillingWindow): B
     paymentReferencesCreated: 0,
     ignoredEntries: 0,
     failedMessages: 0,
+    messagesSkipped: 0,
     filesArchivedToDrive: 0,
   };
 }

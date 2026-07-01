@@ -45,25 +45,25 @@ export function MonthlyPaymentsShell({
   const referencePoolActive = active === 'reference-pool';
 
   return (
-    <main className="payments-page-scroll min-h-screen overflow-y-auto bg-[linear-gradient(180deg,#e0f2fe_0%,#f8fafc_42%,#dbeafe_100%)] px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="self-start rounded-[28px] border border-white/70 bg-slate-950 p-5 text-white shadow-[0_24px_90px_rgba(15,23,42,0.22)] lg:sticky lg:top-6">
+    <main className="payments-page-scroll min-h-screen overflow-y-auto bg-[linear-gradient(180deg,#e0f2fe_0%,#f8fafc_42%,#dbeafe_100%)] px-4 py-5 text-slate-950 sm:px-5 lg:px-6">
+      <div className="mx-auto grid max-w-[1500px] gap-5 lg:grid-cols-[272px_minmax(0,1fr)] xl:grid-cols-[288px_minmax(0,1fr)]">
+        <aside className="self-start rounded-[26px] border border-white/70 bg-slate-950 p-4.5 text-white shadow-[0_24px_90px_rgba(15,23,42,0.22)] lg:sticky lg:top-5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
             Monthly Payments
           </p>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Workspace</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-300">
+          <h1 className="mt-3 text-[1.9rem] font-semibold tracking-tight">Workspace</h1>
+          <p className="mt-2.5 text-[0.95rem] leading-6 text-slate-300">
             One navigation spine for imports, dashboard review, unit operations, and room setup.
           </p>
 
-          <div className="mt-8 space-y-3">
+          <div className="mt-7 space-y-3">
             <Link
               href="/monthly-payments"
-              className={`block rounded-[22px] border px-4 py-4 ${navCardClass(active === 'dashboard')}`}
+              className={`block rounded-[20px] border px-4 py-3.5 ${navCardClass(active === 'dashboard')}`}
             >
               <div className="flex items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl ${iconWrapClass(active === 'dashboard')}`}>
-                  <Landmark size={18} />
+                <span className={`mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl ${iconWrapClass(active === 'dashboard')}`}>
+                  <Landmark size={16} />
                 </span>
                 <div>
                   <p className="text-sm font-semibold">Dashboard</p>
@@ -76,11 +76,11 @@ export function MonthlyPaymentsShell({
 
             <Link
               href="/monthly-payments/locations"
-              className={`block rounded-[22px] border px-4 py-4 ${navCardClass(locationsActive)}`}
+              className={`block rounded-[20px] border px-4 py-3.5 ${navCardClass(locationsActive)}`}
             >
               <div className="flex items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl ${iconWrapClass(locationsActive)}`}>
-                  <Building2 size={18} />
+                <span className={`mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl ${iconWrapClass(locationsActive)}`}>
+                  <Building2 size={16} />
                 </span>
                 <div>
                   <p className="text-sm font-semibold">Locations</p>
@@ -93,11 +93,11 @@ export function MonthlyPaymentsShell({
 
             <Link
               href={operationsHref}
-              className={`block rounded-[22px] border px-4 py-4 ${navCardClass(operationsActive)}`}
+              className={`block rounded-[20px] border px-4 py-3.5 ${navCardClass(operationsActive)}`}
             >
               <div className="flex items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl ${iconWrapClass(operationsActive)}`}>
-                  <ReceiptText size={18} />
+                <span className={`mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl ${iconWrapClass(operationsActive)}`}>
+                  <ReceiptText size={16} />
                 </span>
                 <div>
                   <p className="text-sm font-semibold">Match & sign off</p>
@@ -110,11 +110,11 @@ export function MonthlyPaymentsShell({
 
             <Link
               href={referencePoolHref}
-              className={`block rounded-[22px] border px-4 py-4 ${navCardClass(referencePoolActive)}`}
+              className={`block rounded-[20px] border px-4 py-3.5 ${navCardClass(referencePoolActive)}`}
             >
               <div className="flex items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-2xl ${iconWrapClass(referencePoolActive)}`}>
-                  <ClipboardList size={18} />
+                <span className={`mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl ${iconWrapClass(referencePoolActive)}`}>
+                  <ClipboardList size={16} />
                 </span>
                 <div>
                   <p className="text-sm font-semibold">Reference pool</p>
@@ -126,7 +126,7 @@ export function MonthlyPaymentsShell({
             </Link>
           </div>
 
-          <div className="mt-8 rounded-[22px] border border-slate-800 bg-slate-900/80 p-4">
+          <div className="mt-7 rounded-[20px] border border-slate-800 bg-slate-900/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Quick links</p>
             <div className="mt-4 flex flex-wrap gap-3">
               <Link

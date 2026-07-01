@@ -1,5 +1,7 @@
 # Property & Unit Details Roadmap
 
+Last updated: 2026-06-14
+
 ## Why this exists
 
 Today a property carries almost nothing: the live `berea` property has

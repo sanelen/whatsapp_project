@@ -42,3 +42,40 @@ and the lib/service layer, then produces a structured critique.
 Do not skip this step. The cost of building the wrong flow is much higher
 than the cost of reviewing it first.
 <!-- END:product-flow-review-rule -->
+
+<!-- BEGIN:bank-import-debug-rule -->
+# Bank import debugging uses a structured diagnosis skill
+
+When investigating bank import issues — missing entries, missing payment
+references, "0 references imported", or any failure in the Gmail → Drive →
+Database pipeline — run the bank-import-debug skill before exploring code.
+
+The skill documents the full pipeline architecture, common failure modes,
+and step-by-step SQL queries for diagnosis. It prevents rediscovering known
+issues (billing window mismatches, unmapped accounts, self-healing bugs).
+
+**Skill location:** `.claude/skills/bank-import-debug/SKILL.md`
+<!-- END:bank-import-debug-rule -->
+
+<!-- BEGIN:full-flow-review-rule -->
+# Full flow review orchestrates the other review skills before merge/release
+
+Before merging a feature branch that touched more than one screen or a
+data/status model, before a release or demo, or as a periodic health check on
+the primary operator loop, run the full-flow-review skill instead of a single
+lens in isolation.
+
+It runs `product-flow-review` (architecture/flow), `playwright-qa` (and
+`bank-import-debug` where relevant), and the `design` plugin's
+`design-critique`/`accessibility-review` against the same target, adds its own
+roadmap-fit check against ROADMAP.md/REQUIREMENTS.md/ARCHITECTURE.md/
+LINEAR-SYNC.md, then synthesizes all four into one report — including any
+tensions between lenses (e.g. QA passes but architecture flags known debt
+underneath it) and a prioritized action list.
+
+For a narrow, single-file change, use the one relevant skill directly instead
+— this orchestrator is for merge points, releases, and periodic checks, not
+routine edits.
+
+**Skill location:** `.claude/skills/full-flow-review/SKILL.md`
+<!-- END:full-flow-review-rule -->

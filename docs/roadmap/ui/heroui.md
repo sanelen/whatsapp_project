@@ -1,5 +1,7 @@
 # HeroUI Adoption Roadmap
 
+Last updated: 2026-06-15
+
 ## Decision
 
 Adopt **HeroUI** (the React component library, successor to NextUI) as the standard

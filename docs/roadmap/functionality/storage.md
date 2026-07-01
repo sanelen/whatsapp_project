@@ -1,5 +1,7 @@
 # Supabase Storage Roadmap
 
+Last updated: 2026-06-14
+
 ## Current state
 
 - One bucket exists: **`uploads`** — `public: false`, **0 objects**. It is created

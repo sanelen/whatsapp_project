@@ -1,5 +1,7 @@
 # Knowledge Base Photos Roadmap
 
+Last updated: 2026-06-14
+
 ## Goal
 
 Let users add **photos** to the Knowledge Base (alongside text and documents), so a

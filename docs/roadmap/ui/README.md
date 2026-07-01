@@ -1,5 +1,7 @@
 # UI Roadmap
 
+Last updated: 2026-06-14
+
 ## Navigation Rules
 
 - Organization list page: show organization dropdown only.

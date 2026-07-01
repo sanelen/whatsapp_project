@@ -28,6 +28,8 @@ function shiftPeriod(key: string, delta: number): string {
 export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
   const previousHref = `/monthly-payments/reference-pool?period=${shiftPeriod(view.periodKey, -1)}`;
   const nextHref = `/monthly-payments/reference-pool?period=${shiftPeriod(view.periodKey, 1)}`;
+  const tableColumns =
+    'minmax(150px,1.4fr) minmax(150px,1.25fr) minmax(88px,0.8fr) minmax(84px,0.72fr) minmax(112px,0.95fr) minmax(132px,1fr) minmax(76px,0.55fr)';
 
   return (
     <MonthlyPaymentsShell
@@ -75,65 +77,74 @@ export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
             </div>
           </div>
 
-          <section className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <section className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-              <div className="grid grid-cols-[1.15fr_1fr_0.8fr_0.85fr_1fr_1.15fr] border-b border-slate-200 bg-slate-50 px-4 py-4 text-[0.82rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                <span>Reference</span>
-                <span>Payer</span>
-                <span>Account</span>
-                <span>Date</span>
-                <span>Recv R</span>
-                <span>Location</span>
-              </div>
+              <div className="overflow-x-auto">
+                <div
+                  className="grid min-w-[860px] border-b border-slate-200 bg-slate-50 px-4 py-4 text-[0.78rem] font-semibold uppercase tracking-[0.18em] text-slate-500"
+                  style={{ gridTemplateColumns: tableColumns }}
+                >
+                  <span>Reference</span>
+                  <span>Payer</span>
+                  <span>Account</span>
+                  <span>Date</span>
+                  <span>Recv R</span>
+                  <span>Location</span>
+                  <span className="text-right">Open</span>
+                </div>
 
-              {view.rows.length === 0 ? (
-                <div className="px-6 py-10 text-sm text-slate-500">No unmatched deposits for this month.</div>
-              ) : (
-                view.rows.map((row, index) => (
-                  <div
-                    key={row.id}
-                    className={`grid grid-cols-[1.15fr_1fr_0.8fr_0.85fr_1fr_1.15fr] items-center gap-4 px-4 py-4 ${
-                      index > 0 ? 'border-t border-slate-200' : ''
-                    }`}
-                  >
-                    <span className="text-[1rem] font-medium text-slate-800">{row.reference}</span>
-                    <span className="text-[0.98rem] text-slate-500">{row.payerName ?? '—'}</span>
-                    <span className="text-[0.98rem] text-slate-500">
-                      {row.accountSuffix ? `••${row.accountSuffix}` : '—'}
-                    </span>
-                    <span className="text-[0.98rem] text-slate-500">{formatTxnDate(row.transactionDate)}</span>
-                    <span className="text-[1rem] font-medium text-slate-800">{formatRand(row.amount)}</span>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-[0.98rem] text-slate-500">{row.propertyName}</span>
+                {view.rows.length === 0 ? (
+                  <div className="px-6 py-10 text-sm text-slate-500">No unmatched deposits for this month.</div>
+                ) : (
+                  view.rows.map((row, index) => (
+                    <div
+                      key={row.id}
+                      className={`grid min-w-[860px] items-center gap-4 px-4 py-4 ${
+                        index > 0 ? 'border-t border-slate-200' : ''
+                      }`}
+                      style={{ gridTemplateColumns: tableColumns }}
+                    >
+                      <span className="text-base font-medium leading-6 text-slate-800">{row.reference}</span>
+                      <span className="text-[0.98rem] leading-6 text-slate-500">{row.payerName ?? '—'}</span>
+                      <span className="text-[0.98rem] leading-6 text-slate-500">
+                        {row.accountSuffix ? `••${row.accountSuffix}` : '—'}
+                      </span>
+                      <span className="text-[0.98rem] leading-6 text-slate-500">{formatTxnDate(row.transactionDate)}</span>
+                      <span className="text-base font-medium leading-6 text-slate-800">{formatRand(row.amount)}</span>
+                      <span className="text-[0.98rem] leading-6 text-slate-500">
+                        {row.propertyName}
+                      </span>
                       {row.propertyId ? (
                         <Link
                           href={`/monthly-payments/${row.propertyId}?period=${view.periodKey}`}
-                          className="inline-flex items-center gap-1 text-sm font-semibold text-sky-800"
+                          className="inline-flex items-center justify-end gap-1 text-sm font-semibold text-sky-800"
                         >
                           open
                           <ArrowRight size={14} />
                         </Link>
-                      ) : null}
+                      ) : (
+                        <span />
+                      )}
                     </div>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
 
-            <aside className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+            <aside className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
               <p className="text-[0.82rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Summary
               </p>
-              <p className="mt-4 text-3xl font-semibold text-slate-950">{view.totals.unmatchedCount}</p>
-              <p className="mt-1 text-sm text-slate-500">unmatched deposits in this billing window</p>
-              <p className="mt-4 text-xl font-semibold text-slate-800">{formatRand(view.totals.totalAmount)}</p>
+              <p className="mt-3 text-2xl font-semibold text-slate-950">{view.totals.unmatchedCount}</p>
+              <p className="mt-1 text-[0.92rem] leading-5 text-slate-500">unmatched deposits in this billing window</p>
+              <p className="mt-4 text-lg font-semibold text-slate-800">{formatRand(view.totals.totalAmount)}</p>
 
-              <div className="mt-6 space-y-3">
+              <div className="mt-5 space-y-3">
                 {view.locations.length === 0 ? (
                   <p className="text-sm text-slate-500">No location buckets yet.</p>
                 ) : (
                   view.locations.map((location) => (
-                    <div key={location.id} className="rounded-[18px] border border-slate-200 bg-slate-50 p-3">
+                    <div key={location.id} className="rounded-[16px] border border-slate-200 bg-slate-50 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-900">{location.name}</p>
@@ -148,7 +159,7 @@ export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
                           </Link>
                         ) : null}
                       </div>
-                      <p className="mt-3 text-sm font-medium text-slate-700">{formatRand(location.totalAmount)}</p>
+                      <p className="mt-2 text-sm font-medium text-slate-700">{formatRand(location.totalAmount)}</p>
                     </div>
                   ))
                 )}

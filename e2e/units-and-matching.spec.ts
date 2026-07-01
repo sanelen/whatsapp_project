@@ -180,7 +180,6 @@ test('E2E: Match drawer — open, review candidates with score badges, close', a
   await expect(roomSetupLink).toBeVisible();
 
   // Close drawer
-  const closeBtn = page.locator('button').filter({ has: page.locator('svg') }).last();
   // Use the X button in the drawer header
   const drawerClose = page.locator('section').last().locator('button').first();
   if (await drawerClose.isVisible()) {
@@ -243,8 +242,6 @@ test('E2E: Match a reference → sign off → reverse sign-off (full state machi
 
   // The row should now show "Sign off" button (status changed from unpaid to matched)
   // Find the row by its unit label
-  const unitRow = page.locator('div').filter({ hasText: unitLabel! }).first();
-
   // Look for "Sign off" button anywhere on the page after the match
   const signOffBtn = page.getByRole('button', { name: 'Sign off' });
   const hasSignOff = await signOffBtn.first().isVisible({ timeout: 8000 }).catch(() => false);

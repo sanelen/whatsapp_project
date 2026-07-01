@@ -58,7 +58,6 @@ async function recordRowState(page: Page, rowIndex: number) {
   const rowText = await row.textContent();
   
   // Extract key fields (reference, amount, date, status)
-  let reference = '';
   let amount = '';
   let date = '';
   let status = '';
@@ -113,7 +112,6 @@ test('E2E: Reverse a matched reference and verify state resets', async ({ page }
   await page.waitForTimeout(1000); // Let UI settle
 
   // ─── Verify row unlocked and amount cleared ──────────────────────
-  const updatedRow = page.locator('tr').filter({ has: page.locator('td') }).nth(matchedRow.index);
   const updatedState = await recordRowState(page, matchedRow.index);
 
   console.log(`Updated state: amount=${updatedState.amount}, status=${updatedState.status}`);
@@ -161,8 +159,6 @@ test('E2E: Reversed reference returns to unmatched pool', async ({ page }) => {
   }
 
   // Record the reference being reversed
-  const reversedRef = matchedRow.text || '';
-
   const reverseBtn = matchedRow.row.getByText(/reverse|unmatch/i, { exact: false }).first();
   if (await reverseBtn.isVisible()) {
     await reverseBtn.click();
@@ -261,7 +257,6 @@ test('E2E: Re-match after reversal — match different (correct) reference', asy
   }
 
   // ─── Verify the row is now matched with the new reference ────────
-  const rematchedRow = page.locator('tr').filter({ has: page.locator('td') }).nth(matchedRow.index);
   const rematchedState = await recordRowState(page, matchedRow.index);
 
   console.log(`Re-matched state: amount=${rematchedState.amount}, status=${rematchedState.status}`);
