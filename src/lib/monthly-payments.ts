@@ -119,7 +119,50 @@ type ComputedUnitStatus = {
   hasMatchedPayment: boolean;
   hasExactPayment: boolean;
   signedOff: boolean;
+  depositSplit: DepositSplitSuggestion | null;
 };
+
+/**
+ * Deposit-split suggestion (REQUIREMENTS FR-2.8, first slice).
+ *
+ * A payment above expected rent should be splittable into rent-covered +
+ * deposit-contribution instead of reading as a plain mismatch. This is a
+ * read-model *suggestion* only — rent is covered first, the overpayment is
+ * allocated toward the room's configured deposit (capped at `depositAmount`),
+ * and anything beyond that surfaces as `surplusAmount` for operator review.
+ * Persisting an accepted split (deposit ledger / allocation records) is a
+ * follow-up slice pending owner decisions.
+ */
+export type DepositSplitSuggestion = {
+  rentPortion: number;
+  depositPortion: number;
+  surplusAmount: number;
+};
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function computeDepositSplitSuggestion(input: {
+  receivedAmount: number | null;
+  expectedAmount: number;
+  depositAmount: number;
+}): DepositSplitSuggestion | null {
+  const received = input.receivedAmount;
+  if (received === null || !Number.isFinite(received)) return null;
+  if (!(input.expectedAmount > 0)) return null;
+  if (!(input.depositAmount > 0)) return null;
+
+  const overpayment = roundMoney(received - input.expectedAmount);
+  if (overpayment <= 0.001) return null;
+
+  const depositPortion = roundMoney(Math.min(overpayment, input.depositAmount));
+  return {
+    rentPortion: roundMoney(input.expectedAmount),
+    depositPortion,
+    surplusAmount: roundMoney(overpayment - depositPortion),
+  };
+}
 
 export type UnitTableMatchRule = {
   id: string;
@@ -175,6 +218,7 @@ function computeUnitStatus(input: {
   occupancyStatus: 'occupied' | 'vacant';
   isBlocked: boolean;
   expectedAmount: number;
+  depositAmount?: number;
   matchedReferences: Array<{
     amount: number | string;
     signed_off: boolean;
@@ -190,6 +234,7 @@ function computeUnitStatus(input: {
       hasMatchedPayment: false,
       hasExactPayment: false,
       signedOff: false,
+      depositSplit: null,
     };
   }
 
@@ -209,6 +254,7 @@ function computeUnitStatus(input: {
       hasMatchedPayment,
       hasExactPayment,
       signedOff,
+      depositSplit: null,
     };
   }
 
@@ -220,6 +266,11 @@ function computeUnitStatus(input: {
       hasMatchedPayment,
       hasExactPayment,
       signedOff,
+      depositSplit: computeDepositSplitSuggestion({
+        receivedAmount,
+        expectedAmount: input.expectedAmount,
+        depositAmount: input.depositAmount ?? 0,
+      }),
     };
   }
 
@@ -232,6 +283,7 @@ function computeUnitStatus(input: {
       hasMatchedPayment: false,
       hasExactPayment: false,
       signedOff: false,
+      depositSplit: null,
     };
   }
 
@@ -242,6 +294,7 @@ function computeUnitStatus(input: {
     hasMatchedPayment: false,
     hasExactPayment: false,
     signedOff: false,
+    depositSplit: null,
   };
 }
 
@@ -624,6 +677,8 @@ export type UnitTableRow = {
   locked: boolean;
   status: UnitTableStatus;
   overdueDays: number | null;
+  depositAmount: number;
+  depositSplit: DepositSplitSuggestion | null;
 };
 
 export type ReferencePoolRow = {
@@ -1178,11 +1233,25 @@ export async function readPropertyUnitsTable(
       .select('id,organization_id,name, organizations(name)')
       .eq('id', propertyId)
       .maybeSingle<{ id: string; organization_id: string; name: string; organizations: { name: string } | null }>(),
-    admin
-      .from('property_units')
-      .select('id,property_id,label,contact_primary,contact_secondary,rent_amount,occupancy_status,is_blocked,expected_reference,match_keywords,display_order')
-      .eq('property_id', propertyId)
-      .order('display_order', { ascending: true }),
+    (async () => {
+      const richResult = await admin
+        .from('property_units')
+        .select('id,property_id,label,contact_primary,contact_secondary,rent_amount,deposit_amount,occupancy_status,is_blocked,expected_reference,match_keywords,display_order')
+        .eq('property_id', propertyId)
+        .order('display_order', { ascending: true });
+      // deposit_amount is additive (2026-06-30 migration); fall back gracefully
+      // if the column has not been applied in this environment yet.
+      if (richResult.error?.code !== '42703') return richResult;
+      const fallbackResult = await admin
+        .from('property_units')
+        .select('id,property_id,label,contact_primary,contact_secondary,rent_amount,occupancy_status,is_blocked,expected_reference,match_keywords,display_order')
+        .eq('property_id', propertyId)
+        .order('display_order', { ascending: true });
+      return {
+        ...fallbackResult,
+        data: (fallbackResult.data ?? []).map((unit) => ({ ...unit, deposit_amount: 0 })),
+      };
+    })(),
     admin
       .from('payment_references')
       .select('id,property_id,unit_id,unit_payment_period_id,bank_import_entry_id,reference,amount,received_at,transaction_at,signed_off')
@@ -1237,6 +1306,7 @@ export async function readPropertyUnitsTable(
     contact_primary: string;
     contact_secondary: string;
     rent_amount: number | string;
+    deposit_amount: number | string;
     occupancy_status: 'occupied' | 'vacant';
     is_blocked: boolean;
     expected_reference: string;
@@ -1333,10 +1403,12 @@ export async function readPropertyUnitsTable(
 
     const matched = (referencesByUnit.get(unit.id) ?? []).slice().sort((a, b) => (a.received_at < b.received_at ? 1 : -1));
     const primary = matched[0] ?? null;
+    const depositAmount = toMoney(unit.deposit_amount);
     const statusState = computeUnitStatus({
       occupancyStatus: unit.occupancy_status,
       isBlocked,
       expectedAmount,
+      depositAmount,
       matchedReferences: matched,
       dueDate: period?.due_date ?? billingWindow.endDate,
       now,
@@ -1364,6 +1436,8 @@ export async function readPropertyUnitsTable(
       locked: statusState.signedOff,
       status: statusState.status,
       overdueDays: statusState.overdueDays,
+      depositAmount,
+      depositSplit: statusState.depositSplit,
     };
   });
 

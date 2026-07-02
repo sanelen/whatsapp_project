@@ -48,6 +48,7 @@ const STATUS_STYLES: Record<UnitTableStatus, string> = {
 
 function statusLabel(row: UnitTableRow): string {
   if (row.status === 'overdue' && row.overdueDays) return `overdue ${row.overdueDays}d`;
+  if (row.status === 'mismatch' && row.depositSplit) return 'overpaid';
   return row.status;
 }
 
@@ -524,11 +525,23 @@ export function UnitsTable({
                       </div>
                       <div>{renderReference(row)}</div>
                       <div className="text-[0.95rem] text-slate-500">{formatTxnDate(row.transactionDate)}</div>
-                      <div className={`text-[0.95rem] font-medium ${row.status === 'mismatch' ? 'text-rose-700' : 'text-slate-800'}`}>
+                      <div className={`text-[0.95rem] font-medium ${row.status === 'mismatch' && !row.depositSplit ? 'text-rose-700' : 'text-slate-800'}`}>
                         {row.receivedAmount !== null ? formatRand(row.receivedAmount) : '—'}
+                        {row.status === 'mismatch' && row.depositSplit ? (
+                          <div className="mt-0.5 text-[0.75rem] font-semibold leading-4 text-amber-700">
+                            rent {formatRand(row.depositSplit.rentPortion)} + deposit {formatRand(row.depositSplit.depositPortion)}
+                            {row.depositSplit.surplusAmount > 0 ? ` (+${formatRand(row.depositSplit.surplusAmount)} over)` : ''}
+                          </div>
+                        ) : null}
                       </div>
                       <div>
-                        <span className={`inline-flex rounded-full border-2 px-3 py-1 text-[0.82rem] font-semibold capitalize ${STATUS_STYLES[row.status]}`}>
+                        <span
+                          className={`inline-flex rounded-full border-2 px-3 py-1 text-[0.82rem] font-semibold capitalize ${
+                            row.status === 'mismatch' && row.depositSplit
+                              ? 'border-amber-500/70 bg-amber-50 text-amber-800'
+                              : STATUS_STYLES[row.status]
+                          }`}
+                        >
                           {statusLabel(row)}
                         </span>
                         {row.signedOff ? (

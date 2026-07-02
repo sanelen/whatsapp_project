@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildMonthlyPaymentsDashboardSnapshot,
+  computeDepositSplitSuggestion,
   type MonthlyPaymentsOrganizationRow,
   type MonthlyPaymentsPeriodRow,
   type MonthlyPaymentsPropertyRow,
@@ -144,4 +145,48 @@ test('buildMonthlyPaymentsDashboardSnapshot marks missing properties as empty se
 
   assert.equal(snapshot.setupState, 'empty');
   assert.equal(snapshot.locations.length, 0);
+});
+
+test('computeDepositSplitSuggestion splits an overpayment into rent + deposit contribution', () => {
+  assert.deepEqual(
+    computeDepositSplitSuggestion({ receivedAmount: 5000, expectedAmount: 4500, depositAmount: 4500 }),
+    { rentPortion: 4500, depositPortion: 500, surplusAmount: 0 }
+  );
+});
+
+test('computeDepositSplitSuggestion caps the deposit contribution at the configured deposit', () => {
+  assert.deepEqual(
+    computeDepositSplitSuggestion({ receivedAmount: 7500, expectedAmount: 4500, depositAmount: 2000 }),
+    { rentPortion: 4500, depositPortion: 2000, surplusAmount: 1000 }
+  );
+});
+
+test('computeDepositSplitSuggestion returns null when there is no overpayment', () => {
+  assert.equal(
+    computeDepositSplitSuggestion({ receivedAmount: 4500, expectedAmount: 4500, depositAmount: 2000 }),
+    null
+  );
+  assert.equal(
+    computeDepositSplitSuggestion({ receivedAmount: 4000, expectedAmount: 4500, depositAmount: 2000 }),
+    null
+  );
+  assert.equal(computeDepositSplitSuggestion({ receivedAmount: null, expectedAmount: 4500, depositAmount: 2000 }), null);
+});
+
+test('computeDepositSplitSuggestion returns null when the room has no configured deposit or expected rent', () => {
+  assert.equal(
+    computeDepositSplitSuggestion({ receivedAmount: 5000, expectedAmount: 4500, depositAmount: 0 }),
+    null
+  );
+  assert.equal(
+    computeDepositSplitSuggestion({ receivedAmount: 5000, expectedAmount: 0, depositAmount: 2000 }),
+    null
+  );
+});
+
+test('computeDepositSplitSuggestion rounds portions to cents', () => {
+  assert.deepEqual(
+    computeDepositSplitSuggestion({ receivedAmount: 4600.555, expectedAmount: 4500.111, depositAmount: 2000 }),
+    { rentPortion: 4500.11, depositPortion: 100.44, surplusAmount: 0 }
+  );
 });
