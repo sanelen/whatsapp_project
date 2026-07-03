@@ -1,4 +1,4 @@
-Last updated: 2026-07-01
+Last updated: 2026-07-03
 
 # Linear Sync
 
@@ -27,11 +27,24 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 
 These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ticket:
 
-- Deposit-split / partial-payment allocation logic (REQUIREMENTS FR-2.8).
-- Drive → Supabase reverse import (REQUIREMENTS FR-2.11).
-- RLS enablement on `public.prompt_settings` (REQUIREMENTS FR-5.3).
-- Units-table UI density pass, part 2 (REQUIREMENTS NFR-2.1).
-- Post-match/sign-off operator feedback strengthening (REQUIREMENTS FR-2.7).
+- Deposit-split / partial-payment allocation logic (REQUIREMENTS FR-2.8) —
+  **mostly done 2026-07-02**: owner ruled (paid = signed-off only; deposit
+  ledger per unit; partial + outstanding). Shipped: status model
+  (pending/partial/overpaid), `deposit_contributions` ledger + accept-split
+  action (migration applied to live Supabase), functional test suite with
+  failure→action map ([functional-test-map](./testing/functional-test-map.md)).
+  Remaining: surplus-beyond-deposit rule + FR-2.7 feedback strengthening.
+- Drive → Supabase reverse import (REQUIREMENTS FR-2.11) — **found already
+  code-complete 2026-07-03** (source toggle → `importDrivePayments` in
+  `runBankImport`); needs one live Drive pull by the owner to call it Shipped.
+- ~~RLS enablement on `public.prompt_settings` (REQUIREMENTS FR-5.3)~~ —
+  **done 2026-07-03**: migration applied to live project + committed to repo;
+  anon denied, service_role unaffected, advisor ERROR cleared.
+- ~~Units-table UI density pass, part 2 (REQUIREMENTS NFR-2.1)~~ — **units
+  table done 2026-07-03** with before/after screenshots in
+  `docs/audits/screenshots/`; dashboard/locations screens still pending a pass.
+- Post-match/sign-off operator feedback strengthening (REQUIREMENTS FR-2.7) —
+  next up.
 
 ## Suggested sync process going forward
 

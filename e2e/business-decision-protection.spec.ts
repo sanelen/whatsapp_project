@@ -113,7 +113,7 @@ test('Ruling 2: Deposit ledger per unit — overpayment creates deposit contribu
       await page.waitForTimeout(500);
       
       // Details should show deposit allocation, not undefined/NaN
-      const detailText = await page.textContent();
+      const detailText = await page.textContent('body');
       expect(detailText).not.toContain('NaN');
       expect(detailText).not.toContain('undefined');
       

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiUser } from '@/lib/auth/dal';
 import {
+  acceptDepositSplit,
+  allocateUnitCredit,
+  autoMatchUnmatchedReferences,
   matchReferenceToUnit,
   reverseSignOffAndUnmatch,
+  reverseUnitCreditAllocation,
   signOffMatchedReference,
 } from '@/lib/monthly-payments-ops';
 
@@ -14,21 +18,75 @@ export async function POST(request: NextRequest) {
 
   const body = ((await request.json().catch(() => ({}))) ?? {}) as
     | {
-        action?: 'match' | 'sign_off' | 'reverse_sign_off';
+        action?:
+          | 'match'
+          | 'sign_off'
+          | 'reverse_sign_off'
+          | 'accept_deposit_split'
+          | 'auto_match'
+          | 'allocate_credit'
+          | 'reverse_credit_allocation';
         propertyId?: string;
         unitId?: string;
         paymentReferenceId?: string;
+        destination?: 'arrears' | 'advance' | 'deposit';
+        selectedPeriodKey?: string;
+        targetPeriodId?: string;
+        allocationId?: string;
+        amount?: number;
       }
     | undefined;
 
   const action = body?.action;
   const paymentReferenceId = body?.paymentReferenceId?.trim();
+  const CREDIT_ACTIONS = new Set(['auto_match', 'allocate_credit', 'reverse_credit_allocation']);
 
-  if (!action || !paymentReferenceId) {
+  if (!action || (!paymentReferenceId && !CREDIT_ACTIONS.has(action))) {
     return NextResponse.json({ error: 'Missing action or paymentReferenceId' }, { status: 400 });
   }
 
   try {
+    if (action === 'auto_match') {
+      const data = await autoMatchUnmatchedReferences({
+        propertyId: body?.propertyId?.trim() || undefined,
+        actor: `auto-match (${user.email ?? user.id})`,
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'allocate_credit') {
+      if (!body?.unitId?.trim() || !body?.destination || !body?.selectedPeriodKey?.trim()) {
+        return NextResponse.json(
+          { error: 'Missing unitId, destination, or selectedPeriodKey for allocate_credit' },
+          { status: 400 }
+        );
+      }
+      const data = await allocateUnitCredit({
+        unitId: body.unitId.trim(),
+        destination: body.destination,
+        selectedPeriodKey: body.selectedPeriodKey.trim(),
+        targetPeriodId: body.targetPeriodId?.trim() || undefined,
+        amount: typeof body.amount === 'number' ? body.amount : undefined,
+        actor: user.email ?? user.id,
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'reverse_credit_allocation') {
+      if (!body?.allocationId?.trim()) {
+        return NextResponse.json({ error: 'Missing allocationId' }, { status: 400 });
+      }
+      const data = await reverseUnitCreditAllocation({
+        allocationId: body.allocationId.trim(),
+        actor: user.email ?? user.id,
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    if (!paymentReferenceId) {
+      return NextResponse.json({ error: 'Missing paymentReferenceId' }, { status: 400 });
+    }
+
     if (action === 'match') {
       if (!body?.propertyId?.trim() || !body?.unitId?.trim()) {
         return NextResponse.json({ error: 'Missing propertyId or unitId for match' }, { status: 400 });
@@ -53,6 +111,14 @@ export async function POST(request: NextRequest) {
 
     if (action === 'reverse_sign_off') {
       const data = await reverseSignOffAndUnmatch({
+        paymentReferenceId,
+        actor: user.email ?? user.id,
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'accept_deposit_split') {
+      const data = await acceptDepositSplit({
         paymentReferenceId,
         actor: user.email ?? user.id,
       });

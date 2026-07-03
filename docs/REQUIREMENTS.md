@@ -1,4 +1,4 @@
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
 # Requirements
 
@@ -45,8 +45,11 @@ tags: **Shipped**, **Partial**, **Planned**.
 
 - FR-2.1 **Shipped** — Dashboard shows month-stepper, rolling totals, and
   per-property cards, split into `matchedCollectedAmount` vs
-  `unmatchedCollectedAmount` (no more "collected but 0 paid" contradiction — this is
-  a hard requirement per the 2026-07-01 UI review).
+  `unmatchedCollectedAmount`. Dashboard percentages/bars are now the
+  **operator progress** signal (`matchedCollectedAmount / expectedAmount`),
+  while signed-off money remains visible as a stricter audit sub-number. This
+  removes the dead-looking `0%` state when money is already matched to unit rows
+  but still awaiting sign-off.
 - FR-2.2 **Shipped** — Clicking a property drills into its per-unit table while
   preserving `?period=YYYY-MM` billing-window context.
 - FR-2.3 **Shipped** — `+ match ref` opens a property-scoped, period-scoped
@@ -55,36 +58,92 @@ tags: **Shipped**, **Partial**, **Planned**.
   keyword hints, regex match rules, payer text, and amount similarity.
 - FR-2.5 **Shipped** — Sign-off locks a matched reference and marks the period paid;
   reverse sign-off unmatches and returns the reference to the pool, preserving an
-  audit trail (`payment_match_events`).
+  audit trail (`payment_match_events`). **Owner ruling 2026-07-02: "paid" means
+  signed-off only, everywhere.** A full match awaiting sign-off is `pending`
+  ("awaiting sign-off"), shown as its own number/pill on dashboard and units
+  table, and excluded from the due/chase list. (Alternate readings — count any
+  full match, or show both numbers co-equally — parked, not discarded; revisit
+  if the sign-off gate becomes operationally annoying.) Period state must be
+  recomputed from the **full set of matched references on that billing period**,
+  never from a single reference in isolation.
 - FR-2.6 **Shipped** — Room manager can create and edit `property_units` rows
   (label, contacts, rent, expected reference, keyword hints, regex hints,
   occupancy/blocked state).
-- FR-2.7 **Partial** — Post-match/sign-off feedback: the row updates, but the "what
-  just happened" confirmation is not yet strong enough (open item from the
-  2026-07-01 review).
-- FR-2.8 **Planned** — Deposit-split / partial-payment allocation: a payment above
-  expected rent should be splittable into rent-covered + deposit-contribution
-  instead of reading as a plain mismatch.
+- FR-2.7 **Partial** — Post-match/sign-off feedback (owner rulings 2026-07-03,
+  from a live matching session):
+  - FR-2.7a **Shipped 2026-07-03 (pending owner browser check)** — the match
+    drawer no longer closes after a match: the candidate list stays open with
+    the remaining references, and a green "Matched R X · REF → unit (awaiting
+    sign-off)" confirmation shows above the list, so multi-reference sessions
+    don't lose their working context after each accept.
+  - FR-2.7b **Planned** — reference-learning prompt on sign-off: when signing
+    off a reference that the unit's hints/rules would NOT have matched (i.e. it
+    was matched manually), ask the operator "Add this reference to this unit's
+    reference list?" so the next month auto-matches it. Needs an
+    add-match-rule API action + confirm popup; owner explicitly wants this as
+    a question, not automatic.
+- FR-2.8 **Partial** — Deposit-split / partial-payment allocation (owner rulings
+  2026-07-02, verified via functional tests):
+  - Overpayments with a configured deposit read `overpaid` with a rent-first
+    split suggestion capped at the REMAINING deposit headroom; **Accept split**
+    persists it to the `deposit_contributions` ledger (running balance per unit
+    toward `deposit_amount`), signs the reference off, and the row settles as
+    paid. Reversal un-does the ledger entry. Fully audited
+    (`deposit_split_accepted` / `deposit_split_reversed` events).
+  - Under-payments read `partial` with an explicit outstanding amount; partial
+    sign-off is allowed (period status `partial`) and more references can be
+    matched until covered.
+  - Surplus rule (owner rulings 2026-07-03, replaces the previous BLOCKED
+    behavior — **Shipped 2026-07-03, pending owner browser check**. Tables
+    `unit_credits` + `unit_credit_allocations` (migration 20260703140000,
+    applied live); ops `allocateUnitCredit`/`reverseUnitCreditAllocation`;
+    API actions `allocate_credit`/`reverse_credit_allocation`; drawer "Held
+    credit" section; 7 decision-rule unit tests):
+    - Surplus beyond rent + remaining deposit headroom is **held as a per-unit
+      unallocated credit** (own ledger, like `deposit_contributions`); sign-off
+      is no longer blocked by surplus.
+    - Operator allocates credit via an explicit action to one of THREE
+      destinations: (1) a short/unpaid billing period within the **last 3
+      months** (arrears outside that window are not offered), (2) **next
+      month's** rent (advance — one month ahead, e.g. July surplus → August),
+      (3) **deposit**, only when remaining headroom > 0.
+    - **Suggest only, never auto-apply** (explicit owner answer): the system
+      may propose a destination, but nothing moves without the operator's
+      click. Allocations must be reversible like sign-offs.
+    - Live motivating case: ESSEXROOM1 July — R9,067 received, R3,800 rent,
+      deposit fully funded, R1,467 surplus currently stuck.
+  - Still open: tenant-visible deposit statements.
 - FR-2.9 **Shipped** — Bank import pulls from Gmail and/or Google Drive, parses
   forwarded Capitec PDF notifications, and only imports `Incoming Funds` entries.
 - FR-2.10 **Shipped** — Billing window is 9th-of-previous-month through
   8th-of-selected-month; manual historical pulls ignore `last_synced_at` so
   backfills aren't blocked.
-- FR-2.11 **Planned** — Drive → Supabase reverse import (files dropped directly
-  into a Drive month folder should flow into the dashboard, not just archive
-  outbound).
+- FR-2.11 **Partial** — Drive → Supabase reverse import. Code-complete since the
+  source-toggle work (`importDrivePayments` in `src/lib/bank-import.ts`, wired
+  into `runBankImport` for `source=drive|both`, exposed in the import API and
+  BankImportControls; skips app-archived and already-processed files). Marked
+  Partial, not Shipped, because a live Drive pull has not been re-verified
+  end-to-end — owner: drop a PDF into the Drive month folder and run a
+  `source=drive` import to confirm.
 
 ### Non-functional
 
 - NFR-2.1 **Partial** — UI density: rows/buttons/text should be sized for an
-  operational tool, not a demo (2026-07-01 review flagged current UI as too large;
-  a first density pass has shipped, more is needed).
+  operational tool, not a demo (2026-07-01 review flagged current UI as too large).
+  Pass 2 shipped 2026-07-03 on the units table: row height roughly halved, action
+  buttons/pills no longer wrap, header/footer/reference-pool tightened — see
+  `docs/audits/screenshots/2026-07-03-units-density-{before,after}.png`. Remaining:
+  dashboard + locations/room-manager screens have not had a pass-2 treatment.
 - NFR-2.2 **Shipped** — Navigation safety: every payments page must expose a clear
   path back (dashboard/locations/units/room-manager/reference-pool), verified by
   `e2e/navigation-safety.spec.ts`.
 - NFR-2.3 **Shipped** — State consistency: dashboard, units table, and reference
   pool must agree on totals/status for the same month — this is the highest-trust
   regression surface (see [Flow 08 / contradiction check](./testing/monthly-payments-flow-tests.md#flow-08-dashboard-contradiction-check)).
+  Concretely:
+  - operator progress on the dashboard = matched-to-unit money / expected
+  - audit-grade paid money = signed-off money only
+  - period status is derived from all references attached to the period
 
 ## 3. WhatsApp Tenant Assistant (planning only)
 
@@ -112,8 +171,13 @@ See [tenant-offboarding.md](./roadmap/functionality/tenant-offboarding.md).
   deployed but cannot reach Supabase/LLMs without this).
 - FR-5.2 **Partial** — Schema unification between `supabase/schema.sql` and
   `supabase/workspace-schema.sql` (Linear **AUT-9**).
-- FR-5.3 **Planned** — Enable RLS on `public.prompt_settings` (currently disabled;
-  flagged by Supabase advisor).
+- FR-5.3 **Shipped** (2026-07-03) — RLS enabled on `public.prompt_settings` and
+  direct grants revoked from `anon`/`authenticated`
+  (`supabase/migrations/20260703031500_enable_rls_prompt_settings.sql`, applied
+  to live project). All app access goes through the service-role client, which
+  bypasses RLS. Verified live: anon role denied (42501), service_role reads
+  normally, advisor ERROR finding cleared (now INFO "no policy", same as other
+  service-role-only tables).
 - FR-5.4 **Shipped** — Google OAuth + email/password auth via Supabase Auth, gating
   all routes except `/login` and `/auth/*`.
 
@@ -122,8 +186,11 @@ See [tenant-offboarding.md](./roadmap/functionality/tenant-offboarding.md).
 Carried from ROADMAP.md — these should be resolved before hard-coding further
 behavior:
 
-1. What exactly counts as "paid" on a dashboard card — any matched amount, fully
-   matched amount, or signed-off-only?
+1. ~~What exactly counts as "paid" on a dashboard card?~~ **Answered 2026-07-02 /
+   clarified 2026-07-02 PM:** signed-off only is the audit-grade paid number,
+   but the dashboard percentage/progress bar is operator-facing and uses matched
+   unit money. Matched-awaiting-sign-off is always shown as its own labelled
+   number.
 2. Should `match ref` be a drawer, modal, or inline panel, long-term?
 3. After a room-rule save, should units auto-refresh or show a manual refresh CTA?
 4. Which matching rules must be case-insensitive by default?

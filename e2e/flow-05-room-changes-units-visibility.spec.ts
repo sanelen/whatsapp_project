@@ -43,8 +43,8 @@ test('Flow 05: Room edit hints are reflected in units matching interface', async
   const firstRoom = page.locator('article').first();
   const roomLabel = await firstRoom.locator('h2, h3').first().textContent();
   
-  await firstRoom.getByText('Edit room', { exact: false }).click();
-  await expect(page.getByText('Editing room')).toBeVisible();
+  await firstRoom.locator('button').first().click();
+  await expect(page.getByText('Save room')).toBeVisible();
   
   // Add a keyword hint (if not present)
   const keywordInput = page.locator('input[aria-label*="keyword" i], input[aria-label*="hint" i]').first();
@@ -78,7 +78,7 @@ test('Flow 05: Room edit hints are reflected in units matching interface', async
       await page.waitForTimeout(500);
       
       // Check that the hint keyword appears somewhere in the matching UI
-      const matcherText = await page.textContent();
+      const matcherText = await page.textContent('body');
       
       // The hint might be shown as a suggestion or just internally
       // At minimum, the matching interface should be open and ready

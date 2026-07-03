@@ -22,6 +22,7 @@
     "audit:vector-pipeline": "node scripts/audit-vector-pipeline.mjs",
     "transcribe": "node scripts/transcribe.mjs",
     "test:e2e": "npx playwright test --project=local",
+    "test:e2e:headed": "npx playwright test --project=local --headed --workers=1 surplus-credit-scenarios match-flow-feedback",
     "test:e2e:ci": "CI=true npx playwright test --project=local",
     "test:e2e:vercel": "npx playwright test --project=vercel",
     "test:e2e:report": "npx playwright show-report playwright-report"

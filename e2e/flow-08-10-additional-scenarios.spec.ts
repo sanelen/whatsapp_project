@@ -82,7 +82,7 @@ test('Flow 09: Room source — edit roundtrip with visible changes', async ({ pa
   const originalRoomLabel = await firstRoom.locator('h2, h3').first().textContent();
   
   // ─── Edit the room ──────────────────────────────────────
-  await firstRoom.getByText('Edit room', { exact: false }).click();
+  await firstRoom.locator('button').first().click();
   
   // Make a distinguishable change to rent
   const rentInput = page.locator('input[aria-label*="rent" i]').first();
@@ -104,8 +104,8 @@ test('Flow 09: Room source — edit roundtrip with visible changes', async ({ pa
   expect(cardText).toContain(newRent);
   
   // ─── Edit again and verify the saved value is there ───
-  await updatedCard.getByText('Edit room', { exact: false }).click();
-  await expect(page.getByText('Editing room')).toBeVisible();
+  await updatedCard.locator('button').first().click();
+  await expect(page.getByText('Save room')).toBeVisible();
   
   const rereadRent = await rentInput.inputValue();
   expect(rereadRent).toBe(newRent);
@@ -149,7 +149,7 @@ test('Flow 10: Create room — full new room creation flow', async ({ page }) =>
   await createBtn.click();
   
   // Form should open
-  const editForm = page.getByText('Editing room', { exact: false });
+  const editForm = page.getByText('Save room', { exact: false });
   const createForm = page.getByText('Creating room', { exact: false });
   
   const formOpen = await editForm.isVisible({ timeout: 2000 }).catch(() => false) ||
@@ -236,7 +236,7 @@ test('Flow 10: Create room — form validation (required fields)', async ({ page
   }
   
   // Cancel the form
-  const cancelBtn = page.getByText('Cancel', { exact: false });
+  const cancelBtn = page.getByText('Close', { exact: false });
   if (await cancelBtn.isVisible()) {
     await cancelBtn.click();
   }

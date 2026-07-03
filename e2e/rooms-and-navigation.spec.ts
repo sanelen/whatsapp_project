@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test';
 /**
  * E2E Flow 2: Room Manager — full CRUD round-trip
  *
- * Opens the room manager, edits a room (label, rent, reference, contacts,
+ * Opens the room manager, edits a room (label, rent, reference, names,
  * occupancy, match rules), saves, then verifies the saved values appear
  * in the refreshed UI AND re-opens the editor to confirm the DB persisted.
  *
@@ -63,27 +63,21 @@ test('E2E: Room manager — structure, summary cards, navigation, breadcrumbs', 
   const roomCards = page.locator('article');
   expect(await roomCards.count()).toBeGreaterThan(0);
 
-  // First room card structure
+  // First room row structure
   const firstCard = roomCards.first();
   await expect(firstCard.locator('h2').first()).toBeVisible(); // room label
-  await expect(firstCard.getByText('source: property_units')).toBeVisible();
-  await expect(firstCard.getByText('Edit room')).toBeVisible();
+  await expect(page.getByPlaceholder('Search room, name, surname, or reference...')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'All' })).toBeVisible();
 
-  // Rent/Deposit/Rules stats
-  await expect(firstCard.getByText('Rent')).toBeVisible();
-  await expect(firstCard.getByText('Deposit')).toBeVisible();
-  await expect(firstCard.getByText('Rules')).toBeVisible();
+  // Compact row fields
+  await expect(firstCard.getByText(/occupied|on market|blocked/i).first()).toBeVisible();
+  await expect(firstCard.getByText(/^R\s/).first()).toBeVisible();
 
-  // Primary reference section
-  await expect(firstCard.getByText('Primary reference')).toBeVisible();
-
-  // Spec badges
-  await expect(firstCard.getByText(/^max \d+$/)).toBeVisible();
-  await expect(firstCard.getByText(/parking/i)).toBeVisible();
-  await expect(firstCard.getByText(/ensuite/i)).toBeVisible();
-
-  // Match rules section
-  await expect(firstCard.getByText('Match rules')).toBeVisible();
+  // Expanding a row opens the inline editor from the redesign.
+  await firstCard.locator('button').first().click();
+  await expect(page.getByLabel('Room label')).toBeVisible();
+  await expect(page.getByText('Match rules')).toBeVisible();
+  await expect(page.getByText('Save room')).toBeVisible();
 
   // ─── Breadcrumb navigation ────────────────────────────────────────
   // Click org name → goes to dashboard
@@ -122,19 +116,18 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   // Click "Edit room" on the first card
   const firstCard = page.locator('article').first();
   const roomLabel = await firstCard.locator('h2').first().textContent();
-  await firstCard.getByText('Edit room').click();
+  await firstCard.locator('button').first().click();
 
   // Editor opens
-  await expect(page.getByText('Editing room')).toBeVisible();
   await expect(page.getByText('Save room')).toBeVisible();
-  await expect(page.getByText('Cancel')).toBeVisible();
+  await expect(page.getByText('Save room')).toBeVisible();
+  await expect(page.getByText('Close')).toBeVisible();
 
   // ─── Read current values and modify them ──────────────────────────
   const labelInput = page.locator('label').filter({ hasText: 'Room label' }).locator('input');
   const rentInput = page.locator('label').filter({ hasText: 'Rent' }).first().locator('input');
   const refInput = page.locator('label').filter({ hasText: 'Primary reference' }).locator('input');
-  const contactInput = page.locator('label').filter({ hasText: 'Contact primary' }).locator('input');
-  const keywordsInput = page.locator('label').filter({ hasText: 'Keyword hints' }).locator('input');
+  const contactInput = page.locator('label').filter({ hasText: 'Name' }).locator('input');
   const occupancySelect = page.locator('label').filter({ hasText: 'Occupancy' }).locator('select');
 
   // Store original values for restoration later
@@ -142,7 +135,6 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   const origRent = await rentInput.inputValue();
   const origRef = await refInput.inputValue();
   const origContact = await contactInput.inputValue();
-  const origKeywords = await keywordsInput.inputValue();
   const origOccupancy = await occupancySelect.inputValue();
 
   // Set new values
@@ -151,13 +143,11 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   const newRent = '7777';
   const newRef = `REF-${suffix}`;
   const newContact = `tenant-${suffix}@test.com`;
-  const newKeywords = `kw-${suffix}, hint-${suffix}`;
 
   await labelInput.fill(newLabel);
   await rentInput.fill(newRent);
   await refInput.fill(newRef);
   await contactInput.fill(newContact);
-  await keywordsInput.fill(newKeywords);
 
   // Toggle occupancy
   const newOccupancy = origOccupancy === 'occupied' ? 'vacant' : 'occupied';
@@ -183,8 +173,8 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   // Add a new rule
   await page.getByText('Add rule').click();
 
-  // Find all rule type selects — the last one is the new rule
-  const ruleSelects = page.locator('label').filter({ hasText: 'Rule type' }).locator('select');
+  // Find all compact rule type selects — the last one is the new rule.
+  const ruleSelects = page.locator('select').filter({ has: page.locator('option[value="reference_contains"]') });
   const ruleCount = await ruleSelects.count();
   expect(ruleCount).toBeGreaterThanOrEqual(2); // at least existing + new
 
@@ -192,31 +182,15 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   const lastRuleIndex = ruleCount - 1;
   await ruleSelects.nth(lastRuleIndex).selectOption('reference_contains');
 
-  // Verify amount input is disabled for non-amount rule types
-  const amountInputs = page.locator('label').filter({ hasText: /^Amount$/ }).locator('input[type="number"]');
-  const lastAmountInput = amountInputs.last();
-  await expect(lastAmountInput).toBeDisabled();
-
-  // Switch to amount_equals — amount input should enable
-  await ruleSelects.nth(lastRuleIndex).selectOption('amount_equals');
-  await expect(amountInputs.last()).toBeEnabled();
-  await amountInputs.last().fill('3333');
-
-  // Switch back to reference_contains for save
-  await ruleSelects.nth(lastRuleIndex).selectOption('reference_contains');
-
   // Fill in the value for the reference_contains rule
-  // After switching rule type, find the matching value input
-  const ruleValueInputs = page.locator('label').filter({ hasText: 'Reference contains' }).locator('input');
-  if (await ruleValueInputs.count() > 0) {
-    await ruleValueInputs.last().fill(`contains-${suffix}`);
-  }
+  const ruleValueInputs = page.locator('input[placeholder="Match value"]');
+  await ruleValueInputs.last().fill(`contains-${suffix}`);
 
   // ─── Save ─────────────────────────────────────────────────────────
   await page.getByText('Save room').click();
 
   // Editor should close after successful save
-  await expect(page.getByText('Editing room')).toBeHidden({ timeout: 15_000 });
+  await expect(page.getByText('Save room')).toBeHidden({ timeout: 15_000 });
 
   // ─── Verify: UI reflects saved values after page refresh ──────────
   await page.waitForTimeout(1000); // let router.refresh() settle
@@ -232,7 +206,7 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   // The primary reference should show new value
   await expect(page.getByText(newRef)).toBeVisible();
 
-  // The contact should show
+  // The name should show
   await expect(page.getByText(newContact)).toBeVisible();
 
   // Occupancy status badge should reflect new state
@@ -240,13 +214,12 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   const roomArticle = page.locator('article').filter({ hasText: newLabel });
   await expect(roomArticle.getByText(expectedBadge)).toBeVisible();
 
-  // Keywords should show as tags
-  await expect(page.getByText(`kw-${suffix}`)).toBeVisible();
-  await expect(page.getByText(`hint-${suffix}`)).toBeVisible();
+  // Rule should remain visible through the compact editor.
+  await expect(page.getByText(`contains-${suffix}`)).toBeVisible();
 
   // ─── Verify: Re-open editor confirms DB persisted values ──────────
-  await roomArticle.getByText('Edit room').click();
-  await expect(page.getByText('Editing room')).toBeVisible();
+  await roomArticle.locator('button').first().click();
+  await expect(page.getByText('Save room')).toBeVisible();
 
   // All fields should match what we saved
   await expect(labelInput).toHaveValue(newLabel);
@@ -254,7 +227,6 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   await expect(refInput).toHaveValue(newRef);
   await expect(contactInput).toHaveValue(newContact);
   await expect(occupancySelect).toHaveValue(newOccupancy);
-  await expect(keywordsInput).toHaveValue(newKeywords);
 
   if (!advancedLocked) {
     await expect(depositInput).toHaveValue('5555');
@@ -267,7 +239,6 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   await rentInput.fill(origRent || '0');
   await refInput.fill(origRef);
   await contactInput.fill(origContact);
-  await keywordsInput.fill(origKeywords);
   await occupancySelect.selectOption(origOccupancy || 'occupied');
 
   if (!advancedLocked) {
@@ -284,7 +255,7 @@ test('E2E: Room edit → save → verify values persisted in UI and API', async 
   }
 
   await page.getByText('Save room').click();
-  await expect(page.getByText('Editing room')).toBeHidden({ timeout: 15_000 });
+  await expect(page.getByText('Save room')).toBeHidden({ timeout: 15_000 });
 });
 
 // ─── Test: Cancel discards changes ──────────────────────────────────
@@ -295,14 +266,14 @@ test('E2E: Room edit cancel discards changes', async ({ page }) => {
   const firstCard = page.locator('article').first();
   const originalLabel = await firstCard.locator('h2').first().textContent();
 
-  await firstCard.getByText('Edit room').click();
-  await expect(page.getByText('Editing room')).toBeVisible();
+  await firstCard.locator('button').first().click();
+  await expect(page.getByText('Save room')).toBeVisible();
 
   const labelInput = page.locator('label').filter({ hasText: 'Room label' }).locator('input');
   await labelInput.fill('SHOULD_NOT_PERSIST');
 
-  await page.getByText('Cancel').click();
-  await expect(page.getByText('Editing room')).toBeHidden();
+  await page.getByText('Close').click();
+  await expect(page.getByText('Save room')).toBeHidden();
 
   // Original label should still be there, not the edited one
   await expect(page.getByText('SHOULD_NOT_PERSIST')).toBeHidden();
@@ -322,7 +293,7 @@ test('E2E: Auto-open room editor via unitId URL parameter', async ({ page }) => 
   expect(propertyId).toBeTruthy();
 
   // Close any open editor
-  const cancelBtn = page.getByText('Cancel');
+  const cancelBtn = page.getByText('Close');
   if (await cancelBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
     await cancelBtn.click();
   }
@@ -335,7 +306,7 @@ test('E2E: Auto-open room editor via unitId URL parameter', async ({ page }) => 
   if (hasEditSource) {
     await editSourceLink.click();
     await page.waitForURL(/\/monthly-payments\/locations\/[^/]+\?.*unitId=/);
-    await expect(page.getByText('Editing room')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Save room')).toBeVisible({ timeout: 10_000 });
   }
 });
 

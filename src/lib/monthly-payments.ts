@@ -1,6 +1,11 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getBillingPeriodForDate, getBillingWindowForPeriod } from '@/lib/bank-import';
 import { ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
+import {
+  computeUnitStatus,
+  type ComputedUnitStatus,
+  type UnitTableStatus,
+} from '@/lib/monthly-payment-status';
 
 export type MonthlyPaymentsOrganizationRow = {
   id: string;
@@ -52,15 +57,25 @@ export type MonthlyPaymentsMonthSummary = {
   collectedAmount: number;
   expectedAmount: number;
   collectionRate: number;
+  /** Matched-to-unit money / expected. Operator-facing progress, includes pending sign-off. */
+  coverageRate: number;
   isCurrent: boolean;
   rollingTotal: {
     collectedAmount: number;
+    matchedCollectedAmount: number;
+    signedOffCollectedAmount: number;
+    pendingCollectedAmount: number;
+    /** Money that arrived in the window but is not yet matched to any unit (incl. propertyless imports). */
+    unmatchedCollectedAmount: number;
     expectedAmount: number;
     collectionRate: number;
+    /** Matched-to-unit money / expected. Operator-facing progress, includes pending sign-off. */
+    coverageRate: number;
     occupiedCount: number;
     blockedCount: number;
     overdueCount: number;
     paidCount: number;
+    pendingCount: number;
     dueCount: number;
   };
   locations: MonthlyPaymentsLocationSummary[];
@@ -73,11 +88,20 @@ export type MonthlyPaymentsLocationSummary = {
   location: string;
   collectedAmount: number;
   matchedCollectedAmount: number;
+  /** Matched money that has been signed off — the decision-grade collected number. */
+  signedOffCollectedAmount: number;
+  /** Matched money still awaiting operator sign-off. */
+  pendingCollectedAmount: number;
   unmatchedCollectedAmount: number;
   expectedAmount: number;
+  /** Signed-off collected / expected (paid = signed-off only). */
   collectionRate: number;
+  /** Matched-to-unit money / expected. Operator-facing progress, includes pending sign-off. */
+  coverageRate: number;
   occupiedCount: number;
   paidCount: number;
+  /** Units fully covered but awaiting sign-off. */
+  pendingCount: number;
   dueCount: number;
   overdueCount: number;
   blockedCount: number;
@@ -92,12 +116,18 @@ export type MonthlyPaymentsDashboardSnapshot = {
   recentMonths: MonthlyPaymentsMonthSummary[];
   rollingTotal: {
     collectedAmount: number;
+    matchedCollectedAmount: number;
+    signedOffCollectedAmount: number;
+    pendingCollectedAmount: number;
+    unmatchedCollectedAmount: number;
     expectedAmount: number;
     collectionRate: number;
+    coverageRate: number;
     occupiedCount: number;
     blockedCount: number;
     overdueCount: number;
     paidCount: number;
+    pendingCount: number;
     dueCount: number;
   };
   locations: MonthlyPaymentsLocationSummary[];
@@ -112,57 +142,23 @@ type MonthlyPaymentsSnapshotInput = {
   references: MonthlyPaymentsReferenceRow[];
 };
 
-type ComputedUnitStatus = {
-  status: UnitTableStatus;
-  overdueDays: number | null;
-  receivedAmount: number | null;
-  hasMatchedPayment: boolean;
-  hasExactPayment: boolean;
-  signedOff: boolean;
-  depositSplit: DepositSplitSuggestion | null;
-};
+export { computeUnitStatus, type ComputedUnitStatus, type UnitTableStatus } from '@/lib/monthly-payment-status';
 
-/**
- * Deposit-split suggestion (REQUIREMENTS FR-2.8, first slice).
- *
- * A payment above expected rent should be splittable into rent-covered +
- * deposit-contribution instead of reading as a plain mismatch. This is a
- * read-model *suggestion* only — rent is covered first, the overpayment is
- * allocated toward the room's configured deposit (capped at `depositAmount`),
- * and anything beyond that surfaces as `surplusAmount` for operator review.
- * Persisting an accepted split (deposit ledger / allocation records) is a
- * follow-up slice pending owner decisions.
- */
-export type DepositSplitSuggestion = {
-  rentPortion: number;
-  depositPortion: number;
-  surplusAmount: number;
-};
-
-function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-export function computeDepositSplitSuggestion(input: {
-  receivedAmount: number | null;
-  expectedAmount: number;
-  depositAmount: number;
-}): DepositSplitSuggestion | null {
-  const received = input.receivedAmount;
-  if (received === null || !Number.isFinite(received)) return null;
-  if (!(input.expectedAmount > 0)) return null;
-  if (!(input.depositAmount > 0)) return null;
-
-  const overpayment = roundMoney(received - input.expectedAmount);
-  if (overpayment <= 0.001) return null;
-
-  const depositPortion = roundMoney(Math.min(overpayment, input.depositAmount));
-  return {
-    rentPortion: roundMoney(input.expectedAmount),
-    depositPortion,
-    surplusAmount: roundMoney(overpayment - depositPortion),
-  };
-}
+export {
+  computeDepositSplitSuggestion,
+  computeCreditAllocationOptions,
+  roundMoney,
+  type DepositSplitSuggestion,
+  type CreditAllocationOptions,
+} from '@/lib/payment-allocation';
+import {
+  computeDepositSplitSuggestion,
+  computeCreditAllocationOptions,
+  roundMoney,
+  shiftPeriodStart,
+  type DepositSplitSuggestion,
+  type CreditAllocationOptions,
+} from '@/lib/payment-allocation';
 
 export type UnitTableMatchRule = {
   id: string;
@@ -212,90 +208,6 @@ function billingPeriodKeyForReferenceDate(value: string): string {
   } catch {
     return toDateOnlyMonthKey(value);
   }
-}
-
-function computeUnitStatus(input: {
-  occupancyStatus: 'occupied' | 'vacant';
-  isBlocked: boolean;
-  expectedAmount: number;
-  depositAmount?: number;
-  matchedReferences: Array<{
-    amount: number | string;
-    signed_off: boolean;
-  }>;
-  dueDate: string | null;
-  now: Date;
-}): ComputedUnitStatus {
-  if (input.isBlocked || input.occupancyStatus === 'vacant') {
-    return {
-      status: 'blocked',
-      overdueDays: null,
-      receivedAmount: null,
-      hasMatchedPayment: false,
-      hasExactPayment: false,
-      signedOff: false,
-      depositSplit: null,
-    };
-  }
-
-  const receivedAmount = input.matchedReferences.length
-    ? input.matchedReferences.reduce((sum, reference) => sum + toMoney(reference.amount), 0)
-    : null;
-  const hasMatchedPayment = receivedAmount !== null;
-  const hasExactPayment =
-    receivedAmount !== null && Math.abs(receivedAmount - input.expectedAmount) <= 0.001;
-  const signedOff = input.matchedReferences.length > 0 && input.matchedReferences.every((reference) => reference.signed_off);
-
-  if (hasExactPayment) {
-    return {
-      status: 'paid',
-      overdueDays: null,
-      receivedAmount,
-      hasMatchedPayment,
-      hasExactPayment,
-      signedOff,
-      depositSplit: null,
-    };
-  }
-
-  if (hasMatchedPayment) {
-    return {
-      status: 'mismatch',
-      overdueDays: null,
-      receivedAmount,
-      hasMatchedPayment,
-      hasExactPayment,
-      signedOff,
-      depositSplit: computeDepositSplitSuggestion({
-        receivedAmount,
-        expectedAmount: input.expectedAmount,
-        depositAmount: input.depositAmount ?? 0,
-      }),
-    };
-  }
-
-  const overdueDays = input.dueDate ? diffDaysUtc(input.dueDate, input.now) : 0;
-  if (overdueDays > 0) {
-    return {
-      status: 'overdue',
-      overdueDays,
-      receivedAmount: null,
-      hasMatchedPayment: false,
-      hasExactPayment: false,
-      signedOff: false,
-      depositSplit: null,
-    };
-  }
-
-  return {
-    status: 'unpaid',
-    overdueDays: null,
-    receivedAmount: null,
-    hasMatchedPayment: false,
-    hasExactPayment: false,
-    signedOff: false,
-    depositSplit: null,
-  };
 }
 
 function buildMonthStarts(currentMonthStart: Date): Date[] {
@@ -372,6 +284,7 @@ export function buildMonthlyPaymentsDashboardSnapshot(
       let blockedCount = 0;
       let overdueCount = 0;
       let paidCount = 0;
+      let pendingCount = 0;
       let dueCount = 0;
 
       for (const unit of units) {
@@ -400,14 +313,22 @@ export function buildMonthlyPaymentsDashboardSnapshot(
         }
 
         if (status === 'paid') paidCount += 1;
+        if (status === 'pending') pendingCount += 1;
         if (status === 'overdue') overdueCount += 1;
-        if (status !== 'paid' && status !== 'blocked') dueCount += 1;
+        if (status !== 'paid' && status !== 'pending' && status !== 'blocked') dueCount += 1;
       }
 
       const matchedCollectedAmount = matchedPropertyReferences.reduce(
         (sum, reference) => sum + toMoney(reference.amount),
         0
       );
+      // Decision rule (owner, 2026-07-02): collection progress counts
+      // signed-off money only; matched-awaiting-sign-off stays visible as its
+      // own number instead of inflating "collected".
+      const signedOffCollectedAmount = matchedPropertyReferences
+        .filter((reference) => reference.signed_off)
+        .reduce((sum, reference) => sum + toMoney(reference.amount), 0);
+      const pendingCollectedAmount = matchedCollectedAmount - signedOffCollectedAmount;
       const unmatchedCollectedAmount = unmatchedPropertyReferences.reduce(
         (sum, reference) => sum + toMoney(reference.amount),
         0
@@ -420,11 +341,15 @@ export function buildMonthlyPaymentsDashboardSnapshot(
         location: property.location,
         collectedAmount,
         matchedCollectedAmount,
+        signedOffCollectedAmount,
+        pendingCollectedAmount,
         unmatchedCollectedAmount,
         expectedAmount,
-        collectionRate: expectedAmount > 0 ? matchedCollectedAmount / expectedAmount : 0,
+        collectionRate: expectedAmount > 0 ? signedOffCollectedAmount / expectedAmount : 0,
+        coverageRate: expectedAmount > 0 ? matchedCollectedAmount / expectedAmount : 0,
         occupiedCount,
         paidCount,
+        pendingCount,
         dueCount,
         overdueCount,
         blockedCount,
@@ -451,11 +376,15 @@ export function buildMonthlyPaymentsDashboardSnapshot(
         location: 'Imported bank references',
         collectedAmount,
         matchedCollectedAmount: 0,
+        signedOffCollectedAmount: 0,
+        pendingCollectedAmount: 0,
         unmatchedCollectedAmount: collectedAmount,
         expectedAmount: 0,
         collectionRate: 0,
+        coverageRate: 0,
         occupiedCount: 0,
         paidCount: 0,
+        pendingCount: 0,
         dueCount: references.length,
         overdueCount: 0,
         blockedCount: 0,
@@ -473,20 +402,28 @@ export function buildMonthlyPaymentsDashboardSnapshot(
     const rollingTotal = locations.reduce(
       (summary, location) => ({
         collectedAmount: summary.collectedAmount + location.collectedAmount,
+        matchedCollectedAmount: summary.matchedCollectedAmount + location.matchedCollectedAmount,
+        signedOffCollectedAmount: summary.signedOffCollectedAmount + location.signedOffCollectedAmount,
+        pendingCollectedAmount: summary.pendingCollectedAmount + location.pendingCollectedAmount,
         expectedAmount: summary.expectedAmount + location.expectedAmount,
         occupiedCount: summary.occupiedCount + location.occupiedCount,
         blockedCount: summary.blockedCount + location.blockedCount,
         overdueCount: summary.overdueCount + location.overdueCount,
         paidCount: summary.paidCount + location.paidCount,
+        pendingCount: summary.pendingCount + location.pendingCount,
         dueCount: summary.dueCount + location.dueCount,
       }),
       {
         collectedAmount: 0,
+        matchedCollectedAmount: 0,
+        signedOffCollectedAmount: 0,
+        pendingCollectedAmount: 0,
         expectedAmount: 0,
         occupiedCount: 0,
         blockedCount: 0,
         overdueCount: 0,
         paidCount: 0,
+        pendingCount: 0,
         dueCount: 0,
       }
     );
@@ -508,17 +445,37 @@ export function buildMonthlyPaymentsDashboardSnapshot(
       }).format(monthStart),
       collectedAmount: rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount,
       expectedAmount: rollingTotal.expectedAmount,
+      // Decision rule: collection progress = signed-off money / expected.
+      // Total money arrived (incl. unmatched) stays visible via collectedAmount.
       collectionRate:
         rollingTotal.expectedAmount > 0
-          ? (rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount) / rollingTotal.expectedAmount
+          ? rollingTotal.signedOffCollectedAmount / rollingTotal.expectedAmount
+          : 0,
+      // Operator-facing month progress = money already worked into unit rows,
+      // even if some of it is still awaiting sign-off.
+      coverageRate:
+        rollingTotal.expectedAmount > 0
+          ? rollingTotal.matchedCollectedAmount / rollingTotal.expectedAmount
           : 0,
       isCurrent: monthKey === currentMonthKey,
       rollingTotal: {
         ...rollingTotal,
         collectedAmount: rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount,
+        // Every rand that arrived is either signed off, awaiting sign-off, or
+        // unmatched — nothing may become invisible (owner report 2026-07-02).
+        unmatchedCollectedAmount: roundMoney(
+          rollingTotal.collectedAmount +
+            unmatchedPropertylessCollectedAmount -
+            rollingTotal.signedOffCollectedAmount -
+            rollingTotal.pendingCollectedAmount
+        ),
         collectionRate:
           rollingTotal.expectedAmount > 0
-            ? (rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount) / rollingTotal.expectedAmount
+            ? rollingTotal.signedOffCollectedAmount / rollingTotal.expectedAmount
+            : 0,
+        coverageRate:
+          rollingTotal.expectedAmount > 0
+            ? rollingTotal.matchedCollectedAmount / rollingTotal.expectedAmount
             : 0,
       },
       locations,
@@ -529,12 +486,18 @@ export function buildMonthlyPaymentsDashboardSnapshot(
   const selectedMonth = recentMonths.find((month) => month.key === currentMonthKey) ?? recentMonths.at(2);
   const rollingTotal = selectedMonth?.rollingTotal ?? {
     collectedAmount: 0,
+    matchedCollectedAmount: 0,
+    signedOffCollectedAmount: 0,
+    pendingCollectedAmount: 0,
+    unmatchedCollectedAmount: 0,
     expectedAmount: 0,
     collectionRate: 0,
+    coverageRate: 0,
     occupiedCount: 0,
     blockedCount: 0,
     overdueCount: 0,
     paidCount: 0,
+    pendingCount: 0,
     dueCount: 0,
   };
   const locations = selectedMonth?.locations ?? [];
@@ -657,8 +620,6 @@ export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDas
 // Per-unit table (match & sign-off view) — Hamba Trading › <property> › Units
 // ---------------------------------------------------------------------------
 
-export type UnitTableStatus = 'paid' | 'unpaid' | 'partial' | 'mismatch' | 'overdue' | 'blocked';
-
 export type UnitTableRow = {
   unitId: string;
   label: string;
@@ -677,8 +638,26 @@ export type UnitTableRow = {
   locked: boolean;
   status: UnitTableStatus;
   overdueDays: number | null;
+  outstandingAmount: number | null;
   depositAmount: number;
+  /** Running deposit-ledger balance for this unit (all periods, non-reversed). */
+  depositBalance: number;
+  /** Deposit amount accepted out of this period's matched references. */
+  depositContributedAmount: number;
   depositSplit: DepositSplitSuggestion | null;
+  /** Held surplus credit (FR-2.8 rulings 2026-07-03): credits − allocations. */
+  creditBalance: number;
+  /** Credit applied to THIS period via arrears/advance allocations. */
+  creditAppliedAmount: number;
+  /** Allocation destinations available right now (null when no credit held). */
+  creditOptions: CreditAllocationOptions | null;
+  /** Active (non-reversed) allocations for the reverse action. */
+  creditAllocations: Array<{
+    id: string;
+    amount: number;
+    destination: 'arrears' | 'advance' | 'deposit';
+    targetPeriodStart: string | null;
+  }>;
 };
 
 export type ReferencePoolRow = {
@@ -706,9 +685,16 @@ export type PropertyUnitsTable = {
     unitCount: number;
     blockedCount: number;
     paidCount: number;
+    /** Units fully covered but awaiting sign-off — action: sign off, don't chase. */
+    pendingCount: number;
     dueCount: number;
     overdueCount: number;
+    /** Signed-off money only (decision-grade collected). */
     collected: number;
+    /** Matched money still awaiting sign-off. */
+    pendingAmount: number;
+    /** Rent still owed across partial rows. */
+    outstandingAmount: number;
     expected: number;
     unmatchedCount: number;
     unmatchedAmount: number;
@@ -1286,9 +1272,12 @@ export async function readPropertyUnitsTable(
         unitCount: 0,
         blockedCount: 0,
         paidCount: 0,
+        pendingCount: 0,
         dueCount: 0,
         overdueCount: 0,
         collected: 0,
+        pendingAmount: 0,
+        outstandingAmount: 0,
         expected: 0,
         unmatchedCount: 0,
         unmatchedAmount: 0,
@@ -1387,10 +1376,130 @@ export async function readPropertyUnitsTable(
     }
   }
 
+  // Deposit ledger (FR-2.8): per-reference accepted contributions and each
+  // unit's running balance toward its deposit target. Missing table (migration
+  // not applied) degrades to zeros.
+  const contributionsByReference = new Map<string, number>();
+  const depositBalanceByUnit = new Map<string, number>();
+  if (unitIds.length > 0) {
+    const { data: contributions, error: contributionsError } = await admin
+      .from('deposit_contributions')
+      .select('unit_id,payment_reference_id,amount')
+      .in('unit_id', unitIds)
+      .is('reversed_at', null);
+    if (contributionsError && !isMissingRelation(contributionsError)) {
+      throw new Error(`Failed to load deposit contributions: ${contributionsError.message}`);
+    }
+    for (const contribution of contributions ?? []) {
+      const amount = toMoney(contribution.amount as number | string);
+      const unitId = contribution.unit_id as string;
+      depositBalanceByUnit.set(unitId, roundMoney((depositBalanceByUnit.get(unitId) ?? 0) + amount));
+      const referenceId = contribution.payment_reference_id as string | null;
+      if (referenceId) {
+        contributionsByReference.set(referenceId, roundMoney((contributionsByReference.get(referenceId) ?? 0) + amount));
+      }
+    }
+  }
+
+  // Credit ledger (FR-2.8, owner rulings 2026-07-03): held balance per unit,
+  // credit applied per period, active allocations, and arrears candidates for
+  // the allocate action. Missing tables degrade to zeros.
+  const creditBalanceByUnit = new Map<string, number>();
+  const creditAppliedByPeriod = new Map<string, number>();
+  const creditAllocationsByUnit = new Map<
+    string,
+    Array<{ id: string; amount: number; destination: 'arrears' | 'advance' | 'deposit'; targetPeriodId: string | null }>
+  >();
+  const arrearsCandidatesByUnit = new Map<
+    string,
+    Array<{ periodId: string; periodStart: string; outstandingAmount: number }>
+  >();
+  const periodStartById = new Map<string, string>();
+  if (unitIds.length > 0) {
+    const windowStart = shiftPeriodStart(monthStartDate, -3);
+    const [creditsResult, allocationsResult, pastPeriodsResult] = await Promise.all([
+      admin.from('unit_credits').select('unit_id,amount').in('unit_id', unitIds).is('reversed_at', null),
+      admin
+        .from('unit_credit_allocations')
+        .select('id,unit_id,amount,destination,target_period_id')
+        .in('unit_id', unitIds)
+        .is('reversed_at', null),
+      admin
+        .from('unit_payment_periods')
+        .select('id,unit_id,period_start,expected_amount,is_blocked')
+        .in('unit_id', unitIds)
+        .gte('period_start', windowStart)
+        .lt('period_start', monthStartDate),
+    ]);
+    if (creditsResult.error && !isMissingRelation(creditsResult.error)) {
+      throw new Error(`Failed to load unit credits: ${creditsResult.error.message}`);
+    }
+    if (allocationsResult.error && !isMissingRelation(allocationsResult.error)) {
+      throw new Error(`Failed to load credit allocations: ${allocationsResult.error.message}`);
+    }
+    if (pastPeriodsResult.error && !isMissingRelation(pastPeriodsResult.error)) {
+      throw new Error(`Failed to load arrears candidates: ${pastPeriodsResult.error.message}`);
+    }
+
+    for (const credit of creditsResult.data ?? []) {
+      const unitId = credit.unit_id as string;
+      creditBalanceByUnit.set(unitId, roundMoney((creditBalanceByUnit.get(unitId) ?? 0) + toMoney(credit.amount as number | string)));
+    }
+    for (const allocation of allocationsResult.data ?? []) {
+      const unitId = allocation.unit_id as string;
+      const amount = toMoney(allocation.amount as number | string);
+      creditBalanceByUnit.set(unitId, roundMoney((creditBalanceByUnit.get(unitId) ?? 0) - amount));
+      const destination = allocation.destination as 'arrears' | 'advance' | 'deposit';
+      const targetPeriodId = (allocation.target_period_id as string | null) ?? null;
+      if (targetPeriodId && destination !== 'deposit') {
+        creditAppliedByPeriod.set(targetPeriodId, roundMoney((creditAppliedByPeriod.get(targetPeriodId) ?? 0) + amount));
+      }
+      const list = creditAllocationsByUnit.get(unitId) ?? [];
+      list.push({ id: allocation.id as string, amount, destination, targetPeriodId });
+      creditAllocationsByUnit.set(unitId, list);
+    }
+
+    const pastPeriodIds = (pastPeriodsResult.data ?? []).map((row) => row.id as string);
+    for (const row of pastPeriodsResult.data ?? []) {
+      periodStartById.set(row.id as string, row.period_start as string);
+    }
+    if (pastPeriodIds.length > 0) {
+      const { data: pastRefs, error: pastRefsError } = await admin
+        .from('payment_references')
+        .select('unit_payment_period_id,amount')
+        .in('unit_payment_period_id', pastPeriodIds);
+      if (pastRefsError && !isMissingRelation(pastRefsError)) {
+        throw new Error(`Failed to load arrears references: ${pastRefsError.message}`);
+      }
+      const receivedByPeriod = new Map<string, number>();
+      for (const row of pastRefs ?? []) {
+        const periodId = row.unit_payment_period_id as string | null;
+        if (!periodId) continue;
+        receivedByPeriod.set(periodId, roundMoney((receivedByPeriod.get(periodId) ?? 0) + toMoney(row.amount as number | string)));
+      }
+      for (const row of pastPeriodsResult.data ?? []) {
+        if (row.is_blocked) continue;
+        const periodId = row.id as string;
+        const outstanding = roundMoney(
+          toMoney(row.expected_amount) - (receivedByPeriod.get(periodId) ?? 0) - (creditAppliedByPeriod.get(periodId) ?? 0)
+        );
+        if (outstanding > 0.001) {
+          const unitId = row.unit_id as string;
+          const list = arrearsCandidatesByUnit.get(unitId) ?? [];
+          list.push({ periodId, periodStart: row.period_start as string, outstandingAmount: outstanding });
+          arrearsCandidatesByUnit.set(unitId, list);
+        }
+      }
+    }
+  }
+
   let collected = 0;
+  let pendingAmountTotal = 0;
+  let outstandingTotal = 0;
   let expectedTotal = 0;
   let blockedCount = 0;
   let paidCount = 0;
+  let pendingCount = 0;
   let dueCount = 0;
   let overdueCount = 0;
 
@@ -1404,19 +1513,37 @@ export async function readPropertyUnitsTable(
     const matched = (referencesByUnit.get(unit.id) ?? []).slice().sort((a, b) => (a.received_at < b.received_at ? 1 : -1));
     const primary = matched[0] ?? null;
     const depositAmount = toMoney(unit.deposit_amount);
+    const depositBalance = depositBalanceByUnit.get(unit.id) ?? 0;
+    const depositContributedAmount = matched.reduce(
+      (sum, reference) => sum + (contributionsByReference.get(reference.id) ?? 0),
+      0
+    );
+    const creditBalance = creditBalanceByUnit.get(unit.id) ?? 0;
+    const creditAppliedAmount = period?.id ? (creditAppliedByPeriod.get(period.id) ?? 0) : 0;
     const statusState = computeUnitStatus({
       occupancyStatus: unit.occupancy_status,
       isBlocked,
       expectedAmount,
-      depositAmount,
+      // Split suggestions only get the REMAINING deposit headroom.
+      depositAmount: roundMoney(Math.max(0, depositAmount - depositBalance)),
+      depositContributedAmount,
+      creditAppliedAmount,
       matchedReferences: matched,
       dueDate: period?.due_date ?? billingWindow.endDate,
       now,
     });
-    if (statusState.receivedAmount !== null) collected += statusState.receivedAmount;
+    // Decision rule: only signed-off money counts as collected.
+    collected += statusState.signedOffAmount;
+    pendingAmountTotal += statusState.pendingAmount;
+    outstandingTotal += statusState.outstandingAmount ?? 0;
     if (statusState.status === 'paid') paidCount += 1;
+    if (statusState.status === 'pending') pendingCount += 1;
     if (statusState.status === 'overdue') overdueCount += 1;
-    if (statusState.status !== 'paid' && statusState.status !== 'blocked') dueCount += 1;
+    // "Due" = money not fully received (chase list). Pending is excluded — the
+    // money arrived; the action is sign-off, not follow-up.
+    if (statusState.status !== 'paid' && statusState.status !== 'pending' && statusState.status !== 'blocked') {
+      dueCount += 1;
+    }
 
     return {
       unitId: unit.id,
@@ -1436,8 +1563,30 @@ export async function readPropertyUnitsTable(
       locked: statusState.signedOff,
       status: statusState.status,
       overdueDays: statusState.overdueDays,
+      outstandingAmount: statusState.outstandingAmount,
       depositAmount,
+      depositBalance,
+      depositContributedAmount,
       depositSplit: statusState.depositSplit,
+      creditBalance,
+      creditAppliedAmount,
+      creditOptions: isBlocked
+        ? null
+        : computeCreditAllocationOptions({
+            creditBalance,
+            selectedPeriodStart: monthStartDate,
+            arrearsCandidates: arrearsCandidatesByUnit.get(unit.id) ?? [],
+            depositHeadroom: roundMoney(Math.max(0, depositAmount - depositBalance)),
+          }),
+      creditAllocations: (creditAllocationsByUnit.get(unit.id) ?? []).map((allocation) => ({
+        id: allocation.id,
+        amount: allocation.amount,
+        destination: allocation.destination,
+        targetPeriodStart: allocation.targetPeriodId
+          ? (periodStartById.get(allocation.targetPeriodId) ??
+             (period?.id === allocation.targetPeriodId ? monthStartDate : null))
+          : null,
+      })),
     };
   });
 
@@ -1499,9 +1648,12 @@ export async function readPropertyUnitsTable(
       unitCount: units.length,
       blockedCount,
       paidCount,
+      pendingCount,
       dueCount,
       overdueCount,
       collected,
+      pendingAmount: roundMoney(pendingAmountTotal),
+      outstandingAmount: roundMoney(outstandingTotal),
       expected: expectedTotal,
       unmatchedCount: referencePool.length,
       unmatchedAmount,

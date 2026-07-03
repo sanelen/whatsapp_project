@@ -1,5 +1,6 @@
 import { createHash, createSign } from 'node:crypto';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { tokenizeMatcherValue } from '@/lib/auto-match';
 import {
   DRIVE_ARCHIVE_ROOT_FOLDER,
   downloadFile as downloadDriveFile,
@@ -748,7 +749,9 @@ function matchesUnitMatchHint(entry: ParsedCapitecEntry, hint: BankImportUnitMat
   const normalizedReference = normalizeReference(entry.reference);
 
   if (hint.matcher_type === 'reference_contains') {
-    return normalizedReference.includes(normalizeReference(hint.matcher_value));
+    // Rule values are comma/space separated token lists (see
+    // tokenizeMatcherValue in auto-match.ts) — any token hit counts.
+    return tokenizeMatcherValue(hint.matcher_value).some((token) => normalizedReference.includes(token));
   }
   if (hint.matcher_type === 'reference_equals') {
     return normalizedReference === normalizeReference(hint.matcher_value);

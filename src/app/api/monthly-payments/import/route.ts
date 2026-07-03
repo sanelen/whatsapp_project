@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireApiAuth } from '@/lib/auth/api-guard';
 import { runBankImport, type BankImportSource } from '@/lib/bank-import';
-import { ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
+import { autoMatchUnmatchedReferences, ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
 
 function normalizeSource(value: string | null | undefined): BankImportSource {
   const normalized = value?.trim().toLowerCase();
@@ -44,10 +44,14 @@ export async function GET(request: NextRequest) {
     if (billingPeriod) {
       await ensurePaymentPeriodsForPeriod({ periodKey: billingPeriod });
     }
+    // Auto-match job (owner request 2026-07-02): every import ends with a
+    // matching pass — unambiguous rule hits get matched (never signed off).
+    const autoMatch = await autoMatchUnmatchedReferences({ actor: 'auto-match (bank import)' });
 
     return NextResponse.json({
       success: true,
       data,
+      autoMatch,
       triggeredAt: new Date().toISOString(),
       mode: isCronAuthorized(request) ? 'cron' : 'manual',
     });
@@ -88,10 +92,12 @@ export async function POST(request: NextRequest) {
     if (body.billingPeriod?.trim()) {
       await ensurePaymentPeriodsForPeriod({ periodKey: body.billingPeriod.trim() });
     }
+    const autoMatch = await autoMatchUnmatchedReferences({ actor: 'auto-match (bank import)' });
 
     return NextResponse.json({
       success: true,
       data,
+      autoMatch,
       triggeredAt: new Date().toISOString(),
       mode: isCronAuthorized(request) ? 'cron' : 'manual',
     });

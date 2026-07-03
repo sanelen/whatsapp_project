@@ -3,10 +3,9 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import type { MonthlyPaymentsDashboardSnapshot } from '@/lib/monthly-payments';
 import { BankImportControls } from './bank-import-controls';
-import { MonthlyPaymentsShell } from './monthly-payments-shell';
 
 type MonthlyPaymentsHubProps = {
   dashboard: MonthlyPaymentsDashboardSnapshot;
@@ -14,8 +13,8 @@ type MonthlyPaymentsHubProps = {
 
 function formatCurrency(amount: number): string {
   return `R ${amount.toLocaleString('en-ZA', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   })}`;
 }
 
@@ -27,7 +26,6 @@ function progressWidth(value: number): string {
   return `${Math.max(0, Math.min(100, Math.round(value * 100)))}%`;
 }
 
-// Compact rand for tight spaces (month cards): R21k, R1.5k, R750.
 function formatCompactCurrency(amount: number): string {
   if (amount >= 1000) {
     const thousands = amount / 1000;
@@ -36,15 +34,11 @@ function formatCompactCurrency(amount: number): string {
   return `R${Math.round(amount)}`;
 }
 
-// When no expected target is set, a collected/expected percentage is undefined.
-// Show "—" instead of a misleading 0% so the rand amounts carry the meaning.
 function rateLabel(collected: number, expected: number, rate: number): string {
   if (expected > 0) return `${Math.round(rate * 100)}%`;
-  return collected > 0 ? '—' : '0%';
+  return collected > 0 ? '-' : '0%';
 }
 
-// Fill the bar from collected money even when there is no expected target,
-// so deposits are visually reflected rather than leaving the bar empty.
 function barWidth(collected: number, expected: number, rate: number): string {
   if (expected > 0) return progressWidth(rate);
   return collected > 0 ? '100%' : '0%';
@@ -57,13 +51,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
   const [selectedPeriod, setSelectedPeriod] = useState(currentPeriod);
   const router = useRouter();
   const [isRefreshing, startRefresh] = useTransition();
-  // Refresh re-reads the dashboard snapshot from the database (server component).
-  // It must NOT trigger a bank import — importing only happens via the Import button.
-  function refreshFromDatabase() {
-    startRefresh(() => {
-      router.refresh();
-    });
-  }
+
   const selectedMonth = useMemo(
     () => dashboard.recentMonths.find((month) => month.key === selectedPeriod) ?? dashboard.recentMonths.at(2),
     [dashboard.recentMonths, selectedPeriod]
@@ -72,18 +60,22 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
   const selectedLocations = selectedMonth?.locations ?? dashboard.locations;
   const selectedUnmatchedReferenceCount =
     selectedMonth?.unmatchedReferenceCount ?? dashboard.unmatchedReferenceCount;
+  const selectedMonthIndex = dashboard.recentMonths.findIndex((month) => month.key === selectedPeriod);
+  const maxMonthCollected = Math.max(0, ...dashboard.recentMonths.map((month) => month.collectedAmount));
   const primaryLocationLink = useMemo(() => {
     const propertyLocation = selectedLocations.find((location) => !location.id.startsWith('inferred:'));
     if (!propertyLocation) return '/monthly-payments/locations';
     return `/monthly-payments/${propertyLocation.id}?period=${selectedPeriod}`;
   }, [selectedLocations, selectedPeriod]);
-  const selectedMonthIndex = dashboard.recentMonths.findIndex((month) => month.key === selectedPeriod);
-  // For months with no expected target, size the mini-bars by collected money
-  // relative to the busiest month so you can still compare where money came in.
-  const maxMonthCollected = Math.max(0, ...dashboard.recentMonths.map((month) => month.collectedAmount));
+
+  function refreshFromDatabase() {
+    startRefresh(() => {
+      router.refresh();
+    });
+  }
 
   function monthBarHeight(month: MonthlyPaymentsDashboardSnapshot['recentMonths'][number]): string {
-    if (month.expectedAmount > 0) return progressWidth(month.collectionRate);
+    if (month.expectedAmount > 0) return progressWidth(month.coverageRate);
     if (month.collectedAmount > 0 && maxMonthCollected > 0) {
       return progressWidth(month.collectedAmount / maxMonthCollected);
     }
@@ -93,331 +85,327 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
   function moveSelectedMonth(direction: -1 | 1) {
     if (selectedMonthIndex === -1) return;
     const nextMonth = dashboard.recentMonths[selectedMonthIndex + direction];
-    if (nextMonth) {
-      setSelectedPeriod(nextMonth.key);
-    }
-  }
-
-  function openProperty(propertyId: string) {
-    router.push(`/monthly-payments/${propertyId}?period=${selectedPeriod}`);
+    if (nextMonth) setSelectedPeriod(nextMonth.key);
   }
 
   return (
-    <MonthlyPaymentsShell active="dashboard" operationsHref={primaryLocationLink}>
-      <section className="rounded-[30px] border border-white/80 bg-white/88 p-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-                {dashboard.organizationLabel} · all locations
-              </p>
-              <h2 className="mt-2 text-[2.2rem] font-semibold tracking-tight text-slate-950 sm:text-[2.6rem]">
-                Where are we this month?
-              </h2>
-            </div>
-
-            <div className="inline-flex items-center overflow-hidden rounded-2xl border border-slate-300 bg-white text-sm font-semibold text-slate-950 shadow-sm">
-              <button
-                type="button"
-                onClick={() => moveSelectedMonth(-1)}
-                disabled={selectedMonthIndex <= 0}
-                className="border-r border-slate-300 px-4 py-3 text-slate-500 disabled:text-slate-300"
-              >
-                ‹
-              </button>
-              <span className="px-5 py-3">
-                {selectedMonth ? `${selectedMonth.label} ${selectedPeriod.slice(0, 4)}` : dashboard.monthLabel}
-              </span>
-              <button
-                type="button"
-                onClick={() => moveSelectedMonth(1)}
-                disabled={selectedMonthIndex === -1 || selectedMonthIndex >= dashboard.recentMonths.length - 1}
-                className="border-l border-slate-300 px-4 py-3 text-slate-500 disabled:text-slate-300"
-                title="Next month"
-              >
-                ›
-              </button>
-            </div>
+    <main className="min-h-screen bg-[#f6f4ef] text-[#1c1a17]">
+      <div className="flex min-h-screen">
+        <aside className="hidden w-[260px] shrink-0 flex-col gap-[26px] bg-[#0f172a] px-[18px] py-[22px] text-white lg:flex">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#7dd3fc]">
+              Monthly Payments
+            </p>
+            <p className="mt-2 text-[22px] font-bold tracking-normal">Workspace</p>
           </div>
+          <nav className="flex flex-col gap-1.5">
+            <Link href="/monthly-payments" className="rounded-xl bg-sky-300/15 px-3 py-2.5 text-[13.5px] font-semibold text-white">
+              Dashboard
+            </Link>
+            <Link href="/monthly-payments/locations" className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+              Locations
+            </Link>
+            <Link href={primaryLocationLink} className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+              Match & sign off
+            </Link>
+            <Link href={`/monthly-payments/reference-pool?period=${selectedPeriod}`} className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+              Reference pool
+            </Link>
+          </nav>
+          <div className="mt-auto flex gap-2 border-t border-white/10 pt-4">
+            <Link href="/" className="flex-1 rounded-full bg-white py-2.5 text-center text-[12.5px] font-bold text-[#0f172a]">
+              Home
+            </Link>
+            <Link href="/property-assistance" className="flex-1 rounded-full border border-white/20 py-2.5 text-center text-[12.5px] font-bold text-white">
+              Chatbox
+            </Link>
+          </div>
+        </aside>
 
-          {currentPeriod ? (
-            <BankImportControls
-              defaultPeriod={currentPeriod}
-              selectedPeriod={selectedPeriod}
-              onSelectedPeriodChange={setSelectedPeriod}
-              onImported={refreshFromDatabase}
-              periods={dashboard.recentMonths.map((month) => ({
-                key: month.key,
-                label: month.label,
-                isCurrent: month.isCurrent,
-              }))}
-            />
-          ) : null}
+        <div className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+          <div className="mx-auto max-w-[960px]">
+            <nav className="text-[13px] text-[#8a8578]">
+              <Link href="/monthly-payments" className="hover:text-[#292524]">
+                {dashboard.organizationLabel}
+              </Link>
+              <span className="mx-1.5 text-[#c7c2b4]">›</span>
+              <span>all locations</span>
+            </nav>
 
-          <section className="mt-5 rounded-[24px] border border-slate-200 bg-[#fcfcfa] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Recent months - tap to view
-              </p>
-              <button
-                type="button"
-                onClick={refreshFromDatabase}
-                disabled={isRefreshing}
-                className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-sky-400 hover:text-sky-800 disabled:cursor-wait disabled:text-slate-400"
-              >
-                <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : undefined} />
-                Refresh {selectedMonth?.label ?? 'month'}
-              </button>
-            </div>
-            <div className="mt-3 grid grid-cols-5 gap-2 sm:gap-2.5">
-              {dashboard.recentMonths.map((month) => (
-                <button
-                  key={month.key}
-                  type="button"
-                  onClick={() => setSelectedPeriod(month.key)}
-                  className={`rounded-[18px] border px-2.5 py-2 text-center transition ${
-                    month.key === selectedPeriod
-                      ? 'border-slate-900 bg-white shadow-sm'
-                      : 'border-slate-200 bg-white/80 hover:border-sky-300 hover:bg-white'
-                  }`}
-                >
-                  <div className="mx-auto flex h-10 w-8 items-end justify-center">
-                    <div className="flex h-8 w-4 items-end overflow-hidden rounded-[4px] border border-slate-300 bg-slate-100">
-                      <div
-                        className={`w-full ${
-                          month.key === selectedPeriod
-                            ? 'bg-[repeating-linear-gradient(45deg,rgba(14,165,233,0.35),rgba(14,165,233,0.35)_8px,rgba(15,118,110,0.25)_8px,rgba(15,118,110,0.25)_16px)]'
-                            : 'bg-slate-300/80'
-                        }`}
-                        style={{ height: monthBarHeight(month) }}
-                      />
-                    </div>
-                  </div>
-                  <p
-                    className={`mt-1.5 text-[0.92rem] font-semibold ${
-                      month.key === selectedPeriod ? 'text-slate-950' : 'text-slate-500'
-                    }`}
-                  >
-                    {month.label}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    {(() => {
-                      const value =
-                        month.expectedAmount > 0
-                          ? formatPercent(month.collectionRate)
-                          : month.collectedAmount > 0
-                            ? formatCompactCurrency(month.collectedAmount)
-                            : '0%';
-                      return month.key === selectedPeriod ? `${value} ●` : value;
-                    })()}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="mt-5 rounded-[24px] border-2 border-slate-300 bg-[#fcfcfa] p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Rolling total - collected vs expected
-              </p>
-              <p className="text-sm font-semibold text-slate-500">
-                  {rateLabel(
-                  selectedRollingTotal.collectedAmount,
-                  selectedRollingTotal.expectedAmount,
-                  selectedRollingTotal.collectionRate
-                )}
-              </p>
-            </div>
-
-            <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="mt-2.5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-[2.45rem] font-semibold tracking-tight text-slate-950 sm:text-[2.7rem]">
-                  {formatCurrency(selectedRollingTotal.collectedAmount)}
-                </p>
-                <p className="mt-1 text-sm text-slate-500 sm:text-base">
-                  / {formatCurrency(selectedRollingTotal.expectedAmount)} expected
+                <h1 className="m-0 text-[30px] font-bold tracking-normal text-[#1c1a17]">
+                  Where are we this month?
+                </h1>
+                <p className="mt-1.5 text-[13.5px] text-[#8a8578]">
+                  {selectedMonth ? `${selectedMonth.label} ${selectedPeriod.slice(0, 4)}` : dashboard.monthLabel} summary across all locations.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-4 text-sm font-medium text-slate-500">
-                <span className="inline-flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-slate-500" />
-                  occupied {selectedRollingTotal.occupiedCount}
+
+              <div className="inline-flex w-fit items-center overflow-hidden rounded-full border border-[#e7e3d6] bg-white">
+                <button
+                  type="button"
+                  onClick={() => moveSelectedMonth(-1)}
+                  disabled={selectedMonthIndex <= 0}
+                  className="px-3 py-2 text-sm text-[#57534e] disabled:text-[#c7c2b4]"
+                  aria-label="Previous month"
+                >
+                  ‹
+                </button>
+                <span className="min-w-[88px] px-2.5 py-2 text-center text-[13.5px] font-semibold text-[#1c1a17]">
+                  {selectedMonth ? `${selectedMonth.label} ${selectedPeriod.slice(0, 4)}` : dashboard.monthLabel}
                 </span>
-                <span className="inline-flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full border border-slate-400 bg-white" />
-                  blocked {selectedRollingTotal.blockedCount}
-                </span>
-                <span className="inline-flex items-center gap-2 text-emerald-600">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  {selectedRollingTotal.paidCount} paid
-                </span>
-                <span className="inline-flex items-center gap-2 text-amber-700">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  {selectedRollingTotal.dueCount} due
-                </span>
-                <span className="inline-flex items-center gap-2 text-rose-600">
-                  <span className="text-xs">▲</span>
-                  {selectedRollingTotal.overdueCount} overdue
-                </span>
+                <button
+                  type="button"
+                  onClick={() => moveSelectedMonth(1)}
+                  disabled={selectedMonthIndex === -1 || selectedMonthIndex >= dashboard.recentMonths.length - 1}
+                  className="px-3 py-2 text-sm text-[#57534e] disabled:text-[#c7c2b4]"
+                  aria-label="Next month"
+                >
+                  ›
+                </button>
               </div>
             </div>
 
-            {selectedUnmatchedReferenceCount > 0 ? (
-              <p className="mt-3 text-sm text-slate-500">
-                {selectedUnmatchedReferenceCount} unmatched deposits are still sitting outside unit rows for this billing window.
-              </p>
+            {currentPeriod ? (
+              <BankImportControls
+                defaultPeriod={currentPeriod}
+                selectedPeriod={selectedPeriod}
+                onSelectedPeriodChange={setSelectedPeriod}
+                onImported={refreshFromDatabase}
+                periods={dashboard.recentMonths.map((month) => ({
+                  key: month.key,
+                  label: month.label,
+                  isCurrent: month.isCurrent,
+                }))}
+              />
             ) : null}
 
-            <div className="mt-4 h-4 overflow-hidden rounded-full border border-slate-300 bg-white">
-              <div
-                className="h-full bg-[repeating-linear-gradient(45deg,#0ea5e9,#0ea5e9_8px,#0f766e_8px,#0f766e_16px)]"
-                style={{
-                  width: barWidth(
-                    selectedRollingTotal.collectedAmount,
-                    selectedRollingTotal.expectedAmount,
-                    selectedRollingTotal.collectionRate
-                  ),
-                }}
-              />
-            </div>
-          </section>
-
-          <section className="mt-6">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  By location
+            <section className="mt-3 rounded-[14px] border border-[#e7e3d6] bg-white px-3 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.07em] text-[#a39d8d]">
+                  Recent months
                 </p>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Each card rolls up expected versus collected income for the selected billing month.
-                </p>
+                <button
+                  type="button"
+                  onClick={refreshFromDatabase}
+                  disabled={isRefreshing}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#e7e3d6] bg-white px-3 text-[12px] font-bold text-[#57534e] disabled:cursor-wait disabled:text-[#a39d8d]"
+                >
+                  <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : undefined} />
+                  Refresh {selectedMonth?.label ?? 'month'}
+                </button>
               </div>
-            </div>
-
-            {isMissingTables ? (
-              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-6">
-                <p className="text-lg font-semibold text-slate-900">
-                  Payments tables are not available in the connected database yet
-                </p>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                  The code is now expecting `property_units`, `unit_payment_periods`, and
-                  `payment_references`. Apply the new migration before loading live dashboard data.
-                </p>
-              </div>
-            ) : isEmpty ? (
-              <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-6">
-                <p className="text-lg font-semibold text-slate-900">No dashboard locations yet</p>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                  Organizations and properties are ready, but the dashboard still needs units and
-                  payment-period rows before the monthly summary can fill out.
-                </p>
-              </div>
-            ) : (
-              <div className="mt-5 grid gap-3 lg:grid-cols-3">
-                {selectedLocations.map((location) => {
-                  const isProperty = !location.id.startsWith('inferred:');
-                  const cardClassName =
-                    'block rounded-[18px] border border-slate-300 bg-[#fcfcfa] p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]' +
-                    (isProperty ? ' transition hover:-translate-y-0.5 hover:border-sky-400 hover:shadow-md' : '');
-                  const cardBody = (
-                    <>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-[1.15rem] font-semibold text-slate-950">{location.name}</h3>
-                        <p className="mt-1 text-sm text-slate-500">
-                          {formatCurrency(location.matchedCollectedAmount)} / {formatCurrency(location.expectedAmount)}
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-                        {rateLabel(location.matchedCollectedAmount, location.expectedAmount, location.collectionRate)}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 h-2.5 overflow-hidden rounded-full border border-slate-300 bg-white">
-                      <div
-                        className="h-full bg-[linear-gradient(90deg,#0ea5e9_0%,#0f766e_100%)]"
-                        style={{ width: barWidth(location.matchedCollectedAmount, location.expectedAmount, location.collectionRate) }}
-                      />
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-                      <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">
-                          {location.paidCount} paid
-                      </span>
-                      <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">
-                        {location.dueCount} due
-                      </span>
-                      {location.overdueCount > 0 ? (
-                        <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
-                          {location.overdueCount} overdue
-                        </span>
-                      ) : null}
-                    </div>
-                    {location.unmatchedReferenceCount > 0 ? (
-                      <p className="mt-3 text-xs leading-5 text-slate-500">
-                        {location.unmatchedReferenceCount} unmatched refs waiting · {formatCurrency(location.unmatchedCollectedAmount)}
-                      </p>
-                    ) : null}
-                    {isProperty ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Link
-                          href={`/monthly-payments/${location.id}?period=${selectedPeriod}`}
-                          onClick={(event) => event.stopPropagation()}
-                          className="inline-flex items-center rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white"
-                        >
-                          Open units
-                        </Link>
-                        <Link
-                          href={`/monthly-payments/locations/${location.id}?period=${selectedPeriod}`}
-                          onClick={(event) => event.stopPropagation()}
-                          className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:border-sky-300 hover:text-sky-800"
-                        >
-                          Manage rooms
-                        </Link>
-                      </div>
-                    ) : null}
-                    </>
-                  );
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {dashboard.recentMonths.map((month) => {
+                  const active = month.key === selectedPeriod;
+                  const metric =
+                    month.expectedAmount > 0
+                      ? formatPercent(month.coverageRate)
+                      : month.collectedAmount > 0
+                        ? formatCompactCurrency(month.collectedAmount)
+                        : '0%';
                   return (
-                    <article
-                      key={location.id}
-                      onClick={isProperty ? () => openProperty(location.id) : undefined}
-                      className={
-                        cardClassName +
-                        (isProperty ? ' cursor-pointer' : ' opacity-95')
-                      }
+                    <button
+                      key={month.key}
+                      type="button"
+                      onClick={() => setSelectedPeriod(month.key)}
+                      className={`min-w-[64px] flex-1 rounded-xl border p-2 text-left ${
+                        active ? 'border-[#1c1a17] bg-[#fbfaf6]' : 'border-[#e7e3d6] bg-white'
+                      }`}
                     >
-                      {cardBody}
-                    </article>
+                      <div className="flex h-5 items-end overflow-hidden rounded bg-[#f1efe9]">
+                        <div
+                          className={`w-full rounded-[3px] ${active ? 'bg-[#0369a1]' : 'bg-[#c7c2b4]'}`}
+                          style={{ height: monthBarHeight(month) }}
+                        />
+                      </div>
+                      <p className={`mt-1.5 text-[12px] font-bold ${active ? 'text-[#1c1a17]' : 'text-[#8a8578]'}`}>
+                        {month.label}
+                      </p>
+                      <p className="mt-0.5 text-[9.5px] text-[#a39d8d]">{metric}</p>
+                    </button>
                   );
                 })}
               </div>
-            )}
-          </section>
+            </section>
 
-          <section className="mt-6 rounded-[24px] border border-dashed border-sky-300 bg-[linear-gradient(180deg,#f0f9ff_0%,#eff6ff_100%)] px-5 py-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-sky-900">
-                  Reference pool - {selectedUnmatchedReferenceCount} unmatched deposits
-                  <span className="ml-2 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-sky-700">
-                    live
+            <section className="mt-3 overflow-hidden rounded-[14px] border border-[#e7e3d6] bg-white">
+              <div className="border-b border-[#f0ece0] px-3.5 py-3">
+                <p className="text-[19px] font-bold text-[#1c1a17]">
+                  {formatCurrency(selectedRollingTotal.matchedCollectedAmount)}{' '}
+                  <span className="text-[12px] font-medium text-[#a39d8d]">
+                    / {formatCurrency(selectedRollingTotal.expectedAmount)} expected
                   </span>
                 </p>
-                <p className="mt-2 text-sm leading-6 text-sky-800/80">
-                  Match and sign-off now happens inside the property unit table instead of a separate queue screen.
+                <p className="mt-1 text-[11px] font-semibold text-[#0f7b53]">
+                  {formatCurrency(selectedRollingTotal.signedOffCollectedAmount)} signed off
+                </p>
+                {selectedRollingTotal.pendingCollectedAmount > 0 ? (
+                  <p className="mt-0.5 text-[11px] font-semibold text-[#0369a1]">
+                    + {formatCurrency(selectedRollingTotal.pendingCollectedAmount)} matched, awaiting sign-off
+                  </p>
+                ) : null}
+                {selectedRollingTotal.unmatchedCollectedAmount > 0 ? (
+                  <p className="mt-0.5 text-[11px] font-semibold text-[#b45309]">
+                    + {formatCurrency(selectedRollingTotal.unmatchedCollectedAmount)} imported, not yet matched
+                  </p>
+                ) : null}
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#f1efe9]">
+                  <div
+                    className="h-full bg-[#0369a1]"
+                    style={{
+                      width: barWidth(
+                        selectedRollingTotal.matchedCollectedAmount,
+                        selectedRollingTotal.expectedAmount,
+                        selectedRollingTotal.coverageRate
+                      ),
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4">
+                <HubStat label="Paid" value={String(selectedRollingTotal.paidCount)} valueClassName="text-[#0f7b53]" />
+                <HubStat label="Sign-off" value={String(selectedRollingTotal.pendingCount)} valueClassName="text-[#0369a1]" />
+                <HubStat label="Due" value={String(selectedRollingTotal.dueCount)} valueClassName="text-[#b45309]" />
+                <HubStat label="Overdue" value={String(selectedRollingTotal.overdueCount)} valueClassName="text-[#b91c1c]" isLast />
+              </div>
+              {selectedUnmatchedReferenceCount > 0 ? (
+                <p className="border-t border-[#f0ece0] px-3.5 py-2 text-[10.5px] text-[#8a8578]">
+                  {selectedUnmatchedReferenceCount} unmatched deposits still sitting outside unit rows.
+                </p>
+              ) : null}
+            </section>
+
+            <section className="mt-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.07em] text-[#a39d8d]">By location</p>
+
+              {isMissingTables ? (
+                <div className="mt-2 rounded-[14px] border border-dashed border-[#e7e3d6] bg-white px-4 py-5">
+                  <p className="text-[14px] font-bold text-[#1c1a17]">
+                    Payments tables are not available in the connected database yet
+                  </p>
+                  <p className="mt-1 text-[12.5px] leading-5 text-[#8a8578]">
+                    Apply the monthly payments migrations before loading live dashboard data.
+                  </p>
+                </div>
+              ) : isEmpty ? (
+                <div className="mt-2 rounded-[14px] border border-dashed border-[#e7e3d6] bg-white px-4 py-5">
+                  <p className="text-[14px] font-bold text-[#1c1a17]">No dashboard locations yet</p>
+                  <p className="mt-1 text-[12.5px] leading-5 text-[#8a8578]">
+                    Add units and payment periods before the monthly summary can fill out.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-2 overflow-hidden rounded-[14px] border border-[#e7e3d6] bg-white">
+                  {selectedLocations.map((location, index) => {
+                    const isProperty = !location.id.startsWith('inferred:');
+                    return (
+                      <article key={location.id} className={index > 0 ? 'border-t border-[#f0ece0]' : undefined}>
+                        <div className="flex flex-wrap items-center gap-2.5 px-3.5 py-2.5">
+                          <div className="min-w-0 flex-[1_1_140px]">
+                            <h2 className="truncate text-[13px] font-bold text-[#1c1a17]">{location.name}</h2>
+                            <p className="mt-0.5 text-[10.5px] text-[#a39d8d]">
+                              {formatCurrency(location.matchedCollectedAmount)} / {formatCurrency(location.expectedAmount)}
+                            </p>
+                            <p className="mt-0.5 text-[10.5px] font-semibold text-[#0f7b53]">
+                              {formatCurrency(location.signedOffCollectedAmount)} signed off
+                            </p>
+                          </div>
+
+                          <div className="min-w-[100px] flex-[1_1_110px]">
+                            <div className="h-1.5 overflow-hidden rounded-full bg-[#f1efe9]">
+                              <div
+                                className="h-full bg-[#0369a1]"
+                                style={{ width: barWidth(location.matchedCollectedAmount, location.expectedAmount, location.coverageRate) }}
+                              />
+                            </div>
+                            <p className="mt-1 text-[10.5px] font-bold text-[#57534e]">
+                              {rateLabel(location.matchedCollectedAmount, location.expectedAmount, location.coverageRate)}
+                            </p>
+                          </div>
+
+                          <div className="flex min-w-[150px] flex-[1_1_170px] flex-wrap gap-1.5">
+                            <span className="rounded-full bg-[#e8f6ee] px-2 py-1 text-[10px] font-bold text-[#0f7b53]">
+                              {location.paidCount} paid
+                            </span>
+                            {location.pendingCount > 0 ? (
+                              <span className="rounded-full bg-[#e6f3fb] px-2 py-1 text-[10px] font-bold text-[#0369a1]">
+                                {location.pendingCount} sign-off
+                              </span>
+                            ) : null}
+                            <span className="rounded-full bg-[#fdf3e3] px-2 py-1 text-[10px] font-bold text-[#b45309]">
+                              {location.dueCount} due
+                            </span>
+                            {location.overdueCount > 0 ? (
+                              <span className="rounded-full bg-[#fbe7e7] px-2 py-1 text-[10px] font-bold text-[#b91c1c]">
+                                {location.overdueCount} overdue
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {isProperty ? (
+                            <div className="flex flex-none gap-1.5">
+                              <Link
+                                href={`/monthly-payments/${location.id}?period=${selectedPeriod}`}
+                                className="rounded-full bg-[#1c1a17] px-3 py-1.5 text-[11px] font-bold text-white"
+                              >
+                                Open units
+                              </Link>
+                              <Link
+                                href={`/monthly-payments/locations/${location.id}?period=${selectedPeriod}`}
+                                className="rounded-full border border-[#e7e3d6] bg-white px-3 py-1.5 text-[11px] font-bold text-[#292524]"
+                              >
+                                Manage rooms
+                              </Link>
+                            </div>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className="mt-3 flex flex-wrap items-center justify-between gap-2.5 rounded-[14px] border border-[#e7e3d6] bg-white px-4 py-3">
+              <div>
+                <p className="text-[12px] font-bold text-[#1c1a17]">
+                  Reference pool · {selectedUnmatchedReferenceCount} unmatched deposits
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#8a8578]">
+                  Match and sign-off happens inside the property unit table.
                 </p>
               </div>
               <Link
                 href={primaryLocationLink}
-                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+                className="rounded-full bg-[#0369a1] px-4 py-2 text-[12px] font-bold text-white"
               >
-                Open unit table
-                <ArrowRight size={16} />
+                Open unit table →
               </Link>
-            </div>
-          </section>
-      </section>
-    </MonthlyPaymentsShell>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function HubStat({
+  label,
+  value,
+  valueClassName,
+  isLast = false,
+}: {
+  label: string;
+  value: string;
+  valueClassName: string;
+  isLast?: boolean;
+}) {
+  return (
+    <div className={`border-b border-[#f0ece0] px-3.5 py-2 sm:border-b-0 ${isLast ? '' : 'sm:border-r'}`}>
+      <p className="text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#a39d8d]">{label}</p>
+      <p className={`mt-0.5 text-[13px] font-bold ${valueClassName}`}>{value}</p>
+    </div>
   );
 }

@@ -182,19 +182,19 @@ export function BankImportControls({
   );
 
   return (
-    <section className="mt-4 max-w-3xl rounded-[20px] border border-slate-200 bg-[#fcfcfa] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+    <section className="mt-3 rounded-[14px] border border-[#e7e3d6] bg-white px-3.5 py-3">
       <div className="flex flex-col gap-2">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <p className="text-[10px] font-bold uppercase tracking-[0.07em] text-[#a39d8d]">
             Bank import
           </p>
           <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               <select
                 value={activePeriod}
                 onChange={(event) => updateSelectedPeriod(event.target.value)}
                 disabled={pullAll || isPending}
-                className="h-10 rounded-2xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 shadow-sm outline-none transition focus:border-sky-500"
+                className="h-8 rounded-[10px] border border-[#e7e3d6] bg-white px-2.5 text-[12px] font-semibold text-[#1c1a17] outline-none disabled:cursor-wait disabled:bg-[#f1efe9]"
               >
                 {periodOptions.map((period) => (
                   <option key={period.key} value={period.key}>
@@ -203,13 +203,13 @@ export function BankImportControls({
                 ))}
               </select>
 
-              <label className="inline-flex h-10 items-center gap-2 rounded-2xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm">
+              <label className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-[#e7e3d6] bg-white px-2.5 text-[12px] font-semibold text-[#57534e]">
                 <input
                   type="checkbox"
                   checked={pullAll}
                   onChange={(event) => setPullAll(event.target.checked)}
                   disabled={isPending}
-                  className="h-4 w-4 accent-sky-600"
+                  className="h-3.5 w-3.5 accent-[#0369a1]"
                 />
                 Pull everything
               </label>
@@ -217,7 +217,7 @@ export function BankImportControls({
               <div
                 role="group"
                 aria-label="Import source"
-                className="inline-flex h-10 items-center rounded-2xl border border-slate-300 bg-white p-1 shadow-sm"
+                className="inline-flex h-8 items-center rounded-[10px] border border-[#e7e3d6] bg-white p-0.5"
               >
                 {SOURCE_OPTIONS.map((option) => (
                   <button
@@ -226,10 +226,10 @@ export function BankImportControls({
                     onClick={() => setSource(option.value)}
                     disabled={isPending}
                     aria-pressed={source === option.value}
-                    className={`inline-flex h-8 items-center rounded-xl px-3 text-sm font-semibold transition disabled:cursor-wait ${
+                    className={`inline-flex h-7 items-center rounded-[9px] px-3 text-[12px] font-bold transition disabled:cursor-wait ${
                       source === option.value
-                        ? 'bg-slate-950 text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-[#1c1a17] text-white'
+                        : 'text-[#57534e] hover:text-[#1c1a17]'
                     }`}
                   >
                     {option.label}
@@ -242,27 +242,27 @@ export function BankImportControls({
               type="button"
               onClick={() => runImport()}
               disabled={isPending}
-              className="inline-flex h-10 min-w-[132px] items-center justify-center gap-2 self-start rounded-full bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-wait disabled:bg-slate-500 lg:self-auto"
+              className="inline-flex h-8 min-w-[104px] items-center justify-center gap-1.5 self-start rounded-full bg-[#1c1a17] px-3.5 text-[12px] font-bold text-white disabled:cursor-wait disabled:bg-[#78716c] lg:self-auto"
             >
-              {isPending ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              {isPending ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
               Import
             </button>
           </div>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1.5 text-[11px] text-[#a39d8d]">
             {pullAll ? 'All importable months' : `${activePeriod} window: ${formatWindow(activePeriod)}`}
           </p>
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <span
-          className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm font-semibold ${
+          className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold ${
             googleCloudStatus?.status?.configured
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-slate-300 bg-white text-slate-600'
+              ? 'border-[#a7d8c0] bg-[#e8f6ee] text-[#0f7b53]'
+              : 'border-[#e7e3d6] bg-white text-[#57534e]'
           }`}
         >
-          <MailCheck size={15} />
+          <MailCheck size={13} />
           {googleCloudStatus?.status?.configured ? 'Google Cloud ready' : 'Google Cloud not configured'}
         </span>
         {!googleCloudStatus?.status?.configured ? (
@@ -270,21 +270,21 @@ export function BankImportControls({
             type="button"
             onClick={openGoogleCloudSetup}
             disabled={isConnecting}
-            className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-950 shadow-sm transition hover:border-sky-400 disabled:cursor-wait disabled:text-slate-400"
+            className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#e7e3d6] bg-white px-2.5 text-[11px] font-bold text-[#1c1a17] disabled:cursor-wait disabled:text-[#a39d8d]"
           >
-            {isConnecting ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+            {isConnecting ? <Loader2 size={13} className="animate-spin" /> : <ExternalLink size={13} />}
             Google Cloud setup
           </button>
         ) : null}
-        {googleCloudStatus?.error ? <p className="text-sm text-rose-700">{googleCloudStatus.error}</p> : null}
+        {googleCloudStatus?.error ? <p className="text-[11px] text-[#b91c1c]">{googleCloudStatus.error}</p> : null}
       </div>
 
       {result ? (
         <div
-          className={`mt-3 rounded-2xl border px-3 py-2 text-sm ${
+          className={`mt-2 rounded-[10px] border px-3 py-2 text-[11px] ${
             result.success
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-              : 'border-rose-200 bg-rose-50 text-rose-900'
+              ? 'border-[#a7d8c0] bg-[#e8f6ee] text-[#0f7b53]'
+              : 'border-[#f3b0b0] bg-[#fbe7e7] text-[#b91c1c]'
           }`}
         >
           {result.success && totals ? (

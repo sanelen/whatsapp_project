@@ -23,7 +23,7 @@ async function goToFirstPropertyRoomManager(page: Page) {
   
   await manageBtn.click();
   await page.waitForURL(/\/monthly-payments\/locations\/[^/]+/);
-  await expect(page.getByText(/room manager|edit room/i)).toBeVisible();
+  await expect(page.getByText(/room manager/i)).toBeVisible();
   
   return true;
 }
@@ -39,10 +39,10 @@ test('Flow 04: Room manager — full CRUD persistence (edit, save, refresh, veri
   const firstRoomCard = page.locator('article').first();
   const originalRoomLabel = await firstRoomCard.locator('h2, h3').first().textContent();
   
-  await firstRoomCard.getByText('Edit room', { exact: false }).click();
+  await firstRoomCard.locator('button').first().click();
   
   // Verify edit form opened
-  await expect(page.getByText('Editing room', { exact: false })).toBeVisible();
+  await expect(page.getByText('Save room', { exact: false })).toBeVisible();
   
   // Get all input fields
   const labelInput = page.locator('input[placeholder*="Room"], input[aria-label*="label" i]').first();
@@ -50,7 +50,7 @@ test('Flow 04: Room manager — full CRUD persistence (edit, save, refresh, veri
   const depositInput = page.locator('input[placeholder*="Deposit"], input[aria-label*="deposit" i]').first();
   const primaryRefInput = page.locator('input[aria-label*="primary" i], input[aria-label*="reference" i]').first();
   const keywordHintInput = page.locator('input[aria-label*="keyword" i], input[aria-label*="hint" i]').first();
-  const contactInput = page.locator('input[aria-label*="contact" i]').first();
+  const contactInput = page.locator('input[aria-label="Name"]').first();
   
   const suffix = generateTestSuffix();
   
@@ -101,7 +101,7 @@ test('Flow 04: Room manager — full CRUD persistence (edit, save, refresh, veri
   await page.waitForTimeout(1000);
   
   // Should return to room list
-  await expect(page.getByText(/room manager|edit room/i)).toBeVisible();
+  await expect(page.getByText(/room manager/i)).toBeVisible();
   
   // ─── Verify saved values appear on card ──────────────────────
   const updatedRoomCard = page.locator('article').filter({ hasText: newLabel });
@@ -117,7 +117,7 @@ test('Flow 04: Room manager — full CRUD persistence (edit, save, refresh, veri
   
   // ─── Refresh page and verify persistence ─────────────────────
   await page.reload();
-  await expect(page.getByText(/room manager|edit room/i)).toBeVisible();
+  await expect(page.getByText(/room manager/i)).toBeVisible();
   
   // Find the updated room after reload
   const reloadedCard = page.locator('article').filter({ hasText: newLabel });
@@ -130,8 +130,8 @@ test('Flow 04: Room manager — full CRUD persistence (edit, save, refresh, veri
   console.log('✓ Values persisted after page reload');
   
   // ─── Re-open edit form and verify all fields ────────────────
-  await reloadedCard.getByText('Edit room', { exact: false }).click();
-  await expect(page.getByText('Editing room', { exact: false })).toBeVisible();
+  await reloadedCard.locator('button').first().click();
+  await expect(page.getByText('Save room', { exact: false })).toBeVisible();
   
   // Read all fields again
   const readLabel = await labelInput.inputValue();
@@ -168,9 +168,9 @@ test('Flow 04: Room manager — save shows success feedback and form closes', as
   await goToFirstPropertyRoomManager(page);
   
   const firstRoom = page.locator('article').first();
-  await firstRoom.getByText('Edit room', { exact: false }).click();
+  await firstRoom.locator('button').first().click();
   
-  await expect(page.getByText('Editing room', { exact: false })).toBeVisible();
+  await expect(page.getByText('Save room', { exact: false })).toBeVisible();
   
   // Make a small change
   const rentInput = page.locator('input[aria-label*="rent" i]').first();
@@ -189,7 +189,7 @@ test('Flow 04: Room manager — save shows success feedback and form closes', as
   
   // Should show success (could be toast, badge, or just form closing)
   const successText = page.getByText(/saved|success|update/i);
-  const formClosed = !await page.getByText('Editing room').isVisible({ timeout: 3000 }).catch(() => true);
+  const formClosed = !await page.getByText('Save room').isVisible({ timeout: 3000 }).catch(() => true);
   
   expect(
     (await successText.isVisible({ timeout: 2000 }).catch(() => false)) || formClosed
@@ -198,7 +198,7 @@ test('Flow 04: Room manager — save shows success feedback and form closes', as
   console.log('✓ Save operation provided feedback');
   
   // Restore
-  await firstRoom.getByText('Edit room', { exact: false }).click();
+  await firstRoom.locator('button').first().click();
   await rentInput.fill(originalValue || '0');
   await saveBtn.click();
 });
@@ -210,7 +210,7 @@ test('Flow 04: Room manager — navigate away and back preserves state', async (
   const firstRoom = page.locator('article').first();
   const roomName = await firstRoom.locator('h2, h3').first().textContent();
   
-  await firstRoom.getByText('Edit room', { exact: false }).click();
+  await firstRoom.locator('button').first().click();
   
   // Make a change
   const rentInput = page.locator('input[aria-label*="rent" i]').first();
@@ -219,7 +219,7 @@ test('Flow 04: Room manager — navigate away and back preserves state', async (
   await rentInput.fill(newValue);
   
   // Click cancel or navigate away
-  const cancelBtn = page.getByText('Cancel', { exact: false });
+  const cancelBtn = page.getByText('Close', { exact: false });
   if (await cancelBtn.isVisible()) {
     await cancelBtn.click();
   } else {

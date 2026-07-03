@@ -31,7 +31,7 @@ test('Flow 00: Dashboard page screenshot and integrity checks', async ({ page })
   
   // ─── Integrity checks (no broken UI) ────────────────────────
   // Check for NaN or undefined in currency displays
-  const pageContent = await page.textContent();
+  const pageContent = await page.textContent('body');
   
   expect(pageContent).not.toContain('NaN');
   expect(pageContent).not.toContain('undefined');
@@ -65,7 +65,7 @@ test('Flow 00: Units table page screenshot and row validation', async ({ page })
   await page.waitForLoadState('networkidle');
   
   // ─── Integrity checks ──────────────────────────────────────
-  const pageText = await page.textContent();
+  const pageText = await page.textContent('body');
   
   expect(pageText).not.toContain('NaN');
   expect(pageText).not.toContain('undefined');
@@ -98,7 +98,7 @@ test('Flow 00: Room manager page screenshot and card validation', async ({ page 
   await page.waitForLoadState('networkidle');
   
   // ─── Integrity checks ──────────────────────────────────────
-  const pageText = await page.textContent();
+  const pageText = await page.textContent('body');
   
   expect(pageText).not.toContain('NaN');
   expect(pageText).not.toContain('undefined');
@@ -132,7 +132,7 @@ test('Flow 00: Reference pool page screenshot and filtering validation', async (
   await page.waitForLoadState('networkidle');
   
   // ─── Integrity checks ──────────────────────────────────────
-  const pageText = await page.textContent();
+  const pageText = await page.textContent('body');
   
   expect(pageText).not.toContain('NaN');
   expect(pageText).not.toContain('undefined');

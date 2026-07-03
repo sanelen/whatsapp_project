@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, ChevronLeft, ChevronRight, Lock, TriangleAlert, X } from 'lucide-react';
+import { Lock, TriangleAlert } from 'lucide-react';
 import type {
   PropertyUnitsTable,
   ReferencePoolRow,
@@ -11,10 +11,16 @@ import type {
   UnitTableRow,
   UnitTableStatus,
 } from '@/lib/monthly-payments';
-import { MonthlyPaymentsShell } from './monthly-payments-shell';
 
 function formatRand(amount: number): string {
   return amount.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function formatPeriodMonth(periodStart: string | null): string {
+  if (!periodStart) return '—';
+  const ms = Date.parse(`${periodStart.slice(0, 7)}-01T00:00:00Z`);
+  if (Number.isNaN(ms)) return periodStart;
+  return new Intl.DateTimeFormat('en-ZA', { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(ms));
 }
 
 function formatTxnDate(value: string | null): string {
@@ -37,18 +43,21 @@ function maskPhone(value: string): string {
   return `${digits.slice(0, 3)}...${digits.slice(-3)}`;
 }
 
-const STATUS_STYLES: Record<UnitTableStatus, string> = {
-  paid: 'border-emerald-600/70 bg-emerald-50 text-emerald-800',
-  unpaid: 'border-amber-600/70 bg-amber-50 text-amber-800',
-  partial: 'border-amber-600/70 bg-amber-50 text-amber-800',
-  mismatch: 'border-rose-600/70 bg-rose-50 text-rose-800',
-  overdue: 'border-rose-600/70 bg-rose-50 text-rose-800',
-  blocked: 'border-stone-400 bg-stone-100 text-stone-600',
+const STATUS_META: Record<UnitTableStatus, { bg: string; fg: string }> = {
+  paid: { bg: '#e8f6ee', fg: '#0f7b53' },
+  pending: { bg: '#e6f3fb', fg: '#0369a1' },
+  unpaid: { bg: '#fdf3e3', fg: '#b45309' },
+  partial: { bg: '#fdf3e3', fg: '#b45309' },
+  overpaid: { bg: '#fdf3e3', fg: '#b45309' },
+  mismatch: { bg: '#fbe7e7', fg: '#b91c1c' },
+  overdue: { bg: '#fbe7e7', fg: '#b91c1c' },
+  blocked: { bg: '#f1efe9', fg: '#78716c' },
 };
 
 function statusLabel(row: UnitTableRow): string {
   if (row.status === 'overdue' && row.overdueDays) return `overdue ${row.overdueDays}d`;
-  if (row.status === 'mismatch' && row.depositSplit) return 'overpaid';
+  if (row.status === 'pending') return 'awaiting sign-off';
+  if (row.status === 'partial' && row.overdueDays) return `partial · ${row.overdueDays}d`;
   return row.status;
 }
 
@@ -69,10 +78,6 @@ function roomLabelHints(label: string) {
     hints.add(`NO ${digits}`);
   }
   return Array.from(hints);
-}
-
-function uniqueHints(row: UnitTableRow) {
-  return Array.from(new Set([...row.matchKeywords, ...roomLabelHints(row.label)])).slice(0, 8);
 }
 
 function matchesRule(rule: UnitTableMatchRule, reference: ReferencePoolRow) {
@@ -174,20 +179,6 @@ async function postReferenceAction(body: Record<string, string>) {
   }
 }
 
-function renderRuleLabel(rule: UnitTableMatchRule) {
-  if (rule.matcherType === 'amount_equals') {
-    return `amount ${formatRand(rule.amountValue ?? 0)}`;
-  }
-  const labels: Record<UnitTableMatchRule['matcherType'], string> = {
-    reference_contains: 'ref contains',
-    reference_equals: 'ref equals',
-    reference_regex: 'regex',
-    payer_name_contains: 'payer',
-    amount_equals: 'amount',
-  };
-  return `${labels[rule.matcherType]} ${rule.matcherValue}`;
-}
-
 export function UnitsTable({
   table,
   initialUnitId,
@@ -204,15 +195,10 @@ export function UnitsTable({
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(initialUnitId ?? null);
   const [pendingAction, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const selectedRow = useMemo(
-    () => rows.find((row) => row.unitId === selectedUnitId) ?? null,
-    [rows, selectedUnitId]
-  );
-  const candidateReferences = useMemo(
-    () => (selectedRow ? sortReferencesForRow(selectedRow, table.referencePool) : []),
-    [selectedRow, table.referencePool]
-  );
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  // FR-2.7: last action performed inside the match drawer ("what just happened"),
+  // shown above the candidate list, which stays open after a match.
+  const [drawerNotice, setDrawerNotice] = useState<string | null>(null);
 
   function refreshTable() {
     setErrorMessage(null);
@@ -221,15 +207,13 @@ export function UnitsTable({
 
   function openMatchDrawer(row: UnitTableRow) {
     setErrorMessage(null);
+    setDrawerNotice(null);
     setSelectedUnitId(row.unitId);
   }
 
-  function closeMatchDrawer() {
-    setSelectedUnitId(null);
-    setErrorMessage(null);
-  }
-
   function handleMatch(referenceId: string, unitId: string) {
+    const matchedReference = table.referencePool.find((reference) => reference.id === referenceId);
+    const targetRow = rows.find((row) => row.unitId === unitId);
     startTransition(async () => {
       try {
         await postReferenceAction({
@@ -238,7 +222,14 @@ export function UnitsTable({
           propertyId: table.propertyId,
           unitId,
         });
-        closeMatchDrawer();
+        // FR-2.7 (owner request 2026-07-03): keep the drawer and remaining
+        // candidates open after a match so multi-reference sessions can
+        // continue without re-opening the panel per reference.
+        setDrawerNotice(
+          matchedReference
+            ? `Matched R ${formatRand(matchedReference.amount)} · ${matchedReference.reference} → ${targetRow?.label ?? 'unit'} (awaiting sign-off)`
+            : 'Reference matched (awaiting sign-off)'
+        );
         refreshTable();
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to match reference');
@@ -274,60 +265,191 @@ export function UnitsTable({
     });
   }
 
-  function rowAction(row: UnitTableRow) {
-    if (row.signedOff && row.referenceId) {
-      return (
-        <div className="flex flex-col items-start gap-1 text-stone-600">
-          <span className="text-sm">✓ signed</span>
-          <button
-            type="button"
-            onClick={() => handleReverse(row.referenceId as string)}
-            disabled={pendingAction}
-            className="text-sm font-semibold text-sky-800 underline underline-offset-2 disabled:text-stone-400"
-          >
-            reverse sign-off
-          </button>
-        </div>
-      );
-    }
+  function handleAutoMatch() {
+    startTransition(async () => {
+      try {
+        setNoticeMessage(null);
+        const response = await fetch('/api/monthly-payments/references', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'auto_match', propertyId: table.propertyId }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          data?: { scanned: number; matched: number; ambiguous: number; unmatched: number; failed: number };
+        };
+        if (!response.ok) throw new Error(payload.error ?? 'Auto-match failed');
+        const result = payload.data;
+        setNoticeMessage(
+          result
+            ? `Auto-match: ${result.matched} matched (awaiting your sign-off) · ${result.ambiguous} need review · ${result.unmatched} no rule hit`
+            : 'Auto-match complete'
+        );
+        refreshTable();
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Auto-match failed');
+      }
+    });
+  }
 
-    if (row.status === 'blocked') {
-      return <button type="button" className="text-sm text-stone-600">blocked</button>;
-    }
+  function handleAcceptSplit(referenceId: string) {
+    startTransition(async () => {
+      try {
+        await postReferenceAction({
+          action: 'accept_deposit_split',
+          paymentReferenceId: referenceId,
+        });
+        refreshTable();
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to accept deposit split');
+      }
+    });
+  }
 
-    if (row.referenceId && row.status !== 'mismatch') {
-      return (
-        <button
-          type="button"
-          onClick={() => handleSignOff(row.referenceId as string)}
-          disabled={pendingAction}
-          className="inline-flex h-9 items-center justify-center rounded-2xl bg-stone-800 px-3.5 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-wait disabled:bg-stone-500"
-        >
-          Sign off
-        </button>
-      );
-    }
+  // FR-2.8 (owner rulings 2026-07-03): allocate held credit — explicit click
+  // only, never automatic. Destinations come from row.creditOptions.
+  function handleAllocateCredit(input: {
+    unitId: string;
+    destination: 'arrears' | 'advance' | 'deposit';
+    targetPeriodId?: string;
+    amount: number;
+    label: string;
+  }) {
+    startTransition(async () => {
+      try {
+        const response = await fetch('/api/monthly-payments/references', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'allocate_credit',
+            unitId: input.unitId,
+            destination: input.destination,
+            selectedPeriodKey: table.periodKey,
+            targetPeriodId: input.targetPeriodId,
+            amount: input.amount,
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) throw new Error(payload.error ?? 'Failed to allocate credit');
+        setDrawerNotice(`Allocated R ${formatRand(input.amount)} credit → ${input.label}`);
+        refreshTable();
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to allocate credit');
+      }
+    });
+  }
 
-    if (row.status === 'mismatch') {
-      return (
-        <button
-          type="button"
-          onClick={() => openMatchDrawer(row)}
-          className="text-sm font-semibold text-rose-700 underline underline-offset-2"
-        >
-          review
-        </button>
-      );
-    }
+  function handleReverseAllocation(allocationId: string) {
+    startTransition(async () => {
+      try {
+        const response = await fetch('/api/monthly-payments/references', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'reverse_credit_allocation', allocationId }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) throw new Error(payload.error ?? 'Failed to reverse credit allocation');
+        setDrawerNotice('Credit allocation reversed — the amount is back in the held balance');
+        refreshTable();
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to reverse credit allocation');
+      }
+    });
+  }
 
+  // Shared credit block for both drawers: held balance, allocation buttons
+  // (suggest-only — nothing moves without a click), active allocations.
+  function renderCreditSection(row: UnitTableRow) {
+    if (row.creditBalance <= 0.001 && row.creditAllocations.length === 0) return null;
+    const options = row.creditOptions;
     return (
-      <button
-        type="button"
-        onClick={() => openMatchDrawer(row)}
-        className="text-sm font-semibold text-sky-800 underline underline-offset-2"
-      >
-        match ref
-      </button>
+      <div className="rounded-[20px] border border-violet-200 bg-violet-50/60 p-4">
+        <p className="text-xs uppercase tracking-[0.14em] text-violet-700">Held credit</p>
+        <p className="mt-1 text-lg font-semibold text-violet-900">R {formatRand(row.creditBalance)}</p>
+        {options ? (
+          <div className="mt-3 space-y-2">
+            <p className="text-xs font-semibold text-violet-800">Allocate to:</p>
+            {options.arrears.map((arrear) => (
+              <button
+                key={arrear.periodId}
+                type="button"
+                disabled={pendingAction}
+                onClick={() =>
+                  handleAllocateCredit({
+                    unitId: row.unitId,
+                    destination: 'arrears',
+                    targetPeriodId: arrear.periodId,
+                    amount: arrear.maxAmount,
+                    label: `${formatPeriodMonth(arrear.periodStart)} (short R ${formatRand(arrear.outstandingAmount)})`,
+                  })
+                }
+                className="flex w-full items-center justify-between rounded-xl border border-violet-300 bg-white px-3 py-2 text-left text-[0.82rem] font-semibold text-violet-900 hover:border-violet-500 disabled:cursor-wait disabled:text-stone-400"
+              >
+                <span>{formatPeriodMonth(arrear.periodStart)} — R {formatRand(arrear.outstandingAmount)} short</span>
+                <span className="text-violet-700">allocate R {formatRand(arrear.maxAmount)}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={pendingAction}
+              onClick={() =>
+                handleAllocateCredit({
+                  unitId: row.unitId,
+                  destination: 'advance',
+                  amount: options.advance.maxAmount,
+                  label: `${formatPeriodMonth(options.advance.periodStart)} advance`,
+                })
+              }
+              className="flex w-full items-center justify-between rounded-xl border border-violet-300 bg-white px-3 py-2 text-left text-[0.82rem] font-semibold text-violet-900 hover:border-violet-500 disabled:cursor-wait disabled:text-stone-400"
+            >
+              <span>{formatPeriodMonth(options.advance.periodStart)} rent (advance)</span>
+              <span className="text-violet-700">allocate R {formatRand(options.advance.maxAmount)}</span>
+            </button>
+            {options.deposit ? (
+              <button
+                type="button"
+                disabled={pendingAction}
+                onClick={() =>
+                  handleAllocateCredit({
+                    unitId: row.unitId,
+                    destination: 'deposit',
+                    amount: options.deposit ? options.deposit.maxAmount : 0,
+                    label: 'deposit',
+                  })
+                }
+                className="flex w-full items-center justify-between rounded-xl border border-violet-300 bg-white px-3 py-2 text-left text-[0.82rem] font-semibold text-violet-900 hover:border-violet-500 disabled:cursor-wait disabled:text-stone-400"
+              >
+                <span>Deposit (headroom remains)</span>
+                <span className="text-violet-700">allocate R {formatRand(options.deposit.maxAmount)}</span>
+              </button>
+            ) : null}
+            <p className="text-[0.72rem] text-violet-700/80">
+              Suggestions only — nothing moves without your click. Arrears offered for the last 3 months.
+            </p>
+          </div>
+        ) : null}
+        {row.creditAllocations.length > 0 ? (
+          <div className="mt-3 space-y-1.5">
+            <p className="text-xs font-semibold text-violet-800">Allocated:</p>
+            {row.creditAllocations.map((allocation) => (
+              <div key={allocation.id} className="flex items-center justify-between gap-2 text-[0.78rem] text-violet-900">
+                <span>
+                  R {formatRand(allocation.amount)} → {allocation.destination === 'deposit' ? 'deposit' : formatPeriodMonth(allocation.targetPeriodStart)}
+                  {allocation.destination === 'advance' ? ' (advance)' : allocation.destination === 'arrears' ? ' (arrears)' : ''}
+                </span>
+                <button
+                  type="button"
+                  disabled={pendingAction}
+                  onClick={() => handleReverseAllocation(allocation.id)}
+                  className="font-semibold text-violet-700 underline underline-offset-2 disabled:text-stone-400"
+                >
+                  reverse
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
     );
   }
 
@@ -337,528 +459,391 @@ export function UnitsTable({
         <button
           type="button"
           onClick={() => openMatchDrawer(row)}
-          className="inline-flex items-center gap-2 text-left text-[0.94rem] font-medium text-stone-700"
+          className="inline-flex items-center gap-1.5 text-left text-[0.85rem] font-medium leading-4 text-stone-700"
         >
           <span>{row.reference}</span>
           {row.status === 'mismatch' ? <TriangleAlert size={14} className="text-rose-700" /> : null}
+          {row.status === 'overpaid' ? <TriangleAlert size={14} className="text-amber-600" /> : null}
           {row.locked ? <Lock size={14} className="text-amber-600" /> : null}
         </button>
       );
     }
 
     if (row.status === 'blocked') {
-      return <span className="text-[0.94rem] text-stone-400">excluded</span>;
+      return <span className="text-[0.85rem] text-stone-400">excluded</span>;
     }
 
     return (
       <button
         type="button"
         onClick={() => openMatchDrawer(row)}
-        className="inline-flex items-center rounded-[16px] border border-dashed border-sky-700 px-3 py-1.5 text-[0.86rem] font-semibold text-sky-800"
+        className="inline-flex items-center whitespace-nowrap rounded-[12px] border border-dashed border-sky-700 px-2.5 py-1 text-[0.78rem] font-semibold text-sky-800"
       >
         + match ref
       </button>
     );
   }
 
-  return (
-    <MonthlyPaymentsShell
-      active="units"
-      operationsHref={`${base}?period=${table.periodKey}`}
-      referencePoolHref={`/monthly-payments/reference-pool?period=${table.periodKey}`}
-    >
-      <section className="rounded-[30px] border border-white/80 bg-white/90 px-4 py-5 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:px-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">
-            Hamba operations
+  function renderInlineDetail(row: UnitTableRow) {
+    const rowCandidates = sortReferencesForRow(row, table.referencePool);
+    const showCandidates =
+      row.status !== 'blocked' && (!row.reference || row.status === 'mismatch' || row.status === 'overpaid' || row.status === 'partial');
+
+    return (
+      <div className="border-t border-[#f0ece0] bg-[#fbfaf6] px-[18px] pb-[22px] pt-3.5">
+        <div className="flex flex-wrap gap-4">
+          <div>
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#a39d8d]">Contact</p>
+            <p className="mt-1 text-[13px] text-[#292524]">
+              {row.contacts.length ? row.contacts.map(maskPhone).join(' · ') : '- vacant -'}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#a39d8d]">Expected</p>
+            <p className="mt-1 text-[13px] text-[#292524]">R {formatRand(row.expectedAmount)}</p>
+          </div>
+          <div>
+            <p className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#a39d8d]">Received</p>
+            <p className="mt-1 text-[13px] text-[#292524]">
+              {row.receivedAmount !== null ? `R ${formatRand(row.receivedAmount)}` : '-'}
+              {row.status === 'partial' && row.outstandingAmount !== null ? (
+                <span className="font-semibold text-[#b45309]"> · {formatRand(row.outstandingAmount)} outstanding</span>
+              ) : null}
+              {row.status === 'overpaid' && row.depositSplit ? (
+                <span className="font-semibold text-[#b45309]">
+                  {' '}· rent {formatRand(row.depositSplit.rentPortion)} + deposit {formatRand(row.depositSplit.depositPortion)}
+                  {row.depositSplit.surplusAmount > 0 ? ` (+${formatRand(row.depositSplit.surplusAmount)} over)` : ''}
+                </span>
+              ) : null}
+            </p>
+          </div>
+          <div>
+            <Link
+              href={`${roomManagerBase}&unitId=${row.unitId}`}
+              className="text-[12.5px] font-semibold text-[#0369a1] underline underline-offset-2"
+            >
+              manage room
+            </Link>
+          </div>
+        </div>
+
+        {drawerNotice && selectedUnitId === row.unitId ? (
+          <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] font-semibold text-emerald-800">
+            {drawerNotice}
           </p>
+        ) : null}
 
-          <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <nav className="text-[0.95rem] font-medium text-slate-500">
-                <Link href="/monthly-payments" className="hover:text-slate-800">
-                  {table.organizationLabel}
-                </Link>
-                <span className="px-2 text-slate-400">›</span>
-                <Link href="/monthly-payments/locations" className="hover:text-slate-800">
-                  Locations
-                </Link>
-                <span className="px-2 text-slate-400">›</span>
-                <span>{table.propertyName}</span>
-                <span className="px-2 text-slate-400">›</span>
-                <span className="font-semibold text-slate-950">Units</span>
-              </nav>
-              <h1 className="mt-2.5 text-[2rem] font-semibold tracking-tight text-slate-950">
-                {table.propertyName} units
-              </h1>
-              <p className="mt-3 text-[0.95rem] text-slate-500">
-                Billing window: <span className="font-medium text-slate-700">{table.billingWindowLabel}</span>
-              </p>
-              {table.activityHint ? (
-                <p className="mt-2 text-[0.95rem] text-slate-500">{table.activityHint}</p>
-              ) : null}
-              {errorMessage ? (
-                <p className="mt-2 text-[0.95rem] text-rose-700">{errorMessage}</p>
-              ) : null}
-            </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {row.referenceId && !row.signedOff && row.status !== 'overpaid' ? (
+            <button
+              type="button"
+              onClick={() => handleSignOff(row.referenceId as string)}
+              disabled={pendingAction}
+              className="rounded-full bg-[#1c1a17] px-[18px] py-2.5 text-[13px] font-semibold text-white disabled:cursor-wait disabled:bg-[#78716c]"
+            >
+              Sign off received payment
+            </button>
+          ) : null}
+          {row.status === 'overpaid' && row.referenceId && row.depositSplit ? (
+            <button
+              type="button"
+              onClick={() => handleAcceptSplit(row.referenceId as string)}
+              disabled={pendingAction}
+              className="rounded-full bg-[#b45309] px-[18px] py-2.5 text-[13px] font-semibold text-white disabled:cursor-wait disabled:bg-[#78716c]"
+            >
+              {row.depositSplit.surplusAmount > 0.001 ? 'Accept split + hold credit' : 'Accept split'}
+            </button>
+          ) : null}
+          {row.signedOff && row.referenceId ? (
+            <button
+              type="button"
+              onClick={() => handleReverse(row.referenceId as string)}
+              disabled={pendingAction}
+              className="rounded-full border border-[#e7e3d6] bg-white px-[18px] py-2.5 text-[13px] font-semibold text-[#57534e] disabled:cursor-wait"
+            >
+              Reverse sign-off
+            </button>
+          ) : null}
+        </div>
 
-            <div className="flex flex-wrap items-start gap-3 lg:justify-end">
-              <div className="rounded-[18px] border border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm text-slate-600 shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">This month</p>
-                <p className="mt-1.5 text-base font-semibold text-slate-950">
-                  R {formatRand(table.totals.collected)}
-                  <span className="font-normal text-slate-500"> / {formatRand(table.totals.expected)} expd</span>
-                </p>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {table.totals.paidCount} paid · {table.totals.dueCount} due · {table.totals.overdueCount} overdue
-                </p>
-              </div>
+        <div className="mt-4">{renderCreditSection(row)}</div>
 
-              <div className="flex flex-wrap items-center gap-3">
-              <div className="inline-flex items-center overflow-hidden rounded-2xl border border-slate-300 bg-white text-sm font-semibold text-slate-950 shadow-sm">
-                <Link
-                  href={`${base}?period=${shiftPeriod(table.periodKey, -1)}`}
-                  className="border-r border-slate-300 px-3 py-2 text-slate-600 hover:bg-slate-50"
-                  aria-label="Previous month"
-                >
-                  <ChevronLeft size={16} />
-                </Link>
-                <span className="min-w-[132px] px-4 py-2 text-center">{table.periodLabel}</span>
-                <Link
-                  href={`${base}?period=${shiftPeriod(table.periodKey, 1)}`}
-                  className="border-l border-slate-300 px-3 py-2 text-slate-300 hover:bg-slate-50 hover:text-slate-700"
-                  aria-label="Next month"
-                >
-                  <ChevronRight size={16} />
-                </Link>
-              </div>
-
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-2xl border border-slate-300 bg-white px-3.5 text-sm font-semibold text-slate-900 shadow-sm"
-              >
-                Filter
-                <ChevronDown size={14} />
-              </button>
-              </div>
-            </div>
-          </div>
-
-          <section className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <div>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-                    This property in {table.periodLabel}
-                  </p>
-                  <p className="mt-1 font-medium text-slate-700">
-                    {table.totals.paidCount} paid · {table.totals.dueCount} due · {table.totals.overdueCount} overdue
-                  </p>
+        {showCandidates ? (
+          <div className="mt-[18px]">
+            <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#a39d8d]">Candidate references</p>
+            <div className="mt-2.5 flex flex-col gap-2">
+              {rowCandidates.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-[#e7e3d6] px-3.5 py-3 text-center text-[12.5px] text-[#a39d8d]">
+                  No unmatched references for this property yet.
                 </div>
-                <div className="text-right">
-                  <p className="font-semibold text-slate-900">
-                    {table.totals.unmatchedCount} unmatched
-                    {table.totals.unmatchedCount > 0 ? ` · R ${formatRand(table.totals.unmatchedAmount)}` : ''}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Deposits still outside unit rows for this billing window
-                  </p>
-                </div>
-              </div>
-
-              <section className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-                <div className="grid grid-cols-[1fr_1.4fr_0.82fr_1.18fr_0.72fr_0.86fr_1fr_0.86fr] border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  <span>Unit</span>
-                  <span>Contact</span>
-                  <span>Exp R</span>
-                  <span>Reference</span>
-                  <span>Date</span>
-                  <span>Recv R</span>
-                  <span>Status</span>
-                  <span />
-                </div>
-
-                {rows.length === 0 ? (
-                  <div className="px-6 py-10 text-sm text-slate-500">
-                    {isMissingTables ? (
-                      'Payments tables are not available in the connected database yet.'
-                    ) : table.referencePool.length > 0 ? (
-                      <div className="space-y-3">
-                        <p className="text-base font-medium text-slate-700">
-                          No unit rows are set up for this property yet, but imported bank references already exist for this month.
-                        </p>
-                        <p>
-                          You can still review the live reference data below while we backfill `property_units` and `unit_payment_periods`.
-                        </p>
-                      </div>
-                    ) : (
-                      'No units are set up for this property yet.'
-                    )}
-                  </div>
-                ) : (
-                  rows.map((row, index) => (
-                    <div
-                      key={row.unitId}
-                      className={`grid grid-cols-[1fr_1.4fr_0.82fr_1.18fr_0.72fr_0.86fr_1fr_0.86fr] items-center gap-3 px-4 py-2.5 ${
-                        index > 0 ? 'border-t border-slate-200' : ''
-                      } ${row.status === 'blocked' ? 'text-slate-400' : ''} ${
-                        selectedRow?.unitId === row.unitId ? 'bg-sky-50/50' : ''
-                      }`}
-                    >
-                      <div>
-                        <div className="text-[0.98rem] font-semibold text-slate-950">{row.label}</div>
-                        <Link
-                          href={`${roomManagerBase}&unitId=${row.unitId}`}
-                          className="mt-0.5 inline-flex text-[0.82rem] font-semibold text-slate-500 underline underline-offset-2 hover:text-slate-800"
-                        >
-                          manage room
-                        </Link>
-                      </div>
-                      <div className="space-y-0.5 text-[0.88rem] leading-5 text-slate-500">
-                        {row.contacts.length ? (
-                          row.contacts.slice(0, 2).map((contact) => <div key={contact}>{maskPhone(contact)}</div>)
-                        ) : (
-                          <div>— vacant —</div>
-                        )}
-                      </div>
-                      <div className="text-[0.95rem] font-medium text-slate-800">
-                        {row.expectedAmount > 0 ? formatRand(row.expectedAmount) : '0'}
-                      </div>
-                      <div>{renderReference(row)}</div>
-                      <div className="text-[0.95rem] text-slate-500">{formatTxnDate(row.transactionDate)}</div>
-                      <div className={`text-[0.95rem] font-medium ${row.status === 'mismatch' && !row.depositSplit ? 'text-rose-700' : 'text-slate-800'}`}>
-                        {row.receivedAmount !== null ? formatRand(row.receivedAmount) : '—'}
-                        {row.status === 'mismatch' && row.depositSplit ? (
-                          <div className="mt-0.5 text-[0.75rem] font-semibold leading-4 text-amber-700">
-                            rent {formatRand(row.depositSplit.rentPortion)} + deposit {formatRand(row.depositSplit.depositPortion)}
-                            {row.depositSplit.surplusAmount > 0 ? ` (+${formatRand(row.depositSplit.surplusAmount)} over)` : ''}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div>
-                        <span
-                          className={`inline-flex rounded-full border-2 px-3 py-1 text-[0.82rem] font-semibold capitalize ${
-                            row.status === 'mismatch' && row.depositSplit
-                              ? 'border-amber-500/70 bg-amber-50 text-amber-800'
-                              : STATUS_STYLES[row.status]
-                          }`}
-                        >
-                          {statusLabel(row)}
-                        </span>
-                        {row.signedOff ? (
-                          <span className="mt-1 inline-flex items-center gap-1 text-[0.75rem] font-semibold text-slate-500">
-                            <Lock size={11} className="text-amber-600" />
-                            signed off
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-col items-start gap-1">
-                        {rowAction(row)}
-                        <Link
-                          href={`${roomManagerBase}&unitId=${row.unitId}`}
-                          className="text-[0.88rem] font-semibold text-slate-500 underline underline-offset-2 hover:text-slate-800"
-                        >
-                          edit source
-                        </Link>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </section>
-            </div>
-
-            <aside className="hidden xl:block">
-              <div className="sticky top-6 rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
-                {selectedRow ? (
-                  <>
-                    <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-                          Match & sign off
-                        </p>
-                        <h3 className="mt-2 text-xl font-semibold text-slate-950">{selectedRow.label}</h3>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Property-scoped matching for {table.periodLabel}.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={closeMatchDrawer}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-
-                    <div className="space-y-4 p-5">
-                      <div className="rounded-[20px] border border-slate-200 bg-slate-50 p-4">
-                        <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Target room</p>
-                        <p className="mt-2 text-lg font-semibold text-slate-950">{selectedRow.label}</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Expected R {formatRand(selectedRow.expectedAmount)} · {statusLabel(selectedRow)}
-                        </p>
-                        <p className="mt-3 text-xs uppercase tracking-[0.14em] text-slate-500">Primary ref</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">
-                          {selectedRow.expectedReference || 'Not set'}
-                        </p>
-                      </div>
-
-                      <div className="rounded-[20px] border border-slate-200 bg-slate-50 p-4">
-                        <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Hint coverage</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {uniqueHints(selectedRow).map((hint, index) => (
-                            <span
-                              key={`${selectedRow.unitId}-hint-${index}-${hint}`}
-                              className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700"
-                            >
-                              {hint}
-                            </span>
-                          ))}
-                          {selectedRow.matchKeywords.length === 0 && selectedRow.matchRules.length === 0 ? (
-                            <span className="text-sm text-slate-500">No keyword hints yet</span>
-                          ) : null}
-                        </div>
-                        {selectedRow.matchRules.length > 0 ? (
-                          <div className="mt-4 space-y-2">
-                            {selectedRow.matchRules.slice(0, 4).map((rule) => (
-                              <div key={rule.id} className="rounded-[14px] bg-white px-3 py-2 text-xs font-medium text-slate-700">
-                                {renderRuleLabel(rule)}
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                        <Link
-                          href={`${roomManagerBase}&unitId=${selectedRow.unitId}`}
-                          className="mt-4 inline-flex text-sm font-semibold text-slate-600 underline underline-offset-2 hover:text-slate-900"
-                        >
-                          Open room setup for {selectedRow.label}
-                        </Link>
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Candidates
-                          </p>
-                          <p className="text-sm text-slate-500">{candidateReferences.length} refs</p>
-                        </div>
-                        <div className="mt-3 space-y-3">
-                          {candidateReferences.length === 0 ? (
-                            <div className="rounded-[18px] border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                              No unmatched references for this property in this billing window.
-                            </div>
-                          ) : (
-                            candidateReferences.map(({ reference, score }) => (
-                              <div
-                                key={reference.id}
-                                className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="text-base font-semibold text-slate-950">{reference.reference}</p>
-                                    <p className="mt-1 text-sm text-slate-500">
-                                      {reference.payerName ?? 'Unknown payer'} · {reference.accountSuffix ? `••${reference.accountSuffix}` : 'no account'} · {formatTxnDate(reference.transactionDate)}
-                                    </p>
-                                  </div>
-                                  <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-                                    {score >= 90 ? 'strong' : score >= 45 ? 'likely' : 'manual'}
-                                  </span>
-                                </div>
-                                <div className="mt-3 flex items-center justify-between gap-4">
-                                  <div className="text-sm text-slate-600">
-                                    Amount <span className="font-semibold text-slate-900">R {formatRand(reference.amount)}</span>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMatch(reference.id, selectedRow.unitId)}
-                                    disabled={pendingAction}
-                                    className="inline-flex h-10 items-center justify-center rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-wait disabled:bg-slate-500"
-                                  >
-                                    Match
-                                  </button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="p-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-                      Match & sign off
-                    </p>
-                    <p className="mt-3 text-sm leading-6 text-slate-500">
-                      Click any <span className="font-semibold text-slate-700">match ref</span> action in the unit table to open a property-scoped candidate panel here.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </aside>
-          </section>
-
-          <div className="mt-5 flex flex-col gap-3 text-[0.95rem] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <p className="font-medium">
-              {table.totals.unitCount} units · {table.totals.blockedCount} blocked · subtotal{' '}
-              <span className="font-semibold text-slate-800">R {formatRand(table.totals.collected)}</span> /{' '}
-              {formatRand(table.totals.expected)} expd
-            </p>
-            <p className="inline-flex items-center gap-2">
-              <Lock size={14} className="text-amber-600" /> = locked after sign-off
-            </p>
-          </div>
-
-          <section className="mt-8">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-[0.82rem] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                  Reference pool
-                </p>
-                <p className="mt-2 text-[0.95rem] text-slate-500">
-                  Imported unmatched deposits for {table.periodLabel} ({table.billingWindowLabel}). These are the live records available to match into unit rows.
-                </p>
-              </div>
-              <p className="text-[0.95rem] font-medium text-slate-600">
-                {table.referencePool.length} unmatched · <span className="font-semibold text-slate-800">R {formatRand(referencePoolTotal)}</span>
-              </p>
-            </div>
-
-            <div className="mt-3 overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-              <div className="grid grid-cols-[1.45fr_1.1fr_0.8fr_0.8fr_0.9fr] border-b border-slate-200 bg-slate-50 px-4 py-3 text-[0.74rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                <span>Reference</span>
-                <span>Payer</span>
-                <span>Account</span>
-                <span>Date</span>
-                <span>Recv R</span>
-              </div>
-
-              {table.referencePool.length === 0 ? (
-                <div className="px-6 py-8 text-sm text-slate-500">No unmatched deposits for this month.</div>
               ) : (
-                table.referencePool.map((reference, index) => (
+                rowCandidates.map(({ reference, score }) => (
                   <div
                     key={reference.id}
-                    className={`grid grid-cols-[1.45fr_1.1fr_0.8fr_0.8fr_0.9fr] items-center gap-3 px-4 py-3 ${
-                      index > 0 ? 'border-t border-slate-200' : ''
-                    }`}
+                    className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-[#e7e3d6] bg-white px-3.5 py-2.5"
                   >
-                    <span className="text-[0.95rem] font-medium text-slate-800">{reference.reference}</span>
-                    <span className="text-[0.92rem] text-slate-500">{reference.payerName ?? '—'}</span>
-                    <span className="text-[0.92rem] text-slate-500">
-                      {reference.accountSuffix ? `••${reference.accountSuffix}` : '—'}
-                    </span>
-                    <span className="text-[0.92rem] text-slate-500">{formatTxnDate(reference.transactionDate)}</span>
-                    <span className="text-[0.95rem] font-medium text-slate-800">{formatRand(reference.amount)}</span>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-bold text-[#1c1a17]">{reference.reference}</p>
+                      <p className="mt-0.5 text-[11.5px] text-[#8a8578]">
+                        {reference.payerName ?? 'Unknown payer'} · {formatTxnDate(reference.transactionDate)} · R {formatRand(reference.amount)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-full px-[9px] py-0.5 text-[10.5px] font-bold ${score >= 90 ? 'bg-[#1c1a17] text-white' : 'bg-[#f1efe9] text-[#78716c]'}`}>
+                        {score >= 90 ? 'strong' : score >= 45 ? 'likely' : 'manual'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleMatch(reference.id, row.unitId)}
+                        disabled={pendingAction}
+                        className="rounded-[10px] bg-[#1c1a17] px-3.5 py-2 text-xs font-bold text-white disabled:cursor-wait disabled:bg-[#78716c]"
+                      >
+                        Match
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
             </div>
-          </section>
-      </section>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
-      {selectedRow ? (
-        <div className="xl:hidden">
-          <div className="fixed inset-0 z-40 bg-slate-950/35" onClick={closeMatchDrawer} />
-          <section className="fixed inset-x-4 bottom-4 top-20 z-50 overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
-            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
+  return (
+    <main className="min-h-screen bg-[#f6f4ef] text-[#1c1a17]">
+      <div className="flex min-h-screen">
+        <aside className="hidden w-[260px] shrink-0 flex-col gap-[26px] bg-[#0f172a] px-[18px] py-[22px] text-white lg:flex">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#7dd3fc]">
+              Monthly Payments
+            </p>
+            <p className="mt-2 text-[22px] font-bold tracking-normal">Workspace</p>
+          </div>
+          <nav className="flex flex-col gap-1.5">
+            <Link href="/monthly-payments" className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+              Dashboard
+            </Link>
+            <Link href="/monthly-payments/locations" className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+              Locations
+            </Link>
+            <Link href={`${base}?period=${table.periodKey}`} className="rounded-xl bg-sky-300/15 px-3 py-2.5 text-[13.5px] font-semibold text-white">
+              Match & sign off
+            </Link>
+            <Link href={`/monthly-payments/reference-pool?period=${table.periodKey}`} className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+              Reference pool
+            </Link>
+          </nav>
+          <div className="mt-auto flex gap-2 border-t border-white/10 pt-4">
+            <Link href="/" className="flex-1 rounded-full bg-white py-2.5 text-center text-[12.5px] font-bold text-[#0f172a]">
+              Home
+            </Link>
+            <Link href="/property-assistance" className="flex-1 rounded-full border border-white/20 py-2.5 text-center text-[12.5px] font-bold text-white">
+              Chatbox
+            </Link>
+          </div>
+        </aside>
+
+        <div className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+          <div className="mx-auto max-w-[960px]">
+            <nav className="text-[13px] text-[#8a8578]">
+              <Link href="/monthly-payments" className="hover:text-[#292524]">
+                {table.organizationLabel}
+              </Link>
+              <span className="mx-1.5 text-[#c7c2b4]">›</span>
+              <Link href="/monthly-payments/locations" className="hover:text-[#292524]">
+                locations
+              </Link>
+              <span className="mx-1.5 text-[#c7c2b4]">›</span>
+              <span>{table.propertyName}</span>
+              <span className="mx-1.5 text-[#c7c2b4]">›</span>
+              <span className="font-semibold text-[#292524]">Units</span>
+            </nav>
+
+            <div className="mt-2.5 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-                  Match & sign off
-                </p>
-                <h3 className="mt-2 text-xl font-semibold text-slate-950">{selectedRow.label}</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Property-scoped matching for {table.periodLabel}.
-                </p>
+                <h1 className="m-0 text-[30px] font-bold tracking-normal text-[#1c1a17]">
+                  {table.propertyName} units
+                </h1>
+                <p className="mt-1.5 text-[13.5px] text-[#8a8578]">Billing window {table.billingWindowLabel}</p>
+                {table.activityHint ? <p className="mt-1 text-[13px] text-[#a39d8d]">{table.activityHint}</p> : null}
+                {errorMessage ? <p className="mt-2 text-[13px] font-semibold text-[#b91c1c]">{errorMessage}</p> : null}
+                {noticeMessage ? <p className="mt-2 text-[13px] font-semibold text-[#0369a1]">{noticeMessage}</p> : null}
               </div>
-              <button
-                type="button"
-                onClick={closeMatchDrawer}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700"
-              >
-                <X size={18} />
-              </button>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="inline-flex items-center overflow-hidden rounded-full border border-[#e7e3d6] bg-white">
+                  <Link href={`${base}?period=${shiftPeriod(table.periodKey, -1)}`} className="px-3 py-2 text-sm text-[#57534e]" aria-label="Previous month">
+                    ‹
+                  </Link>
+                  <span className="min-w-[88px] px-2.5 py-2 text-center text-[13.5px] font-semibold text-[#1c1a17]">
+                    {table.periodLabel}
+                  </span>
+                  <Link href={`${base}?period=${shiftPeriod(table.periodKey, 1)}`} className="px-3 py-2 text-sm text-[#57534e]" aria-label="Next month">
+                    ›
+                  </Link>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full border border-[#e7e3d6] bg-white px-4 py-2.5 text-[13.5px] font-semibold text-[#292524]"
+                >
+                  Filter
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAutoMatch}
+                  disabled={pendingAction}
+                  className="rounded-full bg-[#0369a1] px-4 py-2.5 text-[13.5px] font-semibold text-white disabled:cursor-wait disabled:bg-[#78716c]"
+                >
+                  Auto-match refs
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-4 p-5">
-              <div className="rounded-[20px] border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Target room</p>
-                <p className="mt-2 text-lg font-semibold text-slate-950">{selectedRow.label}</p>
-                <p className="mt-1 text-sm text-slate-500">
-                  Expected R {formatRand(selectedRow.expectedAmount)} · {statusLabel(selectedRow)}
-                </p>
-                <p className="mt-3 text-xs uppercase tracking-[0.14em] text-slate-500">Primary ref</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
-                  {selectedRow.expectedReference || 'Not set'}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {uniqueHints(selectedRow).map((hint, index) => (
-                    <span
-                      key={`${selectedRow.unitId}-hint-mobile-${index}-${hint}`}
-                      className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700"
-                    >
-                      {hint}
-                    </span>
-                  ))}
-                </div>
-                <Link
-                  href={`${roomManagerBase}&unitId=${selectedRow.unitId}`}
-                  className="mt-4 inline-flex text-sm font-semibold text-slate-600 underline underline-offset-2 hover:text-slate-900"
-                >
-                  Open room setup for {selectedRow.label}
-                </Link>
-              </div>
+            <div className="mt-5 grid overflow-hidden rounded-2xl border border-[#e7e3d6] bg-white sm:grid-cols-5">
+              <UnitStat label="Collected / exp." value={`R ${formatRand(table.totals.collected)}`} subValue={`/ ${formatRand(table.totals.expected)}`} />
+              <UnitStat label="Paid" value={String(table.totals.paidCount)} valueClassName="text-[#0f7b53]" />
+              <UnitStat label="Sign-off" value={String(table.totals.pendingCount)} valueClassName="text-[#0369a1]" />
+              <UnitStat label="Due" value={String(table.totals.dueCount)} valueClassName="text-[#b45309]" />
+              <UnitStat label="Overdue" value={String(table.totals.overdueCount)} valueClassName="text-[#b91c1c]" isLast />
+            </div>
 
-              <div>
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    Unmatched references
-                  </p>
-                  <p className="text-sm text-slate-500">{candidateReferences.length} candidates</p>
+            <section className="mt-5 overflow-hidden rounded-[20px] border border-[#e7e3d6] bg-white">
+              {rows.length === 0 ? (
+                <div className="px-5 py-10 text-[13.5px] text-[#8a8578]">
+                  {isMissingTables
+                    ? 'Payments tables are not available in the connected database yet.'
+                    : table.referencePool.length > 0
+                      ? 'No unit rows are set up yet, but imported bank references already exist for this month.'
+                      : 'No units are set up for this property yet.'}
                 </div>
-                <div className="mt-3 space-y-3">
-                  {candidateReferences.length === 0 ? (
-                    <div className="rounded-[18px] border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                      No unmatched references for this property in this billing window.
-                    </div>
-                  ) : (
-                    candidateReferences.map(({ reference, score }) => (
+              ) : (
+                rows.map((row, index) => {
+                  const meta = STATUS_META[row.status];
+                  const expanded = selectedUnitId === row.unitId;
+                  return (
+                    <article
+                      key={row.unitId}
+                      className={`${index > 0 ? 'border-t border-[#f0ece0]' : ''} ${expanded ? 'bg-[#fbfaf6]' : 'bg-white'}`}
+                    >
                       <div
-                        key={reference.id}
-                        className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          setDrawerNotice(null);
+                          setSelectedUnitId(expanded ? null : row.unitId);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setDrawerNotice(null);
+                            setSelectedUnitId(expanded ? null : row.unitId);
+                          }
+                        }}
+                        className="grid cursor-pointer grid-cols-[5px_minmax(150px,1.5fr)_minmax(120px,1.2fr)_minmax(130px,1.1fr)_minmax(135px,0.85fr)_20px] items-center gap-3.5 px-[18px] py-3.5 max-lg:grid-cols-[5px_1fr_20px] max-lg:gap-3"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-base font-semibold text-slate-950">{reference.reference}</p>
-                            <p className="mt-1 text-sm text-slate-500">
-                              {reference.payerName ?? 'Unknown payer'} · {reference.accountSuffix ? `••${reference.accountSuffix}` : 'no account'} · {formatTxnDate(reference.transactionDate)}
-                            </p>
-                          </div>
-                          <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-                            {score >= 90 ? 'strong' : score >= 45 ? 'likely' : 'manual'}
+                        <span className="block h-[30px] w-[5px] rounded-[3px]" style={{ background: meta.fg }} />
+                        <div className="min-w-0">
+                          <h2 className="text-[14.5px] font-bold text-[#1c1a17]">{row.label}</h2>
+                          <p className="mt-0.5 truncate text-xs text-[#a39d8d]">
+                            {row.contacts.length ? row.contacts.map(maskPhone).join(' · ') : '- vacant -'}
+                          </p>
+                        </div>
+                        <div className="min-w-0 max-lg:hidden" onClick={(event) => event.stopPropagation()}>
+                          {renderReference(row)}
+                          {row.transactionDate ? <p className="mt-0.5 text-[10.5px] text-[#a39d8d]">{formatTxnDate(row.transactionDate)}</p> : null}
+                        </div>
+                        <div className="whitespace-nowrap text-[13.5px] font-semibold text-[#292524] max-lg:hidden">
+                          {row.receivedAmount !== null ? `R ${formatRand(row.receivedAmount)}` : 'R -'}
+                          <span className="text-xs font-medium text-[#a39d8d]"> / {formatRand(row.expectedAmount)}</span>
+                        </div>
+                        <div className="max-lg:hidden">
+                          <span
+                            className="inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold"
+                            style={{ background: meta.bg, color: meta.fg }}
+                          >
+                            {statusLabel(row)}
                           </span>
                         </div>
-                        <div className="mt-3 flex items-center justify-between gap-4">
-                          <div className="text-sm text-slate-600">
-                            Amount <span className="font-semibold text-slate-900">R {formatRand(reference.amount)}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleMatch(reference.id, selectedRow.unitId)}
-                            disabled={pendingAction}
-                            className="inline-flex h-10 items-center justify-center rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-wait disabled:bg-slate-500"
-                          >
-                            Match
-                          </button>
-                        </div>
+                        <span className={`text-center text-[15px] text-[#a39d8d] transition ${expanded ? 'rotate-180' : ''}`}>⌄</span>
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
+
+                      {expanded ? renderInlineDetail(row) : null}
+                    </article>
+                  );
+                })
+              )}
+            </section>
+
+            <div className="mt-4 flex flex-col gap-2 text-[13px] text-[#8a8578] sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                {table.totals.unitCount} units · {table.totals.blockedCount} blocked · subtotal{' '}
+                <span className="font-semibold text-[#292524]">R {formatRand(table.totals.collected)}</span> / {formatRand(table.totals.expected)} exp.
+              </p>
+              <p>{table.totals.unmatchedCount} unmatched · R {formatRand(table.totals.unmatchedAmount)}</p>
             </div>
-          </section>
+
+            <section className="mt-6">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#a39d8d]">Reference pool</p>
+                  <p className="mt-1 text-[13px] text-[#8a8578]">
+                    Imported unmatched deposits for {table.periodLabel} ({table.billingWindowLabel}).
+                  </p>
+                </div>
+                <p className="text-[13px] font-semibold text-[#57534e]">
+                  {table.referencePool.length} unmatched · R {formatRand(referencePoolTotal)}
+                </p>
+              </div>
+              <div className="mt-3 overflow-hidden rounded-[20px] border border-[#e7e3d6] bg-white">
+                {table.referencePool.length === 0 ? (
+                  <div className="px-5 py-8 text-[13.5px] text-[#8a8578]">No unmatched deposits for this month.</div>
+                ) : (
+                  table.referencePool.map((reference, index) => (
+                    <div
+                      key={reference.id}
+                      className={`grid grid-cols-[1.45fr_1.1fr_0.8fr_0.8fr_0.9fr] items-center gap-2.5 px-3.5 py-2.5 text-[13px] max-md:grid-cols-1 ${
+                        index > 0 ? 'border-t border-[#f0ece0]' : ''
+                      }`}
+                    >
+                      <span className="font-semibold text-[#292524]">{reference.reference}</span>
+                      <span className="text-[#6f6a5e]">{reference.payerName ?? '-'}</span>
+                      <span className="text-[#6f6a5e]">{reference.accountSuffix ? `••${reference.accountSuffix}` : '-'}</span>
+                      <span className="text-[#6f6a5e]">{formatTxnDate(reference.transactionDate)}</span>
+                      <span className="font-semibold text-[#292524]">R {formatRand(reference.amount)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          </div>
         </div>
-      ) : null}
-    </MonthlyPaymentsShell>
+      </div>
+    </main>
+  );
+}
+
+function UnitStat({
+  label,
+  value,
+  subValue,
+  valueClassName = 'text-[#1c1a17]',
+  isLast = false,
+}: {
+  label: string;
+  value: string;
+  subValue?: string;
+  valueClassName?: string;
+  isLast?: boolean;
+}) {
+  return (
+    <div className={`border-b border-[#e7e3d6] px-4 py-3.5 sm:border-b-0 ${isLast ? '' : 'sm:border-r'}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#a39d8d]">{label}</p>
+      <p className={`mt-1 text-base font-bold ${valueClassName}`}>
+        {value}
+        {subValue ? <span className="text-xs font-medium text-[#a39d8d]"> {subValue}</span> : null}
+      </p>
+    </div>
   );
 }
