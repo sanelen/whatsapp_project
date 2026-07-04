@@ -167,16 +167,17 @@ function sortReferencesForRow(row: UnitTableRow, references: ReferencePoolRow[])
     });
 }
 
-async function postReferenceAction(body: Record<string, string>) {
+async function postReferenceAction<T = unknown>(body: Record<string, string>): Promise<T | undefined> {
   const response = await fetch('/api/monthly-payments/references', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+  const payload = (await response.json().catch(() => ({}))) as { error?: string; data?: T };
   if (!response.ok) {
     throw new Error(payload.error ?? 'Monthly payments action failed');
   }
+  return payload.data;
 }
 
 export function UnitsTable({
@@ -199,6 +200,15 @@ export function UnitsTable({
   // FR-2.7: last action performed inside the match drawer ("what just happened"),
   // shown above the candidate list, which stays open after a match.
   const [drawerNotice, setDrawerNotice] = useState<string | null>(null);
+  // FR-2.7b: pending "Add this reference to the unit's reference list?" prompt
+  // after a sign-off the unit's rules would not have auto-matched. Owner
+  // ruling: always a question, never automatic.
+  const [rulePrompt, setRulePrompt] = useState<{
+    unitId: string;
+    referenceId: string;
+    referenceText: string;
+    unitLabel: string;
+  } | null>(null);
 
   function refreshTable() {
     setErrorMessage(null);
@@ -237,16 +247,57 @@ export function UnitsTable({
     });
   }
 
-  function handleSignOff(referenceId: string) {
+  function handleSignOff(row: UnitTableRow) {
+    const referenceId = row.referenceId;
+    if (!referenceId) return;
     startTransition(async () => {
       try {
-        await postReferenceAction({
+        const data = await postReferenceAction<{
+          signedOff: boolean;
+          suggestReferenceRule?: boolean;
+          referenceText?: string;
+        }>({
           action: 'sign_off',
           paymentReferenceId: referenceId,
         });
+        // FR-2.7b: if the unit's rules would NOT have auto-matched this
+        // reference, offer to persist it so next month matches automatically.
+        if (data?.suggestReferenceRule) {
+          setRulePrompt({
+            unitId: row.unitId,
+            referenceId,
+            referenceText: data.referenceText ?? row.reference ?? '',
+            unitLabel: row.label,
+          });
+        } else {
+          setRulePrompt(null);
+        }
         refreshTable();
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to sign off reference');
+      }
+    });
+  }
+
+  // FR-2.7b accept/decline for the sign-off learning prompt.
+  function handleAddReferenceRule(prompt: NonNullable<typeof rulePrompt>) {
+    startTransition(async () => {
+      try {
+        const data = await postReferenceAction<{ added: boolean; alreadyCovered: boolean }>({
+          action: 'add_match_rule',
+          paymentReferenceId: prompt.referenceId,
+          unitId: prompt.unitId,
+        });
+        setSelectedUnitId(prompt.unitId);
+        setDrawerNotice(
+          data?.added
+            ? `Rule saved — "${prompt.referenceText}" will auto-match ${prompt.unitLabel} next month`
+            : `Already covered — an active rule for ${prompt.unitLabel} matches this reference`
+        );
+        setRulePrompt(null);
+        refreshTable();
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to add reference rule');
       }
     });
   }
@@ -533,11 +584,41 @@ export function UnitsTable({
           </p>
         ) : null}
 
+        {rulePrompt && rulePrompt.unitId === row.unitId ? (
+          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-3">
+            <p className="text-[13px] font-semibold text-sky-900">
+              Add this reference to {rulePrompt.unitLabel}&apos;s reference list?
+            </p>
+            <p className="mt-1 text-[12px] text-sky-800">
+              &ldquo;{rulePrompt.referenceText}&rdquo; wouldn&apos;t have matched automatically — save it as a rule
+              and next month it matches {rulePrompt.unitLabel} without you.
+            </p>
+            <div className="mt-2.5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleAddReferenceRule(rulePrompt)}
+                disabled={pendingAction}
+                className="rounded-full bg-[#0369a1] px-4 py-2 text-[12.5px] font-semibold text-white disabled:cursor-wait disabled:bg-[#78716c]"
+              >
+                Yes, add rule
+              </button>
+              <button
+                type="button"
+                onClick={() => setRulePrompt(null)}
+                disabled={pendingAction}
+                className="rounded-full border border-[#e7e3d6] bg-white px-4 py-2 text-[12.5px] font-semibold text-[#57534e] disabled:cursor-wait"
+              >
+                No, just this once
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-4 flex flex-wrap gap-2">
           {row.referenceId && !row.signedOff && row.status !== 'overpaid' ? (
             <button
               type="button"
-              onClick={() => handleSignOff(row.referenceId as string)}
+              onClick={() => handleSignOff(row)}
               disabled={pendingAction}
               className="rounded-full bg-[#1c1a17] px-[18px] py-2.5 text-[13px] font-semibold text-white disabled:cursor-wait disabled:bg-[#78716c]"
             >

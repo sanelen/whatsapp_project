@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApiUser } from '@/lib/auth/dal';
 import {
   acceptDepositSplit,
+  addUnitReferenceRule,
   allocateUnitCredit,
   autoMatchUnmatchedReferences,
   matchReferenceToUnit,
@@ -25,7 +26,8 @@ export async function POST(request: NextRequest) {
           | 'accept_deposit_split'
           | 'auto_match'
           | 'allocate_credit'
-          | 'reverse_credit_allocation';
+          | 'reverse_credit_allocation'
+          | 'add_match_rule';
         propertyId?: string;
         unitId?: string;
         paymentReferenceId?: string;
@@ -112,6 +114,18 @@ export async function POST(request: NextRequest) {
     if (action === 'reverse_sign_off') {
       const data = await reverseSignOffAndUnmatch({
         paymentReferenceId,
+        actor: user.email ?? user.id,
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'add_match_rule') {
+      if (!body?.unitId?.trim()) {
+        return NextResponse.json({ error: 'Missing unitId for add_match_rule' }, { status: 400 });
+      }
+      const data = await addUnitReferenceRule({
+        paymentReferenceId,
+        unitId: body.unitId.trim(),
         actor: user.email ?? user.id,
       });
       return NextResponse.json({ success: true, data });

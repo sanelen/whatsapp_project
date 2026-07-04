@@ -11,9 +11,11 @@ import { test, expect } from '@playwright/test';
  * confirmation, and keep listing the REMAINING candidates so the operator can
  * chain matches without re-opening the panel per reference.
  *
- * FR-2.7b (planned): signing off a reference that the unit's hints/rules would
- * not have auto-matched must ask "Add this reference to this unit's reference
- * list?" and, on yes, persist a match rule so next month auto-matches it.
+ * FR-2.7b (built 2026-07-04, pending owner browser check): signing off a
+ * reference that the unit's hints/rules would not have auto-matched asks
+ * "Add this reference to <unit>'s reference list?" and, on "Yes, add rule",
+ * persists a reference_equals rule (bank_import_unit_match_hints) so next
+ * month auto-matches it. "No, just this once" persists nothing.
  *
  * NOTE: these tests mutate match state, so they need a seeded/disposable
  * property with 2+ unmatched references (they must not run against live

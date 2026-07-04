@@ -7,7 +7,12 @@ import {
   roundMoney,
   shiftPeriodStart,
 } from '@/lib/payment-allocation';
-import { resolveAutoMatch, type AutoMatchHint } from '@/lib/auto-match';
+import {
+  resolveAutoMatch,
+  shouldOfferReferenceRule,
+  unitHintsCoverReference,
+  type AutoMatchHint,
+} from '@/lib/auto-match';
 
 function toMoney(value: number | string | null | undefined): number {
   const parsed = typeof value === 'number' ? value : Number(value ?? 0);
@@ -531,6 +536,158 @@ export async function autoMatchUnmatchedReferences(input: {
   return { scanned: references.length, matched, ambiguous, unmatched: unmatchedCount, failed };
 }
 
+/**
+ * FR-2.7b: after a sign-off, decide whether to ask the operator "Add this
+ * reference to this unit's reference list?". Suggest only when none of the
+ * unit's active rules would have auto-matched the reference (payer name is
+ * looked up from the bank entry so payer_name_contains rules count too).
+ * Degrades to "no suggestion" when the hints table is missing — a rule could
+ * not be stored anyway.
+ */
+async function computeReferenceRuleSuggestion(input: {
+  unitId: string;
+  propertyId: string | null;
+  referenceText: string;
+  amount: number;
+  bankImportEntryId: string | null;
+}): Promise<boolean> {
+  const admin = getSupabaseAdmin();
+  const { data: hints, error: hintsError } = await admin
+    .from('bank_import_unit_match_hints')
+    .select('id,unit_id,property_id,matcher_type,matcher_value,amount_value,priority,is_active')
+    .eq('unit_id', input.unitId)
+    .eq('is_active', true);
+  if (hintsError) {
+    if (MISSING_TABLE_CODES.has(hintsError.code ?? '')) return false;
+    throw new Error(`Failed to load unit match hints: ${hintsError.message}`);
+  }
+
+  let payerName = '';
+  if (input.bankImportEntryId) {
+    const { data: entry } = await admin
+      .from('bank_import_entries')
+      .select('payer_name')
+      .eq('id', input.bankImportEntryId)
+      .maybeSingle<{ payer_name: string | null }>();
+    payerName = entry?.payer_name ?? '';
+  }
+
+  return shouldOfferReferenceRule(
+    {
+      id: 'sign-off-check',
+      property_id: input.propertyId,
+      reference: input.referenceText,
+      payerName,
+      amount: input.amount,
+    },
+    (hints ?? []) as AutoMatchHint[],
+    input.unitId
+  );
+}
+
+/**
+ * FR-2.7b accept path: persist a reference_equals rule for the unit so next
+ * month's auto-match catches the same reference text. No-op (added: false)
+ * when an active rule already covers the reference. Only ever called from an
+ * explicit operator "yes" — owner wants this as a question, never automatic.
+ */
+export async function addUnitReferenceRule(input: {
+  paymentReferenceId: string;
+  unitId: string;
+  actor: string;
+}) {
+  const admin = getSupabaseAdmin();
+  const { data: reference, error: referenceError } = await admin
+    .from('payment_references')
+    .select('id,organization_id,property_id,unit_id,unit_payment_period_id,reference,amount,bank_import_entry_id')
+    .eq('id', input.paymentReferenceId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      property_id: string | null;
+      unit_id: string | null;
+      unit_payment_period_id: string | null;
+      reference: string;
+      amount: number | string;
+      bank_import_entry_id: string | null;
+    }>();
+  if (referenceError || !reference) throw new Error(referenceError?.message ?? 'Payment reference not found');
+  if (reference.unit_id !== input.unitId) {
+    throw new Error('Reference is not matched to this unit');
+  }
+  const referenceText = reference.reference.trim();
+  if (referenceText.length < 4) {
+    throw new Error('Reference text is too short to become a match rule');
+  }
+
+  const { data: unit, error: unitError } = await admin
+    .from('property_units')
+    .select('id,property_id')
+    .eq('id', input.unitId)
+    .maybeSingle<{ id: string; property_id: string }>();
+  if (unitError || !unit) throw new Error(unitError?.message ?? 'Unit not found');
+
+  const { data: hints, error: hintsError } = await admin
+    .from('bank_import_unit_match_hints')
+    .select('id,unit_id,property_id,matcher_type,matcher_value,amount_value,priority,is_active')
+    .eq('unit_id', input.unitId)
+    .eq('is_active', true);
+  if (hintsError) throw new Error(`Failed to load unit match hints: ${hintsError.message}`);
+
+  let payerName = '';
+  if (reference.bank_import_entry_id) {
+    const { data: entry } = await admin
+      .from('bank_import_entries')
+      .select('payer_name')
+      .eq('id', reference.bank_import_entry_id)
+      .maybeSingle<{ payer_name: string | null }>();
+    payerName = entry?.payer_name ?? '';
+  }
+
+  const alreadyCovered = unitHintsCoverReference(
+    {
+      id: reference.id,
+      property_id: reference.property_id,
+      reference: referenceText,
+      payerName,
+      amount: toMoney(reference.amount),
+    },
+    (hints ?? []) as AutoMatchHint[],
+    input.unitId
+  );
+  if (alreadyCovered) {
+    return { added: false, alreadyCovered: true };
+  }
+
+  const { error: insertError } = await admin.from('bank_import_unit_match_hints').insert({
+    organization_id: reference.organization_id,
+    property_id: unit.property_id,
+    unit_id: input.unitId,
+    matcher_type: 'reference_equals',
+    matcher_value: referenceText,
+    priority: 100,
+    notes: `Added from sign-off (FR-2.7b) by ${input.actor}`,
+    is_active: true,
+  });
+  if (insertError) throw new Error(`Failed to add reference rule: ${insertError.message}`);
+
+  await logPaymentMatchEvent({
+    organizationId: reference.organization_id,
+    propertyId: reference.property_id,
+    unitId: input.unitId,
+    unitPaymentPeriodId: reference.unit_payment_period_id,
+    paymentReferenceId: reference.id,
+    eventType: 'note_added',
+    actor: input.actor,
+    referenceText,
+    amount: toMoney(reference.amount),
+    expectedAmount: 0,
+    note: `Reference rule added on sign-off (FR-2.7b): "${referenceText}" now auto-matches this unit`,
+  });
+
+  return { added: true, alreadyCovered: false };
+}
+
 export async function signOffMatchedReference(input: {
   paymentReferenceId: string;
   actor: string;
@@ -538,7 +695,7 @@ export async function signOffMatchedReference(input: {
   const admin = getSupabaseAdmin();
   const { data: reference, error: referenceError } = await admin
     .from('payment_references')
-    .select('id,organization_id,property_id,unit_id,unit_payment_period_id,reference,amount,signed_off')
+    .select('id,organization_id,property_id,unit_id,unit_payment_period_id,reference,amount,signed_off,bank_import_entry_id')
     .eq('id', input.paymentReferenceId)
     .maybeSingle<{
       id: string;
@@ -549,6 +706,7 @@ export async function signOffMatchedReference(input: {
       reference: string;
       amount: number | string;
       signed_off: boolean;
+      bank_import_entry_id: string | null;
     }>();
   if (referenceError || !reference) throw new Error(referenceError?.message ?? 'Payment reference not found');
   if (!reference.unit_id || !reference.unit_payment_period_id) throw new Error('Reference must be matched before sign-off');
@@ -596,7 +754,28 @@ export async function signOffMatchedReference(input: {
     newStatus: recomputed.persistedStatus,
   });
 
-  return { signedOff: true, status: recomputed.computedStatus, persistedStatus: recomputed.persistedStatus };
+  // FR-2.7b: the sign-off is already durable at this point — a failure while
+  // computing the learning prompt must not surface as a failed sign-off.
+  let suggestReferenceRule = false;
+  try {
+    suggestReferenceRule = await computeReferenceRuleSuggestion({
+      unitId: reference.unit_id,
+      propertyId: reference.property_id,
+      referenceText: reference.reference,
+      amount,
+      bankImportEntryId: reference.bank_import_entry_id,
+    });
+  } catch {
+    suggestReferenceRule = false;
+  }
+
+  return {
+    signedOff: true,
+    status: recomputed.computedStatus,
+    persistedStatus: recomputed.persistedStatus,
+    suggestReferenceRule,
+    referenceText: reference.reference,
+  };
 }
 
 async function activeContributionAmountForReference(paymentReferenceId: string): Promise<number> {

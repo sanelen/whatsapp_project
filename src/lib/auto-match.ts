@@ -109,6 +109,42 @@ export function hintHit(reference: AutoMatchReference, hint: AutoMatchHint): Hin
 }
 
 /**
+ * FR-2.7b (owner ruling 2026-07-03): true when at least one of the unit's own
+ * active rules already fires for this reference — i.e. auto-match would have
+ * found it without operator help.
+ */
+export function unitHintsCoverReference(
+  reference: AutoMatchReference,
+  hints: AutoMatchHint[],
+  unitId: string
+): boolean {
+  for (const hint of hints) {
+    if (!hint.is_active || hint.unit_id !== unitId) continue;
+    if (reference.property_id && hint.property_id && hint.property_id !== reference.property_id) continue;
+    if (hintHit(reference, hint)) return true;
+  }
+  return false;
+}
+
+/**
+ * FR-2.7b: offer the "Add this reference to this unit's reference list?"
+ * prompt on sign-off only when
+ * - the reference text is specific enough to become a reference_equals rule
+ *   (>= 4 chars, same floor as tokenizeMatcherValue — "01" would fire on half
+ *   the statement), and
+ * - none of the unit's active rules would have matched it (it was operator
+ *   knowledge, worth persisting).
+ */
+export function shouldOfferReferenceRule(
+  reference: AutoMatchReference,
+  hints: AutoMatchHint[],
+  unitId: string
+): boolean {
+  if (normalize(reference.reference).length < 4) return false;
+  return !unitHintsCoverReference(reference, hints, unitId);
+}
+
+/**
  * Dominance resolution:
  * 1. An EXACT hit (whole reference equals a token) wins outright — unless two
  *    different units both hit exactly, which is operator territory.

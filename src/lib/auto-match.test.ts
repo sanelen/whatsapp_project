@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveAutoMatch, type AutoMatchHint, type AutoMatchReference } from './auto-match';
+import {
+  resolveAutoMatch,
+  shouldOfferReferenceRule,
+  unitHintsCoverReference,
+  type AutoMatchHint,
+  type AutoMatchReference,
+} from './auto-match';
 
 // Functional decision-rule tests for the auto-match job (owner request
 // 2026-07-02). Map: docs/testing/functional-test-map.md
@@ -102,4 +108,60 @@ test('FR-2.4 [decision: several rules, one unit] multiple rules agreeing on the 
     hint({ id: 'h2', matcher_type: 'amount_equals', matcher_value: '', amount_value: 2200 }),
   ]);
   assert.deepEqual(result, { kind: 'match', unitId: 'unit-1', hintId: 'h1' });
+});
+
+// FR-2.7b — sign-off learning prompt (owner ruling 2026-07-03: a question,
+// never automatic).
+
+test('FR-2.7b [decision: manual knowledge gets offered] a reference no unit rule hits triggers the prompt', () => {
+  const offered = shouldOfferReferenceRule(ref({ reference: 'S MKHIZE SAVINGS' }), [hint({})], 'unit-1');
+  assert.equal(
+    offered,
+    true,
+    'BROKEN RULE: a manually-matched reference was signed off without offering to learn it. Operator impact: San re-matches the same tenant by hand every month. Action: shouldOfferReferenceRule must fire when no unit rule hits.'
+  );
+});
+
+test('FR-2.7b [decision: known references stay quiet] a reference the unit rules already match never prompts', () => {
+  const offered = shouldOfferReferenceRule(ref({}), [hint({})], 'unit-1');
+  assert.equal(
+    offered,
+    false,
+    'BROKEN RULE: the prompt fired for a reference auto-match already covers. Operator impact: prompt fatigue — San starts clicking No on everything. Action: unitHintsCoverReference must count reference_contains hits.'
+  );
+});
+
+test("FR-2.7b [decision: other units' rules don't count] coverage is judged only by the signed-off unit's own rules", () => {
+  const offered = shouldOfferReferenceRule(ref({}), [hint({ unit_id: 'unit-OTHER' })], 'unit-1');
+  assert.equal(
+    offered,
+    true,
+    "BROKEN RULE: another unit's rule suppressed the prompt. Operator impact: unit-1 never learns its tenant's reference. Action: unitHintsCoverReference must filter hints to the target unit."
+  );
+});
+
+test('FR-2.7b [decision: inactive rules are no coverage] a disabled rule does not suppress the prompt', () => {
+  assert.equal(shouldOfferReferenceRule(ref({}), [hint({ is_active: false })], 'unit-1'), true);
+});
+
+test('FR-2.7b [decision: short references never become rules] references under 4 characters are not offered', () => {
+  const offered = shouldOfferReferenceRule(ref({ reference: ' 01 ' }), [], 'unit-1');
+  assert.equal(
+    offered,
+    false,
+    'BROKEN RULE: a 2-character reference was offered as a reference_equals rule. Operator impact: a junk rule that equals-matches noise. Action: enforce the same 4-char floor as tokenizeMatcherValue.'
+  );
+});
+
+test('FR-2.7b [decision: payer rules count as coverage] a payer_name_contains hit suppresses the prompt', () => {
+  const covered = unitHintsCoverReference(
+    ref({ reference: 'S MKHIZE SAVINGS', payerName: 'MR S MKHIZE' }),
+    [hint({ matcher_type: 'payer_name_contains', matcher_value: 'MKHIZE' })],
+    'unit-1'
+  );
+  assert.equal(covered, true);
+});
+
+test('FR-2.7b [decision: rules stay scoped] a same-unit rule scoped to another property is not coverage', () => {
+  assert.equal(unitHintsCoverReference(ref({}), [hint({ property_id: 'prop-OTHER' })], 'unit-1'), false);
 });

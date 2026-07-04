@@ -76,12 +76,18 @@ tags: **Shipped**, **Partial**, **Planned**.
     the remaining references, and a green "Matched R X · REF → unit (awaiting
     sign-off)" confirmation shows above the list, so multi-reference sessions
     don't lose their working context after each accept.
-  - FR-2.7b **Planned** — reference-learning prompt on sign-off: when signing
-    off a reference that the unit's hints/rules would NOT have matched (i.e. it
-    was matched manually), ask the operator "Add this reference to this unit's
-    reference list?" so the next month auto-matches it. Needs an
-    add-match-rule API action + confirm popup; owner explicitly wants this as
-    a question, not automatic.
+  - FR-2.7b **Built 2026-07-04 (pending owner browser check)** —
+    reference-learning prompt on sign-off: signing off a reference the unit's
+    active rules would NOT have matched shows "Add this reference to
+    \<unit\>'s reference list?" in the drawer. "Yes, add rule" persists a
+    `reference_equals` rule (`bank_import_unit_match_hints`) via the new
+    `add_match_rule` API action so next month auto-matches it; "No, just this
+    once" persists nothing (owner ruling: a question, never automatic).
+    References under 4 chars are never offered (same noise floor as rule
+    tokens); a rule that already covers the reference suppresses the prompt.
+    7 decision-rule tests in `src/lib/auto-match.test.ts`; before/after
+    fixture renders in
+    `docs/audits/screenshots/2026-07-04-signoff-learning-prompt-*.png`.
 - FR-2.8 **Partial** — Deposit-split / partial-payment allocation (owner rulings
   2026-07-02, verified via functional tests):
   - Overpayments with a configured deposit read `overpaid` with a rent-first

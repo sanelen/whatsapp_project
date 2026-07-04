@@ -1,4 +1,4 @@
-Last updated: 2026-07-03
+Last updated: 2026-07-04
 
 # Linear Sync
 
@@ -44,7 +44,11 @@ These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ti
   table done 2026-07-03** with before/after screenshots in
   `docs/audits/screenshots/`; dashboard/locations screens still pending a pass.
 - Post-match/sign-off operator feedback strengthening (REQUIREMENTS FR-2.7) —
-  next up.
+  **FR-2.7b built 2026-07-04** (nightly run): sign-off learning prompt +
+  `add_match_rule` action, verified with tests (104/104), typecheck, prod
+  build, and before/after fixture renders. Remaining: owner browser check of
+  both FR-2.7a and FR-2.7b on a TEST room, then un-fixme
+  `e2e/match-flow-feedback.spec.ts`.
 
 ## Suggested sync process going forward
 
