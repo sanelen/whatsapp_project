@@ -143,9 +143,14 @@ tags: **Shipped**, **Partial**, **Planned**.
   manager (list + editor): nav cards/fonts one step down, location cards ~1/3
   shorter with buttons on one row, room rows ~20% shorter — see
   `docs/audits/screenshots/2026-07-12-{locations,room-manager}-density-{before,after}-fixture.png`
-  (fixture-data renders). Remaining: the dashboard hub
-  (`monthly-payments-hub.tsx`) and reference-pool screens have not had a
-  dedicated pass-2 treatment.
+  (fixture-data renders). Completed 2026-07-12 (second slice): dashboard hub
+  (inline sidebar 260→248px, nav/fonts one step down, h1 26px) and the
+  reference-pool screen (table rows py-4→py-2.5, rem-scale fonts → 13px scale,
+  compact month switcher and summary rail; all seven columns now fit at
+  1440px) — see
+  `docs/audits/screenshots/2026-07-12-{hub,reference-pool}-density-{before,after}-fixture.png`.
+  Pass-2 treatment now covers every payments screen; owner sanity-check on
+  localhost:3000 outstanding.
 - NFR-2.2 **Shipped** — Navigation safety: every payments page must expose a clear
   path back (dashboard/locations/units/room-manager/reference-pool), verified by
   `e2e/navigation-safety.spec.ts`.

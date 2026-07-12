@@ -36,29 +36,51 @@ Both pairs also show the shell/sidebar changes. Labeled `-fixture` per the
 agreed workflow; density is layout-only, so please sanity-check once on
 localhost:3000 — no data mutation involved, any property will do.
 
-## Commit (side ref — see cleanup below)
+## Commit — RESOLVED by the evening session (see continuation below)
 
-`.git/index.lock` was already stuck at run start (known mount behavior), so
-the work is parked on a side ref:
+~~The work was parked on side ref `refs/nightly/session-2026-07-12-a`.~~
+**No cleanup needed anymore.** The evening session of 2026-07-12 cleared the
+stuck `.git/index.lock` (deletion is now permitted in the sandbox) and
+fast-forwarded `codex/monthly-payments` through `dbb92a4` (FR-2.7b) and both
+2026-07-12 side-ref commits. Everything is on the branch; the consumed
+`refs/nightly/*` refs can be deleted at your leisure.
 
-- `refs/nightly/session-2026-07-12-a` — density pass + screenshots + docs +
-  this handover. **Parented on `dbb92a4`** (= `refs/nightly/session-2026-07-04-a`,
-  the FR-2.7b commit you haven't merged yet), so fast-forwarding this ref
-  brings in FR-2.7b too.
+---
 
-## Cleanup (San, ~30 seconds, on your machine)
+# Continuation — 2026-07-12 evening session
 
-1. `rm .git/index.lock`
-2. On `codex/monthly-payments`:
-   `git merge --ff-only refs/nightly/session-2026-07-12-a`
-   (includes 2026-07-04-a; no need to merge that one separately)
-3. Optionally `git update-ref -d` both consumed nightly refs.
+## Summary
+
+1. **Landed all parked side refs onto `codex/monthly-payments`** (FR-2.7b +
+   morning density pass + search_path migration) and re-verified the landed
+   state: typecheck ✓, 104/104 tests ✓, prod build ✓. Your manual side-ref
+   merge steps are obsolete.
+2. **NFR-2.1 finished — dashboard hub + reference pool** (the last two
+   screens): hub inline sidebar 260→248px with nav/fonts one step down and
+   h1 26px; reference pool from rem-scale demo sizing to the 13px operational
+   scale (rows py-4→py-2.5, compact month switcher, tighter summary rail —
+   all seven table columns now fit at 1440px). Verified: typecheck ✓,
+   104/104 ✓, prod build ✓. Before/after fixture renders:
+   `docs/audits/screenshots/2026-07-12-{hub,reference-pool}-density-{before,after}-fixture.png`
+   — compared visually; only the intended sizing changed, content and
+   behavior identical. **Every payments screen now has the pass-2 treatment.**
+3. **Wrote `docs/PRODUCT-BRIEF.md`** from San's dictated instructions
+   (2026-07-12): the product intent (units + payments; "has every tenant
+   paid and is each deposit on the right unit?"), the Gmail → Drive → DB →
+   match → sign-off pipeline, and the standing session doctrine — tests at
+   session start, flow tests over element checks, before/after screenshots
+   on every UI change, and an import health check every session. **Every
+   future session must read it first.**
 
 ## Still open / what to pick up next time
 
-1. **NFR-2.1 remainder** — dashboard hub (`monthly-payments-hub.tsx`) and
-   reference-pool screens still need a dedicated density pass; reuse the
-   harness (`$HOME/shots` recipe in memory).
+1. **Standing import health check (new, per PRODUCT-BRIEF.md)** — each
+   session: verify Gmail ↔ Drive ↔ DB import consistency and that unmatched
+   deposits surface in the reference pool. Needs live connectors (Gmail/Drive
+   MCPs were not authorized this session) or DB-side checks via Supabase.
+2. **Flow-test debt** — 15 of ~24 e2e spec files carry `fixme`/`skip`,
+   mostly blocked on a seeded/disposable TEST property. Deciding/creating
+   that fixture is the biggest unlock for the flow-testing doctrine.
 2. **FR-2.7 owner browser check** — FR-2.7a (drawer stays open) + FR-2.7b
    (learning prompt) on a TEST room, then un-fixme
    `e2e/match-flow-feedback.spec.ts`.

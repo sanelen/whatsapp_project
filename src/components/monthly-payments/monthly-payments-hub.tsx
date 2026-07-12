@@ -91,7 +91,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
   return (
     <main className="min-h-screen bg-[#f6f4ef] text-[#1c1a17]">
       <div className="flex min-h-screen">
-        <aside className="hidden w-[260px] shrink-0 flex-col gap-[26px] bg-[#0f172a] px-[18px] py-[22px] text-white lg:flex">
+        <aside className="hidden w-[248px] shrink-0 flex-col gap-5 bg-[#0f172a] px-[18px] py-[18px] text-white lg:flex">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#7dd3fc]">
               Monthly Payments
@@ -99,24 +99,24 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
             <p className="mt-2 text-[22px] font-bold tracking-normal">Workspace</p>
           </div>
           <nav className="flex flex-col gap-1.5">
-            <Link href="/monthly-payments" className="rounded-xl bg-sky-300/15 px-3 py-2.5 text-[13.5px] font-semibold text-white">
+            <Link href="/monthly-payments" className="rounded-xl bg-sky-300/15 px-3 py-2 text-[13px] font-semibold text-white">
               Dashboard
             </Link>
-            <Link href="/monthly-payments/locations" className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+            <Link href="/monthly-payments/locations" className="rounded-xl px-3 py-2 text-[13px] font-semibold text-slate-400">
               Locations
             </Link>
-            <Link href={primaryLocationLink} className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+            <Link href={primaryLocationLink} className="rounded-xl px-3 py-2 text-[13px] font-semibold text-slate-400">
               Match & sign off
             </Link>
-            <Link href={`/monthly-payments/reference-pool?period=${selectedPeriod}`} className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+            <Link href={`/monthly-payments/reference-pool?period=${selectedPeriod}`} className="rounded-xl px-3 py-2 text-[13px] font-semibold text-slate-400">
               Reference pool
             </Link>
           </nav>
           <div className="mt-auto flex gap-2 border-t border-white/10 pt-4">
-            <Link href="/" className="flex-1 rounded-full bg-white py-2.5 text-center text-[12.5px] font-bold text-[#0f172a]">
+            <Link href="/" className="flex-1 rounded-full bg-white py-2 text-center text-[12.5px] font-bold text-[#0f172a]">
               Home
             </Link>
-            <Link href="/property-assistance" className="flex-1 rounded-full border border-white/20 py-2.5 text-center text-[12.5px] font-bold text-white">
+            <Link href="/property-assistance" className="flex-1 rounded-full border border-white/20 py-2 text-center text-[12.5px] font-bold text-white">
               Chatbox
             </Link>
           </div>
@@ -134,10 +134,10 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
 
             <div className="mt-2.5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h1 className="m-0 text-[30px] font-bold tracking-normal text-[#1c1a17]">
+                <h1 className="m-0 text-[26px] font-bold tracking-normal text-[#1c1a17]">
                   Where are we this month?
                 </h1>
-                <p className="mt-1.5 text-[13.5px] text-[#8a8578]">
+                <p className="mt-1 text-[13px] text-[#8a8578]">
                   {selectedMonth ? `${selectedMonth.label} ${selectedPeriod.slice(0, 4)}` : dashboard.monthLabel} summary across all locations.
                 </p>
               </div>
@@ -152,7 +152,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                 >
                   ‹
                 </button>
-                <span className="min-w-[88px] px-2.5 py-2 text-center text-[13.5px] font-semibold text-[#1c1a17]">
+                <span className="min-w-[88px] px-2.5 py-1.5 text-center text-[13px] font-semibold text-[#1c1a17]">
                   {selectedMonth ? `${selectedMonth.label} ${selectedPeriod.slice(0, 4)}` : dashboard.monthLabel}
                 </span>
                 <button

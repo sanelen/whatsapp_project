@@ -42,9 +42,11 @@ These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ti
   anon denied, service_role unaffected, advisor ERROR cleared.
 - ~~Units-table UI density pass, part 2 (REQUIREMENTS NFR-2.1)~~ — **units
   table done 2026-07-03**; **shell sidebar + locations + room manager done
-  2026-07-12** (before/after fixture renders in `docs/audits/screenshots/`,
-  typecheck + 104 tests + prod build verified); dashboard hub and
-  reference-pool still pending a dedicated pass.
+  2026-07-12**; **dashboard hub + reference pool done later the same day**
+  (all with before/after fixture renders in `docs/audits/screenshots/`,
+  typecheck + 104 tests + prod build verified). All payments screens now have
+  the pass-2 treatment — gap closed pending owner sanity-check on
+  localhost:3000.
 - Post-match/sign-off operator feedback strengthening (REQUIREMENTS FR-2.7) —
   **FR-2.7b built 2026-07-04** (nightly run): sign-off learning prompt +
   `add_match_rule` action, verified with tests (104/104), typecheck, prod
