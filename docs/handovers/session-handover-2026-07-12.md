@@ -84,11 +84,30 @@ DB-side via Supabase (read-only), 2026-07-12 evening:
 - Matching: 7/11 matched (3 signed off), **4 unmatched correctly visible in
   the reference pool** awaiting allocation.
 
+## Gmail OAuth incident (same day, fixed live)
+
+Import failed with `Failed to refresh Gmail OAuth access token (400)` —
+expired refresh token (OAuth consent screen is in **Testing** mode, so Google
+expires refresh tokens after 7 days; token was minted ~Jul 2–4). Fixed:
+
+- Code (`dbb646e`): refresh errors now surface Google's `error` +
+  `error_description` with a re-connect hint; OAuth refresh failure falls
+  back to a configured service account instead of failing the import.
+- Re-consent run via browser with San present: new refresh token stored in
+  `.env.local` (info.hambatrading@gmail.com). Live import verified after:
+  "Imported 1 references from 112 messages. 24 duplicate files skipped.
+  2 files archived to Drive" — new deposit correctly landed unmatched in the
+  reference pool (7→8).
+- **⚠️ This token dies again ~Jul 19 unless San publishes the OAuth app to
+  Production** (Google Cloud Console → OAuth consent screen → Publish app).
+
 ## Still open / what to pick up next time
 
 1. **Standing import health check (per PRODUCT-BRIEF.md)** — passed DB-side
-   this session (above). Gmail/Drive-side spot check still needs the
-   connectors authorized in an interactive session.
+   AND live (import button) this session. If imports 400 again after ~Jul 19,
+   it's the Testing-mode token expiry — re-run consent at
+   `/api/monthly-payments/import/google-cloud` or get the app published to
+   Production.
 2. **Flow-test debt** — 15 of ~24 e2e spec files carry `fixme`/`skip`,
    mostly blocked on a seeded/disposable TEST property. Deciding/creating
    that fixture is the biggest unlock for the flow-testing doctrine.
