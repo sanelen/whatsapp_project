@@ -45,29 +45,29 @@ export function MonthlyPaymentsShell({
   const referencePoolActive = active === 'reference-pool';
 
   return (
-    <main className="payments-page-scroll min-h-screen overflow-y-auto bg-[linear-gradient(180deg,#e0f2fe_0%,#f8fafc_42%,#dbeafe_100%)] px-4 py-5 text-slate-950 sm:px-5 lg:px-6">
-      <div className="mx-auto grid max-w-[1500px] gap-5 lg:grid-cols-[272px_minmax(0,1fr)] xl:grid-cols-[288px_minmax(0,1fr)]">
-        <aside className="self-start rounded-[26px] border border-white/70 bg-slate-950 p-4.5 text-white shadow-[0_24px_90px_rgba(15,23,42,0.22)] lg:sticky lg:top-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
+    <main className="payments-page-scroll min-h-screen overflow-y-auto bg-[linear-gradient(180deg,#e0f2fe_0%,#f8fafc_42%,#dbeafe_100%)] px-4 py-4 text-slate-950 sm:px-5 lg:px-6">
+      <div className="mx-auto grid max-w-[1500px] gap-4 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="self-start rounded-[20px] border border-white/70 bg-slate-950 p-4 text-white shadow-[0_24px_90px_rgba(15,23,42,0.22)] lg:sticky lg:top-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200">
             Monthly Payments
           </p>
-          <h1 className="mt-3 text-[1.9rem] font-semibold tracking-tight">Workspace</h1>
-          <p className="mt-2.5 text-[0.95rem] leading-6 text-slate-300">
+          <h1 className="mt-1.5 text-[22px] font-semibold tracking-tight">Workspace</h1>
+          <p className="mt-1.5 text-[12.5px] leading-5 text-slate-300">
             One navigation spine for imports, dashboard review, unit operations, and room setup.
           </p>
 
-          <div className="mt-7 space-y-3">
+          <div className="mt-4 space-y-2">
             <Link
               href="/monthly-payments"
-              className={`block rounded-[20px] border px-4 py-3.5 ${navCardClass(active === 'dashboard')}`}
+              className={`block rounded-xl border px-3 py-2.5 ${navCardClass(active === 'dashboard')}`}
             >
-              <div className="flex items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl ${iconWrapClass(active === 'dashboard')}`}>
-                  <Landmark size={16} />
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-lg ${iconWrapClass(active === 'dashboard')}`}>
+                  <Landmark size={14} />
                 </span>
                 <div>
-                  <p className="text-sm font-semibold">Dashboard</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-300">
+                  <p className="text-[13px] font-semibold">Dashboard</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-slate-300">
                     Month overview, imports, rolling totals, and location performance.
                   </p>
                 </div>
@@ -76,15 +76,15 @@ export function MonthlyPaymentsShell({
 
             <Link
               href="/monthly-payments/locations"
-              className={`block rounded-[20px] border px-4 py-3.5 ${navCardClass(locationsActive)}`}
+              className={`block rounded-xl border px-3 py-2.5 ${navCardClass(locationsActive)}`}
             >
-              <div className="flex items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl ${iconWrapClass(locationsActive)}`}>
-                  <Building2 size={16} />
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-lg ${iconWrapClass(locationsActive)}`}>
+                  <Building2 size={14} />
                 </span>
                 <div>
-                  <p className="text-sm font-semibold">Locations</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                  <p className="text-[13px] font-semibold">Locations</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-slate-400">
                     Manage locations, rooms, references, and the source data behind matching.
                   </p>
                 </div>
@@ -93,15 +93,15 @@ export function MonthlyPaymentsShell({
 
             <Link
               href={operationsHref}
-              className={`block rounded-[20px] border px-4 py-3.5 ${navCardClass(operationsActive)}`}
+              className={`block rounded-xl border px-3 py-2.5 ${navCardClass(operationsActive)}`}
             >
-              <div className="flex items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl ${iconWrapClass(operationsActive)}`}>
-                  <ReceiptText size={16} />
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-lg ${iconWrapClass(operationsActive)}`}>
+                  <ReceiptText size={14} />
                 </span>
                 <div>
-                  <p className="text-sm font-semibold">Match & sign off</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                  <p className="text-[13px] font-semibold">Match & sign off</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-slate-400">
                     Open a property and work the monthly unit table without leaving the flow.
                   </p>
                 </div>
@@ -110,15 +110,15 @@ export function MonthlyPaymentsShell({
 
             <Link
               href={referencePoolHref}
-              className={`block rounded-[20px] border px-4 py-3.5 ${navCardClass(referencePoolActive)}`}
+              className={`block rounded-xl border px-3 py-2.5 ${navCardClass(referencePoolActive)}`}
             >
-              <div className="flex items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl ${iconWrapClass(referencePoolActive)}`}>
-                  <ClipboardList size={16} />
+              <div className="flex items-start gap-2.5">
+                <span className={`mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-lg ${iconWrapClass(referencePoolActive)}`}>
+                  <ClipboardList size={14} />
                 </span>
                 <div>
-                  <p className="text-sm font-semibold">Reference pool</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                  <p className="text-[13px] font-semibold">Reference pool</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-slate-400">
                     Review unmatched deposits and jump straight back into the right property.
                   </p>
                 </div>
@@ -126,18 +126,18 @@ export function MonthlyPaymentsShell({
             </Link>
           </div>
 
-          <div className="mt-7 rounded-[20px] border border-slate-800 bg-slate-900/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Quick links</p>
-            <div className="mt-4 flex flex-wrap gap-3">
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
+            <p className="text-[10.5px] uppercase tracking-[0.16em] text-slate-400">Quick links</p>
+            <div className="mt-2.5 flex flex-wrap gap-2">
               <Link
                 href="/"
-                className="inline-flex items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-100"
+                className="inline-flex items-center rounded-full bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-slate-950 transition hover:bg-sky-100"
               >
                 Home
               </Link>
               <Link
                 href="/property-assistance"
-                className="inline-flex items-center rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-white transition hover:border-sky-300 hover:text-sky-100"
+                className="inline-flex items-center rounded-full border border-slate-700 px-3.5 py-1.5 text-[12.5px] font-semibold text-white transition hover:border-sky-300 hover:text-sky-100"
               >
                 Chatbox
               </Link>

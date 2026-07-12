@@ -138,8 +138,14 @@ tags: **Shipped**, **Partial**, **Planned**.
   operational tool, not a demo (2026-07-01 review flagged current UI as too large).
   Pass 2 shipped 2026-07-03 on the units table: row height roughly halved, action
   buttons/pills no longer wrap, header/footer/reference-pool tightened — see
-  `docs/audits/screenshots/2026-07-03-units-density-{before,after}.png`. Remaining:
-  dashboard + locations/room-manager screens have not had a pass-2 treatment.
+  `docs/audits/screenshots/2026-07-03-units-density-{before,after}.png`. Pass 2
+  extended 2026-07-12 to the shared shell sidebar, locations cards, and the room
+  manager (list + editor): nav cards/fonts one step down, location cards ~1/3
+  shorter with buttons on one row, room rows ~20% shorter — see
+  `docs/audits/screenshots/2026-07-12-{locations,room-manager}-density-{before,after}-fixture.png`
+  (fixture-data renders). Remaining: the dashboard hub
+  (`monthly-payments-hub.tsx`) and reference-pool screens have not had a
+  dedicated pass-2 treatment.
 - NFR-2.2 **Shipped** — Navigation safety: every payments page must expose a clear
   path back (dashboard/locations/units/room-manager/reference-pool), verified by
   `e2e/navigation-safety.spec.ts`.

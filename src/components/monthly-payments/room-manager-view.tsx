@@ -38,7 +38,7 @@ type EditorMode = 'edit' | 'create';
 type StatusFilter = 'all' | 'occupied' | 'vacant' | 'blocked';
 
 const inputClassName =
-  'mt-1.5 w-full rounded-[10px] border border-[#e7e3d6] bg-white px-3 py-2.5 text-[13.5px] text-[#1c1a17] outline-none disabled:cursor-not-allowed disabled:bg-[#f1efe9]';
+  'mt-1 w-full rounded-[10px] border border-[#e7e3d6] bg-white px-3 py-2 text-[13px] text-[#1c1a17] outline-none disabled:cursor-not-allowed disabled:bg-[#f1efe9]';
 
 function formatCurrency(amount: number) {
   return `R ${amount.toLocaleString('en-ZA', {
@@ -306,7 +306,7 @@ export function RoomManagerPanel({
   return (
     <main className="min-h-screen bg-[#f6f4ef] text-[#1c1a17]">
       <div className="flex min-h-screen">
-        <aside className="hidden w-[260px] shrink-0 flex-col gap-[26px] bg-[#0f172a] px-[18px] py-[22px] text-white lg:flex">
+        <aside className="hidden w-[248px] shrink-0 flex-col gap-5 bg-[#0f172a] px-[18px] py-[18px] text-white lg:flex">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#7dd3fc]">
               Monthly Payments
@@ -315,25 +315,25 @@ export function RoomManagerPanel({
           </div>
 
           <nav className="flex flex-col gap-1.5">
-            <Link href="/monthly-payments" className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+            <Link href="/monthly-payments" className="rounded-xl px-3 py-2 text-[13px] font-semibold text-slate-400">
               Dashboard
             </Link>
-            <Link href="/monthly-payments/locations" className="rounded-xl bg-sky-300/15 px-3 py-2.5 text-[13.5px] font-semibold text-white">
+            <Link href="/monthly-payments/locations" className="rounded-xl bg-sky-300/15 px-3 py-2 text-[13px] font-semibold text-white">
               Locations
             </Link>
-            <Link href={`/monthly-payments/${view.propertyId}?period=${view.periodKey}`} className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+            <Link href={`/monthly-payments/${view.propertyId}?period=${view.periodKey}`} className="rounded-xl px-3 py-2 text-[13px] font-semibold text-slate-400">
               Match & sign off
             </Link>
-            <Link href={`/monthly-payments/reference-pool?period=${view.periodKey}`} className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
+            <Link href={`/monthly-payments/reference-pool?period=${view.periodKey}`} className="rounded-xl px-3 py-2 text-[13px] font-semibold text-slate-400">
               Reference pool
             </Link>
           </nav>
 
           <div className="mt-auto flex gap-2 border-t border-white/10 pt-4">
-            <Link href="/" className="flex-1 rounded-full bg-white py-2.5 text-center text-[12.5px] font-bold text-[#0f172a]">
+            <Link href="/" className="flex-1 rounded-full bg-white py-2 text-center text-[12.5px] font-bold text-[#0f172a]">
               Home
             </Link>
-            <Link href="/property-assistance" className="flex-1 rounded-full border border-white/20 py-2.5 text-center text-[12.5px] font-bold text-white">
+            <Link href="/property-assistance" className="flex-1 rounded-full border border-white/20 py-2 text-center text-[12.5px] font-bold text-white">
               Chatbox
             </Link>
           </div>
@@ -355,48 +355,48 @@ export function RoomManagerPanel({
               <span className="font-semibold text-[#292524]">Rooms</span>
             </nav>
 
-            <div className="mt-2.5 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="mt-2.5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h1 className="m-0 text-[30px] font-bold tracking-normal text-[#1c1a17]">
+                <h1 className="m-0 text-[26px] font-bold tracking-normal text-[#1c1a17]">
                   {view.propertyName} room manager
                 </h1>
-                <p className="mt-1.5 max-w-[560px] text-[13.5px] leading-normal text-[#8a8578]">
+                <p className="mt-1 max-w-[560px] text-[13px] leading-normal text-[#8a8578]">
                   Room cards feed the payments unit table - names, rent and match rules all live here.
                 </p>
                 <p className="mt-1.5 text-[13px] text-[#a39d8d]">Billing window {view.billingWindowLabel}</p>
               </div>
 
-              <div className="flex shrink-0 gap-2.5">
+              <div className="flex shrink-0 gap-2">
                 <button
                   type="button"
                   onClick={openCreateEditor}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[#ddd8ca] bg-white px-4 py-2.5 text-[13.5px] font-semibold text-[#292524]"
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#ddd8ca] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#292524]"
                 >
                   <Plus size={14} />
                   Create room
                 </button>
                 <Link
                   href={`/monthly-payments/${view.propertyId}?period=${view.periodKey}`}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#1c1a17] px-4 py-2.5 text-[13.5px] font-semibold text-white"
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[#1c1a17] px-3.5 py-2 text-[13px] font-semibold text-white"
                 >
                   Open units →
                 </Link>
               </div>
             </div>
 
-            <div className="mt-[22px] grid overflow-hidden rounded-2xl border border-[#e7e3d6] bg-white sm:grid-cols-4">
+            <div className="mt-4 grid overflow-hidden rounded-2xl border border-[#e7e3d6] bg-white sm:grid-cols-4">
               <StatCell label="Rooms" value={view.summary.roomCount} />
               <StatCell label="Occupied" value={view.summary.occupiedCount} valueClassName="text-[#0f7b53]" />
               <StatCell label="Vacant" value={view.summary.vacantCount} valueClassName="text-[#0369a1]" />
               <StatCell label="Blocked" value={view.summary.blockedCount} valueClassName="text-[#78716c]" isLast />
             </div>
 
-            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+            <div className="mt-3.5 flex flex-wrap items-center gap-2">
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search room, name, surname, or reference..."
-                className="min-w-[220px] flex-1 rounded-xl border border-[#e7e3d6] bg-white px-3.5 py-2.5 text-[13.5px] text-[#1c1a17] outline-none focus:border-[#1c1a17]"
+                className="min-w-[220px] flex-1 rounded-xl border border-[#e7e3d6] bg-white px-3 py-2 text-[13px] text-[#1c1a17] outline-none focus:border-[#1c1a17]"
               />
               <div className="flex gap-1.5">
                 {(['all', 'occupied', 'vacant', 'blocked'] as const).map((filter) => {
@@ -406,7 +406,7 @@ export function RoomManagerPanel({
                       key={filter}
                       type="button"
                       onClick={() => setStatusFilter(filter)}
-                      className={`rounded-full border px-3.5 py-2 text-[12.5px] font-semibold ${
+                      className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold ${
                         active
                           ? 'border-[#1c1a17] bg-[#1c1a17] text-white'
                           : 'border-[#e7e3d6] bg-white text-[#57534e]'
@@ -420,13 +420,13 @@ export function RoomManagerPanel({
             </div>
 
             {view.setupState === 'missing_tables' ? (
-              <section className="mt-5 rounded-2xl border border-dashed border-[#ddd8ca] bg-white px-5 py-4 text-sm text-[#6f6a5e]">
+              <section className="mt-3.5 rounded-2xl border border-dashed border-[#ddd8ca] bg-white px-4 py-3 text-[13px] text-[#6f6a5e]">
                 Advanced room-manager columns are not available in the connected database yet. Core fields remain editable.
               </section>
             ) : null}
 
             {editorMode === 'create' && draft ? (
-              <section className="mt-[18px] overflow-hidden rounded-[20px] border border-[#e7e3d6] bg-white">
+              <section className="mt-3.5 overflow-hidden rounded-2xl border border-[#e7e3d6] bg-white">
                 <RoomEditor
                   draft={draft}
                   errorMessage={errorMessage}
@@ -443,8 +443,8 @@ export function RoomManagerPanel({
               </section>
             ) : null}
 
-            <section className="mt-[18px] overflow-hidden rounded-[20px] border border-[#e7e3d6] bg-white">
-              <div className="hidden grid-cols-[5px_minmax(170px,1.4fr)_minmax(135px,0.9fr)_minmax(135px,0.9fr)_90px_minmax(130px,1.3fr)_28px] items-center gap-4 border-b border-[#f0ece0] bg-[#fbfaf6] px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#a39d8d] lg:grid">
+            <section className="mt-3.5 overflow-hidden rounded-2xl border border-[#e7e3d6] bg-white">
+              <div className="hidden grid-cols-[5px_minmax(170px,1.4fr)_minmax(135px,0.9fr)_minmax(135px,0.9fr)_90px_minmax(130px,1.3fr)_28px] items-center gap-3 border-b border-[#f0ece0] bg-[#fbfaf6] px-4 py-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#a39d8d] lg:grid">
                 <span />
                 <span>Room</span>
                 <span>Name</span>
@@ -466,35 +466,35 @@ export function RoomManagerPanel({
                     <button
                       type="button"
                       onClick={() => toggleRoom(room)}
-                      className="grid w-full cursor-pointer grid-cols-[5px_minmax(170px,1.4fr)_minmax(135px,0.9fr)_minmax(135px,0.9fr)_90px_minmax(130px,1.3fr)_28px] items-center gap-4 px-5 py-3.5 text-left max-lg:grid-cols-[5px_1fr_28px] max-lg:gap-3"
+                      className="grid w-full cursor-pointer grid-cols-[5px_minmax(170px,1.4fr)_minmax(135px,0.9fr)_minmax(135px,0.9fr)_90px_minmax(130px,1.3fr)_28px] items-center gap-3 px-4 py-2 text-left max-lg:grid-cols-[5px_1fr_28px] max-lg:gap-3"
                     >
-                      <span className={`block h-8 w-[5px] rounded-[3px] ${status.barClass}`} />
+                      <span className={`block h-7 w-[5px] rounded-[3px] ${status.barClass}`} />
                       <span>
                         <span className="flex items-center gap-2">
-                          <h2 className="text-[15px] font-bold text-[#1c1a17]">{room.label}</h2>
-                          <span className={`rounded-full px-[9px] py-0.5 text-[11.5px] font-bold ${status.pillClass}`}>
+                          <h2 className="text-[14px] font-bold text-[#1c1a17]">{room.label}</h2>
+                          <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold ${status.pillClass}`}>
                             {status.label}
                           </span>
                         </span>
                         {room.expectedReference ? (
-                          <span className="mt-0.5 block text-[12.5px] text-[#a39d8d]">ref {room.expectedReference}</span>
+                          <span className="block text-[12px] text-[#a39d8d]">ref {room.expectedReference}</span>
                         ) : null}
-                        {nameSummary ? <span className="mt-0.5 block text-[12px] text-[#c7c2b4] lg:hidden">{nameSummary}</span> : null}
+                        {nameSummary ? <span className="block text-[12px] text-[#c7c2b4] lg:hidden">{nameSummary}</span> : null}
                       </span>
-                      <span className="text-[13px] text-[#6f6a5e] max-lg:hidden">
+                      <span className="text-[12.5px] text-[#6f6a5e] max-lg:hidden">
                         {room.contactPrimary || <span className="text-[#c7c2b4]">no name</span>}
                       </span>
-                      <span className="text-[13px] text-[#6f6a5e] max-lg:hidden">
+                      <span className="text-[12.5px] text-[#6f6a5e] max-lg:hidden">
                         {room.contactSecondary || <span className="text-[#c7c2b4]">no surname</span>}
                       </span>
-                      <span className="text-sm font-semibold text-[#1c1a17] max-lg:hidden">{formatCurrency(room.rentAmount)}</span>
+                      <span className="text-[13px] font-semibold text-[#1c1a17] max-lg:hidden">{formatCurrency(room.rentAmount)}</span>
                       <span className="max-lg:hidden">
                         {room.expectedReference ? (
-                          <span className="inline-flex rounded-full bg-[#faf6e8] px-2.5 py-1 text-xs font-semibold text-[#8a6d1a]">
+                          <span className="inline-flex whitespace-nowrap rounded-full bg-[#faf6e8] px-2 py-0.5 text-[11.5px] font-semibold text-[#8a6d1a]">
                             {room.expectedReference}
                           </span>
                         ) : (
-                          <span className="text-[12.5px] text-[#c7c2b4]">no reference set</span>
+                          <span className="text-[12px] text-[#c7c2b4]">no reference set</span>
                         )}
                       </span>
                       <span className={`text-center text-base text-[#a39d8d] transition ${isExpanded ? 'rotate-180' : ''}`}>
@@ -522,7 +522,7 @@ export function RoomManagerPanel({
               })}
 
               {filteredRooms.length === 0 ? (
-                <div className="px-5 py-10 text-center text-[13.5px] text-[#a39d8d]">No rooms match your search.</div>
+                <div className="px-4 py-8 text-center text-[13px] text-[#a39d8d]">No rooms match your search.</div>
               ) : null}
             </section>
           </div>
@@ -544,9 +544,9 @@ function StatCell({
   isLast?: boolean;
 }) {
   return (
-    <div className={`border-b border-[#e7e3d6] px-5 py-3.5 sm:border-b-0 ${isLast ? '' : 'sm:border-r'}`}>
-      <p className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-[#a39d8d]">{label}</p>
-      <p className={`mt-1 text-xl font-bold ${valueClassName}`}>{value}</p>
+    <div className={`border-b border-[#e7e3d6] px-3.5 py-2 sm:border-b-0 ${isLast ? '' : 'sm:border-r'}`}>
+      <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[#a39d8d]">{label}</p>
+      <p className={`mt-0.5 text-[17px] font-bold ${valueClassName}`}>{value}</p>
     </div>
   );
 }
@@ -577,10 +577,10 @@ function RoomEditor({
   closeEditor: () => void;
 }) {
   return (
-    <div className="border-t border-[#f0ece0] bg-[#fbfaf6] px-5 pb-6 pt-4">
-      {errorMessage ? <p className="mb-3 text-sm font-semibold text-rose-700">{errorMessage}</p> : null}
+    <div className="border-t border-[#f0ece0] bg-[#fbfaf6] px-4 pb-4 pt-3.5">
+      {errorMessage ? <p className="mb-2.5 text-[13px] font-semibold text-rose-700">{errorMessage}</p> : null}
 
-      <div className="grid gap-3.5 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         <FieldLabel label="Room label">
           <input aria-label="Room label" value={draft.label} onChange={(event) => updateDraft('label', event.target.value)} className={inputClassName} />
         </FieldLabel>
@@ -615,7 +615,7 @@ function RoomEditor({
         </FieldLabel>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-5">
+      <div className="mt-3 flex flex-wrap gap-4">
         <FieldLabel label="Occupancy" className="min-w-[180px]">
           <select
             value={draft.occupancy}
@@ -627,11 +627,11 @@ function RoomEditor({
             <option value="vacant">Vacant</option>
           </select>
         </FieldLabel>
-        <label className="mt-[22px] flex items-center gap-2 text-[13px] font-semibold text-[#57534e]">
+        <label className="mt-[20px] flex items-center gap-2 text-[12.5px] font-semibold text-[#57534e]">
           <input type="checkbox" checked={draft.isBlocked} onChange={(event) => updateDraft('isBlocked', event.target.checked)} />
           Exclude from expected totals
         </label>
-        <label className="mt-[22px] flex items-center gap-2 text-[13px] font-semibold text-[#57534e]">
+        <label className="mt-[20px] flex items-center gap-2 text-[12.5px] font-semibold text-[#57534e]">
           <input
             type="checkbox"
             checked={draft.ensuite}
@@ -651,20 +651,20 @@ function RoomEditor({
         </FieldLabel>
       </div>
 
-      <div className="mt-5 border-t border-[#f0ece0] pt-4">
+      <div className="mt-3.5 border-t border-[#f0ece0] pt-3">
         <div className="flex items-center justify-between">
           <p className="text-[13px] font-bold text-[#1c1a17]">Match rules</p>
           <button
             type="button"
             onClick={addRule}
-            className="rounded-full border border-[#e7e3d6] bg-white px-3 py-1.5 text-xs font-semibold text-[#292524]"
+            className="rounded-full border border-[#e7e3d6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#292524]"
           >
             + Add rule
           </button>
         </div>
-        <div className="mt-2.5 flex flex-col gap-2">
+        <div className="mt-2 flex flex-col gap-1.5">
           {draft.rules.map((rule, index) => (
-            <div key={`${rule.id ?? 'new'}-${index}`} className="grid grid-cols-[1fr_1.8fr_auto] items-center gap-2 rounded-[10px] border border-[#e7e3d6] bg-white px-2.5 py-2 max-sm:grid-cols-1">
+            <div key={`${rule.id ?? 'new'}-${index}`} className="grid grid-cols-[1fr_1.8fr_auto] items-center gap-2 rounded-[10px] border border-[#e7e3d6] bg-white px-2 py-1.5 max-sm:grid-cols-1">
               <select
                 value={rule.matcherType}
                 onChange={(event) =>
@@ -673,7 +673,7 @@ function RoomEditor({
                     amountValue: event.target.value === 'amount_equals' ? rule.amountValue : '',
                   })
                 }
-                className="rounded-lg border border-[#e7e3d6] px-2 py-1.5 text-[12.5px]"
+                className="rounded-lg border border-[#e7e3d6] px-2 py-1 text-[12px]"
               >
                 <option value="reference_contains">Ref contains</option>
                 <option value="reference_equals">Ref equals</option>
@@ -692,12 +692,12 @@ function RoomEditor({
                   )
                 }
                 placeholder="Match value"
-                className="rounded-lg border border-[#e7e3d6] px-2.5 py-1.5 text-[12.5px]"
+                className="rounded-lg border border-[#e7e3d6] px-2.5 py-1 text-[12px]"
               />
               <button
                 type="button"
                 onClick={() => removeRule(index)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#a39d8d]"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#a39d8d]"
                 aria-label="Remove rule"
               >
                 <Trash2 size={14} />
@@ -708,14 +708,14 @@ function RoomEditor({
       </div>
 
       {draft.matchKeywordsText ? (
-        <p className="mt-3.5 text-xs text-[#a39d8d]">Keyword hints: {draft.matchKeywordsText}</p>
+        <p className="mt-2.5 text-[11.5px] text-[#a39d8d]">Keyword hints: {draft.matchKeywordsText}</p>
       ) : null}
 
-      <div className="mt-[18px] flex justify-end gap-2.5">
+      <div className="mt-3.5 flex justify-end gap-2">
         <button
           type="button"
           onClick={closeEditor}
-          className="rounded-full border border-[#e7e3d6] bg-white px-4 py-2 text-[13px] font-semibold text-[#57534e]"
+          className="rounded-full border border-[#e7e3d6] bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-[#57534e]"
         >
           Close
         </button>
@@ -723,7 +723,7 @@ function RoomEditor({
           type="button"
           onClick={handleSave}
           disabled={isSaving}
-          className="rounded-full bg-[#1c1a17] px-4 py-2 text-[13px] font-semibold text-white disabled:cursor-wait disabled:bg-[#78716c]"
+          className="rounded-full bg-[#1c1a17] px-3.5 py-1.5 text-[12.5px] font-semibold text-white disabled:cursor-wait disabled:bg-[#78716c]"
         >
           {isSaving ? 'Saving...' : mode === 'create' ? 'Create room' : 'Save room'}
         </button>
