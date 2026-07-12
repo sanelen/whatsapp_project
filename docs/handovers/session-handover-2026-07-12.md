@@ -72,12 +72,23 @@ fast-forwarded `codex/monthly-payments` through `dbb92a4` (FR-2.7b) and both
    on every UI change, and an import health check every session. **Every
    future session must read it first.**
 
+## Import health check (first run of the standing check — PASS)
+
+DB-side via Supabase (read-only), 2026-07-12 evening:
+
+- Gmail → Drive: **62/62 files archived to Drive** — no gaps.
+- Parsing: 49 parsed, 13 `unsupported` (non-statement attachments, by
+  design), **0 parser errors**.
+- Entries → references, July billing window: **11 → 11** — nothing dropped;
+  0 credit entries without a reference anywhere.
+- Matching: 7/11 matched (3 signed off), **4 unmatched correctly visible in
+  the reference pool** awaiting allocation.
+
 ## Still open / what to pick up next time
 
-1. **Standing import health check (new, per PRODUCT-BRIEF.md)** — each
-   session: verify Gmail ↔ Drive ↔ DB import consistency and that unmatched
-   deposits surface in the reference pool. Needs live connectors (Gmail/Drive
-   MCPs were not authorized this session) or DB-side checks via Supabase.
+1. **Standing import health check (per PRODUCT-BRIEF.md)** — passed DB-side
+   this session (above). Gmail/Drive-side spot check still needs the
+   connectors authorized in an interactive session.
 2. **Flow-test debt** — 15 of ~24 e2e spec files carry `fixme`/`skip`,
    mostly blocked on a seeded/disposable TEST property. Deciding/creating
    that fixture is the biggest unlock for the flow-testing doctrine.
