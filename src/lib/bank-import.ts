@@ -615,7 +615,23 @@ async function getGoogleOAuthRefreshAccessToken(): Promise<GoogleAccessTokenResu
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to refresh Gmail OAuth access token (${response.status})`);
+    let googleError = '';
+    let googleErrorDescription = '';
+    try {
+      const body = (await response.json()) as { error?: string; error_description?: string };
+      googleError = body.error ?? '';
+      googleErrorDescription = body.error_description ?? '';
+    } catch {
+      // Non-JSON error body; fall through with the bare status.
+    }
+    const detail = [googleError, googleErrorDescription].filter(Boolean).join(': ');
+    const hint =
+      googleError === 'invalid_grant'
+        ? ' The stored refresh token has expired or been revoked — re-connect Gmail via /api/monthly-payments/import/google-cloud and update GMAIL_OAUTH_REFRESH_TOKEN. (If the Google Cloud OAuth consent screen is still in "Testing" mode, refresh tokens expire every 7 days; publish the app to Production to stop this.)'
+        : '';
+    throw new Error(
+      `Failed to refresh Gmail OAuth access token (${response.status}${detail ? ` ${detail}` : ''}).${hint}`
+    );
   }
 
   const payload = (await response.json()) as { access_token?: string };
@@ -660,11 +676,21 @@ async function getGoogleServiceAccountAccessToken(userEmail: string): Promise<Go
 }
 
 async function getGoogleAccessToken(userEmail: string) {
-  const oauthToken = await getGoogleOAuthRefreshAccessToken();
-  if (oauthToken) return oauthToken;
+  let oauthRefreshError: Error | null = null;
+  try {
+    const oauthToken = await getGoogleOAuthRefreshAccessToken();
+    if (oauthToken) return oauthToken;
+  } catch (error) {
+    // Don't die yet — a configured service account can still serve the import.
+    oauthRefreshError = error instanceof Error ? error : new Error(String(error));
+  }
 
   const serviceAccountToken = await getGoogleServiceAccountAccessToken(userEmail);
   if (serviceAccountToken) return serviceAccountToken;
+
+  if (oauthRefreshError) {
+    throw oauthRefreshError;
+  }
 
   throw new Error(
     'Missing Gmail auth env. Set either GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, and GMAIL_OAUTH_REFRESH_TOKEN, or set GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL and GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY.'
