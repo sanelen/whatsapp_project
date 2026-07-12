@@ -65,9 +65,16 @@ the work is parked on a side ref:
 3. **FR-2.8** — owner browser check on ESSEXROOM1 (accept split → credit →
    allocate), then un-fixme Flow 05 headed specs.
 4. **FR-2.11** — owner: one live `source=drive` pull to promote to Shipped.
-5. Supabase advisor WARNs: mutable search_path on `match_knowledge_vectors`;
-   leaked-password protection disabled. (Candidate for next nightly run —
-   small migration, same shape as the FR-5.3 RLS fix.)
+5. ~~Supabase advisor WARN: mutable search_path on `match_knowledge_vectors`~~
+   — **fixed this run** (second slice): `set search_path = public, extensions`
+   applied to the live project + committed as migration
+   `20260712093000_pin_search_path_match_knowledge_vectors.sql`. Verified:
+   advisor WARN cleared; function still returns rows with the caller's
+   search_path stripped to `pg_catalog`. Remaining advisor items: **leaked
+   password protection** is an Auth dashboard toggle only you can flip
+   (Auth → Providers → Passwords → "Prevent use of leaked passwords"), and
+   the `rls_enabled_no_policy` INFOs are the intentional service-role-only
+   pattern — left alone.
 
 ## Files touched this run
 
