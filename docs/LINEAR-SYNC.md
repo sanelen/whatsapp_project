@@ -47,9 +47,15 @@ These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ti
   reconciliation. Create a Linear ticket to own future policy changes and regression
   fixtures; do not bury account decisions only in implementation notes.
 
-- Combined-payment allocation — **open, no known ticket**. One verified mixed-account
-  R4,400 reference names two rooms and correctly remains unmatched. Define and build
-  an explicit split workflow instead of guessing a unit.
+- Combined-payment allocation (REQUIREMENTS FR-2.16) — **backend shipped
+  2026-07-13 (nightly), UI remaining, no known ticket**. Explicit operator split
+  of one pooled reference into per-unit children (strict sum-to-total, ≥2
+  distinct units, property lock enforced, reversible while children untouched);
+  split parents leave the pool and are excluded from auto-match; API actions
+  `split_reference`/`reverse_split`; migration `20260713100000` applied live;
+  10 unit tests incl. the R4,400 two-room case. Remaining: reference-pool
+  operator UI (with before/after renders) and import-audit child-status
+  surfacing per bank entry.
 
 - Import-flow browser regression coverage — **partially addressed 2026-07-12
   (review session), no known ticket**. `e2e/flow-11-import-audit-and-configuration.spec.ts`

@@ -155,6 +155,17 @@ tags: **Shipped**, **Partial**, **Planned**.
   internal account `7467`, debits, transfers, merchant reservations, and interest
   received create no payment entry or reference. Ambiguous combined-room payments
   remain unmatched for operator review.
+- FR-2.16 **Partial (backend shipped 2026-07-13)** — Combined-payment split: an
+  operator can explicitly divide one pooled reference (e.g. the verified R4,400
+  two-room payment) into per-unit child references. Rules: strict sum-to-total at
+  cent precision, at least two distinct units, parent property lock enforced,
+  children flow through normal match/sign-off/deposit/credit machinery, parent
+  keeps the bank-entry linkage and leaves the pool; reversal allowed only while
+  every child is untouched. Audited via `reference_split_accepted`/`_reversed`
+  events; API actions `split_reference`/`reverse_split`; migration
+  `20260713100000` applied live. Remaining: operator UI in the reference pool
+  (with before/after renders) and import-audit surfacing of child status per
+  bank entry.
 
 ### Non-functional
 
