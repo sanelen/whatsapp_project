@@ -65,6 +65,11 @@ Next 16 uses `proxy` (not `middleware`):
 - `src/lib/auth/api-guard.ts` — `requireApiAuth()`, applied to every API route.
 - `src/app/login/`, `src/app/auth/callback/`, `src/app/auth/signout/`, `src/app/auth-test/`.
 
+Successful authentication always returns to `/`, the shared workspace chooser.
+The chooser is the single transition into Property Assistance (`/property-assistance`)
+or Monthly Payments (`/monthly-payments`); login redirects never select a capability
+on the user's behalf.
+
 A local-only auth bypass exists (`NEXT_PUBLIC_LOCAL_AUTH_BYPASS=true`, non-production
 only) to let browser automation exercise protected routes.
 

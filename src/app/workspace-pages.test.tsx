@@ -12,6 +12,19 @@ test('root page links to property assistance and monthly payments', () => {
   const source = readFileSync('src/app/page.tsx', 'utf8');
   assert.match(source, /href: '\/property-assistance'/);
   assert.match(source, /href: '\/monthly-payments'/);
+  assert.match(source, /action="\/auth\/signout"/);
+});
+
+test('authentication always returns to the workspace chooser', () => {
+  const loginSource = readFileSync('src/app/login/login-form.tsx', 'utf8');
+  const callbackSource = readFileSync('src/app/auth/callback/route.ts', 'utf8');
+  const proxySource = readFileSync('src/proxy.ts', 'utf8');
+
+  assert.match(loginSource, /const postLoginDestination = '\/'/);
+  assert.doesNotMatch(loginSource, /searchParams\.get\('redirect'\)/);
+  assert.ok(callbackSource.includes('NextResponse.redirect(`${origin}/`)'));
+  assert.doesNotMatch(callbackSource, /searchParams\.get\('next'\)/);
+  assert.doesNotMatch(proxySource, /loginUrl\.searchParams\.set\('redirect'/);
 });
 
 test('property assistance page renders the organizations view', () => {

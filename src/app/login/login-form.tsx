@@ -11,7 +11,7 @@ type Mode = 'signin' | 'signup';
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get('redirect') || '/';
+  const postLoginDestination = '/';
 
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
@@ -28,7 +28,6 @@ export function LoginForm() {
     setError(null);
     setPending(true);
     const callback = new URL('/auth/callback', window.location.origin);
-    callback.searchParams.set('next', redirectTo);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: callback.toString() },
@@ -49,7 +48,6 @@ export function LoginForm() {
     try {
       if (mode === 'signup') {
         const callback = new URL('/auth/callback', window.location.origin);
-        callback.searchParams.set('next', redirectTo);
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -58,7 +56,7 @@ export function LoginForm() {
         if (error) throw error;
         // If email confirmation is required there is no active session yet.
         if (data.session) {
-          router.replace(redirectTo);
+          router.replace(postLoginDestination);
           router.refresh();
         } else {
           setNotice('Check your email to confirm your account, then sign in.');
@@ -69,7 +67,7 @@ export function LoginForm() {
 
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      router.replace(redirectTo);
+      router.replace(postLoginDestination);
       router.refresh();
     } catch (err) {
       setError(getLoginErrorMessage(err instanceof Error ? err.message : null));

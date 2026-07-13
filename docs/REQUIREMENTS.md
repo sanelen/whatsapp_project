@@ -226,6 +226,10 @@ See [tenant-offboarding.md](./roadmap/functionality/tenant-offboarding.md).
   service-role-only tables).
 - FR-5.4 **Shipped** — Google OAuth + email/password auth via Supabase Auth, gating
   all routes except `/login` and `/auth/*`.
+- FR-5.5 **Shipped 2026-07-13** — Every successful Google, email/password, and
+  signup authentication lands on the root workspace chooser. The user explicitly
+  selects **Chatbox** or **Dashboard**; protected-route redirect parameters cannot
+  silently bypass this choice. The chooser also exposes a direct sign-out action.
 
 ## Cross-cutting open questions
 

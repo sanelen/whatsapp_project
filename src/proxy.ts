@@ -15,23 +15,20 @@ function isPublicPath(pathname: string): boolean {
 export async function proxy(request: NextRequest) {
   if (isLocalAuthBypassEnabled()) {
     if (request.nextUrl.pathname === '/login') {
-      const destination = request.nextUrl.searchParams.get('redirect') || '/';
-      return NextResponse.redirect(new URL(destination, request.url));
+      return NextResponse.redirect(new URL('/', request.url));
     }
     return NextResponse.next();
   }
 
   const { user, response } = await getProxySession(request);
-  const { pathname, search } = request.nextUrl;
+  const { pathname } = request.nextUrl;
 
   if (!user && !isPublicPath(pathname)) {
     // API routes get a 401 instead of a redirect.
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname + search);
-    return NextResponse.redirect(loginUrl);
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
   // Signed-in users shouldn't see the login page.

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { LogOut } from 'lucide-react';
 
 const appLinks = [
   {
@@ -20,7 +21,16 @@ const appLinks = [
 export default function HomePage() {
   return (
     <main className="min-h-screen overflow-y-auto bg-[radial-gradient(circle_at_top,#dbeafe_0%,#f8fafc_34%,#e2e8f0_100%)] text-slate-950">
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-center px-6 py-12 sm:px-8 lg:px-10">
+      <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col justify-center px-6 py-20 sm:px-8 lg:px-10">
+        <form action="/auth/signout" method="post" className="absolute right-6 top-6 sm:right-8 lg:right-10">
+          <button
+            type="submit"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-4 text-sm font-semibold text-slate-700 shadow-sm backdrop-blur transition hover:border-sky-300 hover:text-sky-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
+          >
+            <LogOut aria-hidden size={17} strokeWidth={1.8} />
+            Sign out
+          </button>
+        </form>
         <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
           <section className="max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">
