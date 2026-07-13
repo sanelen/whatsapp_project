@@ -40,6 +40,20 @@ test('monthly payments reference pool page renders the reference pool view', () 
   assert.match(source, /await requireUser\(\)/);
 });
 
+test('monthly payments import audit page renders the source validation view', () => {
+  const source = readFileSync('src/app/monthly-payments/import-audit/page.tsx', 'utf8');
+  assert.match(source, /<ImportAuditViewPanel view={view} \/>/);
+  assert.match(source, /readImportAuditView/);
+  assert.match(source, /await requireUser\(\)/);
+});
+
+test('monthly payments import configuration page renders the metadata view', () => {
+  const source = readFileSync('src/app/monthly-payments/import-configuration/page.tsx', 'utf8');
+  assert.match(source, /<ImportConfigurationPanel view={view} \/>/);
+  assert.match(source, /readImportConfiguration/);
+  assert.match(source, /await requireUser\(\)/);
+});
+
 test('monthly payments locations page renders the locations admin view', () => {
   const source = readFileSync('src/app/monthly-payments/locations/page.tsx', 'utf8');
   assert.match(source, /<LocationsAdmin view={view} \/>/);

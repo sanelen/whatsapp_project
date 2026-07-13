@@ -1,6 +1,6 @@
 # Project Roadmap
 
-Last updated: 2026-07-01
+Last updated: 2026-07-12
 
 See also: [Architecture](./ARCHITECTURE.md) (structural view), [Requirements](./REQUIREMENTS.md)
 (what each capability must do, with shipped/partial/planned status), and
@@ -8,19 +8,16 @@ See also: [Architecture](./ARCHITECTURE.md) (structural view), [Requirements](./
 
 ## Current Focus
 
-The KB/retrieval shell is in place, and a first monthly-payments branch now exists.
-The next major work is to reconcile planning with implementation, then continue the
-tenant-operations build in a deliberate sequence.
+The KB/retrieval shell is in place and monthly payments is in operator-loop
+stabilization. As of 2026-07-12, the bank-import reconciliation slice is functional:
 
-As of 2026-07-01, the monthly-payments branch has moved from wireframe scaffolding
-into an operator-loop stabilization phase:
-
-- dashboard rollups now distinguish matched money from unmatched money
-- property drill-down preserves billing-period context
-- room manager can now create rooms as well as edit them
-- the inline units matching drawer is the primary v1 matching surface
-- current focus is to finish match/sign-off/reverse behavior before adding more
-  admin polish
+- Gmail and controlled Drive CSV/PDF sources converge on one import pipeline
+- import audit exposes file-to-database-to-match provenance
+- import configuration explains account, parser, and unit-routing policy
+- file, transaction, and cross-source dedupe prevent repeated payment creation
+- dedicated, property-locked, mixed legacy, and excluded accounts have explicit rules
+- the next focus is durable import-run history, combined-payment allocation, and
+  automated browser coverage for the import/audit/configuration flow
 
 ## Execution Status
 

@@ -30,10 +30,16 @@ export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
   const nextHref = `/monthly-payments/reference-pool?period=${shiftPeriod(view.periodKey, 1)}`;
   const tableColumns =
     'minmax(150px,1.4fr) minmax(150px,1.25fr) minmax(88px,0.8fr) minmax(84px,0.72fr) minmax(112px,0.95fr) minmax(132px,1fr) minmax(76px,0.55fr)';
+  const primaryPropertyId = view.rows.find((row) => row.propertyId)?.propertyId
+    ?? view.locations.find((location) => location.propertyId)?.propertyId;
+  const operationsHref = primaryPropertyId
+    ? `/monthly-payments/${primaryPropertyId}?period=${view.periodKey}`
+    : '/monthly-payments/locations';
 
   return (
     <MonthlyPaymentsShell
       active="reference-pool"
+      operationsHref={operationsHref}
       referencePoolHref={`/monthly-payments/reference-pool?period=${view.periodKey}`}
     >
       <section className="rounded-[20px] border border-white/80 bg-white/88 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:p-5">

@@ -2,14 +2,63 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildGmailSearchQuery,
+  buildCrossSourceTransactionIdentity,
+  canonicalizeBankReference,
   buildGmailOAuthConsentUrl,
   extractAttachmentsFromEml,
   getBillingPeriodForDate,
   getBillingWindowForPeriod,
   getGmailIntegrationStatus,
+  isExcludedBankAccount,
+  isExcludedNonRentCredit,
+  parseBankStatementCsv,
+  parseBankStatementText,
+  parseCapitecAccountMovementText,
   parseCapitecTransactionText,
   resolveImportContext,
 } from './bank-import';
+
+test('internal bank accounts are excluded from every import source', () => {
+  assert.equal(isExcludedBankAccount({ destinationAccountSuffix: '7467' }), true);
+  assert.equal(isExcludedBankAccount({ destinationAccountSuffix: '6088' }), false);
+});
+
+test('interest received is excluded from payment ingestion', () => {
+  assert.equal(isExcludedNonRentCredit({ reference: 'Interest Received' }), true);
+  assert.equal(isExcludedNonRentCredit({ reference: 'Payment Received: Interest Room 1' }), false);
+  const rows = parseBankStatementCsv([
+    'Account,Transaction Date,Description,Amount,Balance',
+    '4001807904,2026-07-01 01:05,Interest Received,224.44,107473.87',
+  ].join('\n'));
+  assert.equal(rows.length, 0);
+});
+
+test('cross-source transaction identity ignores source-specific IDs and references', () => {
+  const identity = buildCrossSourceTransactionIdentity({
+    organizationId: 'org-1', transactionDate: '2026-07-07', transactionTime: '12:08:00',
+    destinationAccountSuffix: '7904', amount: 4200,
+  });
+  assert.equal(identity, 'org-1|2026-07-07|12:08:00|7904|4200.00');
+});
+
+test('canonical bank references remove statement-only payment prefixes', () => {
+  assert.equal(canonicalizeBankReference('Payment Received: EssexRoom10'), 'ESSEXROOM10');
+  assert.equal(canonicalizeBankReference('External Immediate Payment Received: ESSEX ROOM 1'), 'ESSEXROOM1');
+});
+
+test('outgoing Capitec notifications expose their paid-from account before import', () => {
+  assert.deepEqual(
+    parseCapitecAccountMovementText('Account Paid From : ****7467\nPayment Amount : R 1,250.00'),
+    { direction: 'outgoing', accountSuffix: '7467' }
+  );
+});
+
+test('reserved merchant notifications expose their account before import', () => {
+  assert.deepEqual(
+    parseCapitecAccountMovementText('Account : ****7467\nReserved Amount : R 537.00\nMerchant : ISP'),
+    { direction: 'outgoing', accountSuffix: '7467' }
+  );
+});
 
 function withGmailEnv<T>(values: Record<string, string | undefined>, run: () => T) {
   const previous = new Map<string, string | undefined>();
@@ -89,6 +138,55 @@ test('parseCapitecTransactionText reads transaction IDs when the PDF text places
   assert.equal(parsed?.transactionId, '002501559');
   assert.equal(parsed?.transactionDate, '2026-04-28');
   assert.equal(parsed?.reference, 'ESSEX ROOM 1');
+});
+
+test('parseBankStatementCsv extracts incoming credits from exported statement rows', () => {
+  const parsed = parseBankStatementCsv(
+    [
+      'Transaction Date,Description,Money In,Money Out,Balance',
+      '22/07/2026,QHRoom14,"R 2,200.00",,"R 10,000.00"',
+      '23/07/2026,Bank fee,,"R 75.00","R 9,925.00"',
+    ].join('\n')
+  );
+
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]?.transactionDate, '2026-07-22');
+  assert.equal(parsed[0]?.amount, 2200);
+  assert.equal(parsed[0]?.reference, 'QHRoom14');
+  assert.equal(parsed[0]?.transactionType, 'Incoming Funds');
+});
+
+test('statement CSV prefers the timestamped transaction date over posting date', () => {
+  const [entry] = parseBankStatementCsv([
+    'Account,Posting Date,Transaction Date,Description,Amount,Balance',
+    '4001807904,2026-07-07,2026-07-07 12:08,Payment Received: Room 4,4200.00,120723.87',
+  ].join('\n'));
+  assert.equal(entry.transactionDate, '2026-07-07');
+  assert.equal(entry.transactionTime, '12:08:00');
+  assert.equal(entry.destinationAccountSuffix, '7904');
+});
+
+test('mixed legacy account accepts payment receipts but rejects transfers and small personal credits', () => {
+  const rows = parseBankStatementCsv([
+    'Account,Transaction Date,Description,Money In,Money Out,Balance',
+    '1444696570,2026-06-01 10:00,Payment Received: Qhroom10,2200.00,,2200.00',
+    '1444696570,2026-06-01 10:05,Banking App Transfer Received from Qh: Transfer,2000.00,,4200.00',
+    '1444696570,2026-06-01 10:10,PayShap Payment Received: Friend,300.00,,4500.00',
+  ].join('\n'));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].reference, 'Payment Received: Qhroom10');
+});
+
+test('parseBankStatementText extracts statement-like PDF credit lines', () => {
+  const parsed = parseBankStatementText(`
+    22/07/2026 EFT CREDIT QHRoom14 R 2,200.00 R 10,000.00
+    23/07/2026 FEE Monthly account fee R 75.00 R 9,925.00
+  `);
+
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0]?.transactionDate, '2026-07-22');
+  assert.equal(parsed[0]?.amount, 2200);
+  assert.equal(parsed[0]?.reference, 'QHRoom14');
 });
 
 test('buildGmailSearchQuery combines attachment, subject, label, and after filters', () => {
@@ -171,7 +269,7 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
       assert.equal(url.searchParams.get('response_type'), 'code');
       assert.equal(
         url.searchParams.get('scope'),
-        'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file'
+        'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly'
       );
       assert.equal(url.searchParams.get('access_type'), 'offline');
       assert.equal(url.searchParams.get('prompt'), 'consent');
@@ -371,4 +469,136 @@ test('resolveImportContext supports regex-based Essex room matching', () => {
   assert.equal(resolved.unitHints.length, 1);
   assert.equal(resolved.unitHints[0]?.unitId, 'unit-room-01');
   assert.equal(resolved.unitHints[0]?.matcherType, 'reference_regex');
+});
+
+test('resolveImportContext lets a reference rule override a shared-account default', () => {
+  const entry = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 01/07/2026 10:00:00
+    Transaction ID : 003000004
+    Account Paid To : ****5555
+    Amount Received : R 1,900.00
+    Reference : WR ROOM 7
+    Available Balance : R 20,000.00
+  `)!;
+  const resolved = resolveImportContext({
+    entry,
+    organizationId: 'org-1',
+    propertyMappings: [{
+      id: 'map-main', organization_id: 'org-1', property_id: 'quarry',
+      account_number_suffix: '5555', property_name: 'Quarry Heights', is_active: true,
+    }],
+    unitMatchHints: [{
+      id: 'west-reference', property_id: 'west-rich', unit_id: null,
+      account_number_suffix: '5555', matcher_type: 'reference_regex', matcher_value: '^WR',
+      amount_value: null, priority: 10, is_active: true,
+    }],
+  });
+  assert.equal(resolved.propertyId, 'west-rich');
+  assert.equal(resolved.matchedBy, 'reference_regex:west-reference');
+});
+
+test('resolveImportContext uses an account-scoped amount rule after reference rules', () => {
+  const entry = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 01/07/2026 10:00:00
+    Transaction ID : 003000005
+    Account Paid To : ****5555
+    Amount Received : R 2,200.00
+    Reference : PAYMENT
+    Available Balance : R 20,000.00
+  `)!;
+  const resolved = resolveImportContext({
+    entry,
+    organizationId: 'org-1',
+    propertyMappings: [],
+    unitMatchHints: [{
+      id: 'quarry-amount', property_id: 'quarry', unit_id: null,
+      account_number_suffix: '5555', matcher_type: 'amount_equals', matcher_value: '',
+      amount_value: 2200, priority: 20, is_active: true,
+    }],
+  });
+  assert.equal(resolved.propertyId, 'quarry');
+  assert.equal(resolved.matchedBy, 'amount_equals:quarry-amount');
+});
+
+test('resolveImportContext leaves conflicting strongest property rules unresolved', () => {
+  const entry = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 01/07/2026 10:00:00
+    Transaction ID : 003000006
+    Account Paid To : ****5555
+    Amount Received : R 2,200.00
+    Reference : SHARED PAYMENT
+    Available Balance : R 20,000.00
+  `)!;
+  const baseHint = {
+    unit_id: null, account_number_suffix: '5555', matcher_type: 'reference_contains' as const,
+    matcher_value: 'SHARED', amount_value: null, priority: 10, is_active: true,
+  };
+  const resolved = resolveImportContext({
+    entry,
+    organizationId: 'org-1',
+    propertyMappings: [{
+      id: 'map-main', organization_id: 'org-1', property_id: 'quarry',
+      account_number_suffix: '5555', property_name: 'Quarry Heights', is_active: true,
+    }],
+    unitMatchHints: [
+      { ...baseHint, id: 'quarry-rule', property_id: 'quarry' },
+      { ...baseHint, id: 'west-rule', property_id: 'west-rich' },
+    ],
+  });
+  assert.equal(resolved.propertyId, null);
+  assert.equal(resolved.matchedBy, null);
+});
+
+test('a property-locked old account ignores generic hints from other properties', () => {
+  const entry = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 07/07/2026 09:00:00
+    Transaction ID : old-west-account
+    Account Paid To : ****9613
+    Amount Received : R 1,900.00
+    Reference : Wr Room11
+  `);
+  assert.ok(entry);
+  const resolved = resolveImportContext({
+    entry,
+    organizationId: 'org-1',
+    propertyMappings: [{
+      id: 'west-old', organization_id: 'org-1', property_id: 'west-rich',
+      account_number_suffix: '9613', property_name: 'West Rich', is_active: true,
+    }],
+    unitMatchHints: [
+      { id: 'qh-11', property_id: 'quarry', unit_id: 'qh-room-11', matcher_type: 'reference_contains', matcher_value: 'Room11', amount_value: null, priority: 10, is_active: true },
+      { id: 'wr-11', property_id: 'west-rich', unit_id: 'wr-room-11', matcher_type: 'reference_contains', matcher_value: 'Room11', amount_value: null, priority: 10, is_active: true },
+    ],
+  });
+  assert.equal(resolved.propertyId, 'west-rich');
+  assert.deepEqual(resolved.unitHints.map((hint) => hint.unitId), ['wr-room-11']);
+});
+
+test('mixed legacy account uses an account-scoped amount rule to resolve generic room conflicts', () => {
+  const entry = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 25/06/2026 09:00:00
+    Transaction ID : mixed-west
+    Account Paid To : ****6570
+    Amount Received : R 1,900.00
+    Reference : Mzimela Room12
+  `);
+  assert.ok(entry);
+  const common = { amount_value: null, priority: 10, is_active: true };
+  const resolved = resolveImportContext({
+    entry,
+    organizationId: 'org-1',
+    propertyMappings: [],
+    unitMatchHints: [
+      { ...common, id: 'qh-room', property_id: 'quarry', unit_id: 'qh-12', matcher_type: 'reference_contains', matcher_value: 'Room12' },
+      { ...common, id: 'wr-room', property_id: 'west', unit_id: 'wr-12', matcher_type: 'reference_contains', matcher_value: 'Room12' },
+      { ...common, id: 'wr-amount', property_id: 'west', unit_id: null, account_number_suffix: '6570', matcher_type: 'amount_equals', matcher_value: '', amount_value: 1900, priority: 50 },
+    ],
+  });
+  assert.equal(resolved.propertyId, 'west');
+  assert.deepEqual(resolved.unitHints.map((hint) => hint.unitId), ['wr-12', null]);
 });

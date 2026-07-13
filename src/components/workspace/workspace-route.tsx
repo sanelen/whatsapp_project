@@ -246,7 +246,7 @@ export function WorkspaceRoute({
   const [propertyImageUrl, setPropertyImageUrl] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: 'Adjust this property assistant, then send a test message.' },
+    { role: 'assistant', content: 'Your property assistant is ready for a test conversation.' },
   ]);
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true);
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
@@ -610,7 +610,7 @@ export function WorkspaceRoute({
 
   if (isLoadingWorkspace) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-white p-6 text-slate-950">
+      <main className="hamba-directory flex min-h-screen items-center justify-center p-6 text-slate-950">
         <CenteredPageLoader />
       </main>
     );
@@ -618,7 +618,7 @@ export function WorkspaceRoute({
 
   if (view === 'organizations') {
     return (
-      <main className="min-h-screen bg-white p-4 text-slate-950 sm:p-6">
+      <main className="hamba-directory min-h-screen p-4 text-slate-950 sm:p-6">
         <div className="mx-auto max-w-6xl">
           <TopNav
             organizations={workspace.organizations}
@@ -660,7 +660,7 @@ export function WorkspaceRoute({
 
   if (view === 'organization' && selectedOrganization) {
     return (
-      <main className="min-h-screen bg-white p-4 text-slate-950 sm:p-6">
+      <main className="hamba-directory min-h-screen p-4 text-slate-950 sm:p-6">
         <div className="mx-auto max-w-7xl">
           <TopNav
             organizations={workspace.organizations}
@@ -728,7 +728,7 @@ export function WorkspaceRoute({
   }
 
   return (
-    <main className="flex h-screen overflow-hidden bg-white text-slate-950">
+    <main className="hamba-assistant flex h-screen overflow-hidden text-slate-950">
       <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-5 py-4">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Workspace</p>
@@ -1624,22 +1624,23 @@ function PropertyChatbotWorkspaceView({
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (window.innerWidth < 1180) setIsSettingsCollapsed(true);
-      if (window.innerWidth < 900) setIsThreadsCollapsed(true);
+      if (window.innerWidth < 1400) setIsSettingsCollapsed(true);
+      if (window.innerWidth < 1050) setIsThreadsCollapsed(true);
+      if (window.innerWidth < 900) setIsAppNavCollapsed(true);
     }, 0);
 
     return () => window.clearTimeout(timer);
   }, []);
 
   return (
-    <main className="flex h-screen overflow-hidden bg-white text-slate-950">
+    <main className="hamba-assistant flex h-screen overflow-hidden text-slate-950">
       <aside className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-all ${isAppNavCollapsed ? 'w-16' : 'w-56 xl:w-64'}`}>
         <div className={`flex h-16 items-center border-b border-slate-100 px-3 ${isAppNavCollapsed ? 'justify-center' : 'gap-3'}`}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 text-xs font-bold">PA</div>
           {!isAppNavCollapsed && (
             <div>
-              <p className="text-base font-semibold">Property Assistants</p>
-              <p className="text-xs text-slate-500">Workspace</p>
+              <p className="hamba-display text-[19px]">Property assistants</p>
+              <p className="text-xs text-slate-500">Hamba operations</p>
             </div>
           )}
         </div>
@@ -1796,8 +1797,8 @@ function PropertyChatbotWorkspaceView({
           <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
             <div className="flex h-20 items-center justify-between border-b border-slate-200 px-4">
               <div>
-                <h1 className="text-2xl font-bold">Chatbot</h1>
-                <p className="text-sm text-slate-500">Online <span className="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" /></p>
+                <h1 className="text-[28px]">Tenant conversation</h1>
+                <p className="text-sm text-slate-500">Assistant online <span className="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" /></p>
               </div>
               <button
                 type="button"
@@ -1809,7 +1810,7 @@ function PropertyChatbotWorkspaceView({
             </div>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
               <div className="mr-auto max-w-md rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-700">
-                Welcome! How can I assist you today?
+                Welcome. How can I help with the property today?
               </div>
               {chatMessages.map((message, index) => (
                 <div key={`${message.role}-${index}`}>
@@ -1836,7 +1837,7 @@ function PropertyChatbotWorkspaceView({
                 <input
                   value={chatInput}
                   onChange={(event) => onChatInputChange(event.target.value)}
-                  placeholder="Type your message..."
+                  placeholder="Ask about this property..."
                   className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
                 />
                 <button

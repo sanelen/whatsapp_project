@@ -142,10 +142,15 @@ export async function uploadFile(input: {
   return created.id;
 }
 
-// List all PDF files anywhere under a root folder (one level of month/building nesting).
-export async function listPdfFilesUnder(accessToken: string, rootId: string): Promise<DriveFile[]> {
+export async function listFilesUnder(
+  accessToken: string,
+  rootId: string,
+  options?: { extensions?: string[]; mimeTypes?: string[] }
+): Promise<DriveFile[]> {
   const folderQueue: string[] = [rootId];
-  const pdfs: DriveFile[] = [];
+  const files: DriveFile[] = [];
+  const extensions = new Set((options?.extensions ?? []).map((extension) => extension.toLowerCase()));
+  const mimeTypes = new Set((options?.mimeTypes ?? []).map((mimeType) => mimeType.toLowerCase()));
   while (folderQueue.length) {
     const folderId = folderQueue.shift() as string;
     let pageToken: string | undefined;
@@ -161,12 +166,30 @@ export async function listPdfFilesUnder(accessToken: string, rootId: string): Pr
       });
       for (const file of page.files ?? []) {
         if (file.mimeType === FOLDER_MIME) folderQueue.push(file.id);
-        else if (file.mimeType === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) pdfs.push(file);
+        else {
+          const lowerName = file.name.toLowerCase();
+          // A file passes when no filters were given, or when it matches at
+          // least one provided filter. An omitted filter never auto-passes a
+          // file on its own — otherwise supplying only `extensions` (or only
+          // `mimeTypes`) would silently disable filtering entirely.
+          const noFilters = extensions.size === 0 && mimeTypes.size === 0;
+          const extensionMatch = Array.from(extensions).some((extension) => lowerName.endsWith(extension));
+          const mimeMatch = mimeTypes.has(file.mimeType.toLowerCase());
+          if (noFilters || extensionMatch || mimeMatch) files.push(file);
+        }
       }
       pageToken = page.nextPageToken;
     } while (pageToken);
   }
-  return pdfs;
+  return files;
+}
+
+// List all PDF files anywhere under a root folder.
+export async function listPdfFilesUnder(accessToken: string, rootId: string): Promise<DriveFile[]> {
+  return listFilesUnder(accessToken, rootId, {
+    extensions: ['.pdf'],
+    mimeTypes: ['application/pdf'],
+  });
 }
 
 export async function downloadFile(accessToken: string, fileId: string): Promise<Buffer> {

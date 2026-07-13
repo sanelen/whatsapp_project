@@ -26,7 +26,7 @@ export default function HomePage() {
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">
               Hamba operations
             </p>
-            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+            <h1 className="mt-4 text-4xl font-semibold text-slate-950 sm:text-5xl">
               Where do you want to go?
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
@@ -61,9 +61,7 @@ export default function HomePage() {
               </p>
               <div className="mt-6 flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-semibold tracking-tight text-slate-950">
-                    {link.title}
-                  </h2>
+                  <h2 className="text-2xl font-semibold text-slate-950">{link.title}</h2>
                   <p className="mt-3 max-w-md text-sm leading-6 text-slate-600">
                     {link.description}
                   </p>

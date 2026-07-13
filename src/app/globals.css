@@ -3,8 +3,13 @@
 @import "@heroui/styles";
 
 :root {
-  --background: #ffffff;
-  --foreground: #111827;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --hamba-ink: #020617;
+  --hamba-blue: #0284c7;
+  --hamba-water: #eaf3ff;
+  --hamba-paper: #ffffff;
+  --hamba-line: #dbe5f0;
 }
 
 @theme inline {
@@ -19,6 +24,385 @@ body {
   min-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+.hamba-display {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.hamba-kicker {
+  color: #0369a1;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hamba-home {
+  background: #dcebf2;
+  position: relative;
+}
+
+.hamba-home::after {
+  background: #c5dde7;
+  content: '';
+  height: 46%;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 30%;
+}
+
+.hamba-home > * {
+  position: relative;
+  z-index: 1;
+}
+
+.hamba-home__bar {
+  align-items: center;
+  border-bottom: 1px solid #7fa9bc;
+  display: flex;
+  height: 72px;
+  justify-content: space-between;
+  padding: 0 4vw;
+}
+
+.hamba-home__bar p,
+.hamba-wordmark {
+  color: var(--hamba-ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hamba-entry {
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.hamba-entry:hover {
+  background: rgba(248, 246, 240, 0.48);
+}
+
+@media (min-width: 1024px) {
+  .hamba-entry + .hamba-entry { border-left: 1px solid #7fa9bc; }
+}
+
+.hamba-ops {
+  background: radial-gradient(circle at top, #dbeafe 0%, #f8fafc 42%, #e2e8f0 100%);
+}
+
+.hamba-dashboard {
+  background: radial-gradient(circle at top, #dbeafe 0%, #f8fafc 42%, #e2e8f0 100%);
+}
+
+.hamba-dashboard section,
+.hamba-dashboard article,
+.hamba-dashboard button,
+.hamba-dashboard a,
+.hamba-dashboard input,
+.hamba-dashboard select {
+  border-radius: 12px !important;
+}
+
+.hamba-dashboard section[class*='bg-white'],
+.hamba-dashboard div[class*='bg-white'] {
+  background-color: var(--hamba-paper) !important;
+}
+
+.hamba-dashboard section {
+  border-color: #dbe5f0 !important;
+}
+
+.hamba-dashboard [class*='bg-[#0369a1]'] {
+  background-color: #0284c7 !important;
+}
+
+.hamba-directory {
+  background: radial-gradient(circle at top, #dbeafe 0%, #f8fafc 42%, #e2e8f0 100%);
+}
+
+.hamba-directory > div {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 24px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.1);
+  padding: 1.25rem;
+}
+
+.hamba-directory h2,
+.hamba-directory h3 {
+  color: #0f172a;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.hamba-directory article,
+.hamba-directory button,
+.hamba-directory input,
+.hamba-directory select,
+.hamba-directory [class*='rounded-xl'],
+.hamba-directory [class*='rounded-lg'] {
+  border-radius: 12px !important;
+}
+
+.hamba-directory [class*='text-blue-600'],
+.hamba-directory [class*='text-blue-700'] {
+  color: #0369a1 !important;
+}
+
+.hamba-ops__sidebar {
+  background: #0f172a;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.2);
+}
+
+.hamba-payments-nav {
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .hamba-payments-nav {
+    width: 248px;
+  }
+}
+
+.hamba-ops article,
+.hamba-ops section,
+.hamba-ops [class*='rounded-[20px]'],
+.hamba-ops [class*='rounded-[22px]'],
+.hamba-ops [class*='rounded-[24px]'] {
+  border-radius: 18px !important;
+}
+
+.hamba-ops [class*='bg-white'] {
+  background-color: var(--hamba-paper) !important;
+}
+
+.hamba-ops h1,
+.hamba-ops h2 {
+  letter-spacing: 0;
+}
+
+.hamba-ops h1:not(.hamba-display) {
+  color: var(--hamba-ink);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-weight: 600;
+}
+
+.hamba-ops button,
+.hamba-ops a,
+.hamba-ops input,
+.hamba-ops select {
+  border-radius: 12px !important;
+}
+
+.hamba-assistant {
+  background: radial-gradient(circle at top, #dbeafe 0%, #f8fafc 42%, #e2e8f0 100%);
+}
+
+.hamba-assistant > aside:first-child {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc;
+}
+
+.hamba-assistant > aside:first-child [class*='text-slate-'] {
+  color: #cbd5e1 !important;
+}
+
+.hamba-assistant > aside:first-child nav button {
+  border-radius: 10px !important;
+}
+
+.hamba-assistant > aside:first-child nav button[class*='bg-blue-50'] {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+}
+
+.hamba-assistant > section {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.hamba-assistant > section > div:first-child,
+.hamba-assistant > section > header {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #e2e8f0 !important;
+}
+
+.hamba-assistant [class*='border-slate-200'] {
+  border-color: #e2e8f0 !important;
+}
+
+.hamba-assistant > aside:first-child nav button:not([class*='bg-blue-50']) {
+  background: transparent !important;
+}
+
+.hamba-assistant > section > div:last-child > section:first-child {
+  background: #f8fafc;
+}
+
+.hamba-assistant > section > div:last-child > section:nth-child(2) {
+  background: #ffffff;
+}
+
+.hamba-assistant button,
+.hamba-assistant input,
+.hamba-assistant select,
+.hamba-assistant textarea,
+.hamba-assistant article,
+.hamba-assistant [class*='rounded-xl'],
+.hamba-assistant [class*='rounded-lg'] {
+  border-radius: 12px !important;
+}
+
+.hamba-assistant [class*='bg-blue-600'] {
+  background-color: #0284c7 !important;
+}
+
+.hamba-assistant [class*='text-blue-700'] {
+  color: #0369a1 !important;
+}
+
+.hamba-assistant [class*='border-blue-600'] {
+  border-color: #0284c7 !important;
+}
+
+.hamba-assistant h1,
+.hamba-assistant h2 {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+@media (max-width: 639px) {
+  .hamba-home::after {
+    height: 42%;
+    width: 30%;
+  }
+
+  .hamba-home__bar {
+    padding: 0 1rem;
+  }
+
+  .hamba-home__bar p,
+  .hamba-wordmark {
+    font-size: 0.64rem;
+  }
+
+  .hamba-assistant > aside:first-child {
+    width: 52px !important;
+  }
+
+  .hamba-assistant > aside:first-child > div:first-child {
+    padding-left: 0.35rem !important;
+    padding-right: 0.35rem !important;
+  }
+
+  .hamba-assistant > aside:first-child nav {
+    padding-left: 0.25rem !important;
+    padding-right: 0.25rem !important;
+  }
+
+  .hamba-assistant > section > div:first-child,
+  .hamba-assistant > section > header {
+    display: none !important;
+  }
+
+  .hamba-assistant > section > div:last-child > section:first-child,
+  .hamba-assistant > section > div:last-child > aside:last-child {
+    width: 36px !important;
+  }
+
+  .hamba-assistant > section > div:last-child > section:nth-child(2) > div:first-child {
+    height: 72px !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.5rem !important;
+  }
+
+  .hamba-assistant > section > div:last-child > section:nth-child(2) h1 {
+    font-size: 1.5rem !important;
+    line-height: 1.05 !important;
+  }
+
+  .hamba-assistant > section > div:last-child > section:nth-child(2) form {
+    padding: 0.6rem !important;
+  }
+
+  .hamba-assistant > section > div:last-child > section:nth-child(2) form input {
+    font-size: 0.75rem !important;
+    padding-left: 0.7rem !important;
+    padding-right: 0.7rem !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .hamba-ops {
+    padding: 0 !important;
+  }
+
+  .hamba-ops > div {
+    gap: 0 !important;
+  }
+
+  .hamba-ops__sidebar {
+    border-left: 0;
+    border-right: 0;
+    padding: 0.9rem 1rem !important;
+    position: static !important;
+  }
+
+  .hamba-ops__sidebar > p:first-child {
+    font-size: 0.6rem !important;
+  }
+
+  .hamba-ops__sidebar > h1 {
+    font-size: 1.45rem !important;
+  }
+
+  .hamba-ops__sidebar > h1 + p {
+    display: none;
+  }
+
+  .hamba-ops__nav {
+    display: grid;
+    gap: 0.4rem !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 0.75rem !important;
+  }
+
+  .hamba-ops__nav > a {
+    min-width: 0;
+    padding: 0.5rem !important;
+  }
+
+  .hamba-ops__nav > a > div {
+    align-items: center;
+    gap: 0.45rem !important;
+  }
+
+  .hamba-ops__nav > a span {
+    height: 1.6rem !important;
+    margin-top: 0 !important;
+    width: 1.6rem !important;
+  }
+
+  .hamba-ops__nav > a p {
+    font-size: 0.72rem !important;
+    line-height: 1rem !important;
+  }
+
+  .hamba-ops__quick-links {
+    display: none;
+  }
+
+  .hamba-ops > div > div:last-child {
+    padding: 0.9rem;
+  }
 }
 
 body {

@@ -5,7 +5,7 @@ import { autoMatchUnmatchedReferences, ensurePaymentPeriodsForPeriod } from '@/l
 
 function normalizeSource(value: string | null | undefined): BankImportSource {
   const normalized = value?.trim().toLowerCase();
-  return normalized === 'gmail' || normalized === 'drive' ? normalized : 'both';
+  return normalized === 'gmail' || normalized === 'drive' || normalized === 'bank' ? normalized : 'both';
 }
 
 function isCronAuthorized(request: NextRequest) {
@@ -43,6 +43,9 @@ export async function GET(request: NextRequest) {
     });
     if (billingPeriod) {
       await ensurePaymentPeriodsForPeriod({ periodKey: billingPeriod });
+    }
+    for (const periodKey of new Set(data.flatMap((result) => result.importedPeriods ?? []))) {
+      await ensurePaymentPeriodsForPeriod({ periodKey });
     }
     // Auto-match job (owner request 2026-07-02): every import ends with a
     // matching pass — unambiguous rule hits get matched (never signed off).
@@ -91,6 +94,9 @@ export async function POST(request: NextRequest) {
     });
     if (body.billingPeriod?.trim()) {
       await ensurePaymentPeriodsForPeriod({ periodKey: body.billingPeriod.trim() });
+    }
+    for (const periodKey of new Set(data.flatMap((result) => result.importedPeriods ?? []))) {
+      await ensurePaymentPeriodsForPeriod({ periodKey });
     }
     const autoMatch = await autoMatchUnmatchedReferences({ actor: 'auto-match (bank import)' });
 

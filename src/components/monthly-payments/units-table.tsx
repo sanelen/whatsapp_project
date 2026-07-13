@@ -6,11 +6,12 @@ import { useRouter } from 'next/navigation';
 import { Lock, TriangleAlert } from 'lucide-react';
 import type {
   PropertyUnitsTable,
-  ReferencePoolRow,
-  UnitTableMatchRule,
   UnitTableRow,
   UnitTableStatus,
 } from '@/lib/monthly-payments';
+import { formatUnitOccupancySummary } from '@/lib/unit-display';
+import { sortReferencesForUnit } from '@/lib/reference-recommendations';
+import { MonthlyPaymentsNavigation } from './monthly-payments-navigation';
 
 function formatRand(amount: number): string {
   return amount.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -43,6 +44,13 @@ function maskPhone(value: string): string {
   return `${digits.slice(0, 3)}...${digits.slice(-3)}`;
 }
 
+function unitOccupancySummary(row: UnitTableRow) {
+  return formatUnitOccupancySummary({
+    occupancy: row.occupancy,
+    contacts: row.contacts.map(maskPhone),
+  });
+}
+
 const STATUS_META: Record<UnitTableStatus, { bg: string; fg: string }> = {
   paid: { bg: '#e8f6ee', fg: '#0f7b53' },
   pending: { bg: '#e6f3fb', fg: '#0369a1' },
@@ -59,112 +67,6 @@ function statusLabel(row: UnitTableRow): string {
   if (row.status === 'pending') return 'awaiting sign-off';
   if (row.status === 'partial' && row.overdueDays) return `partial · ${row.overdueDays}d`;
   return row.status;
-}
-
-function normalizeText(value: string | null | undefined) {
-  return (value ?? '').trim().toUpperCase();
-}
-
-function roomLabelHints(label: string) {
-  const normalized = normalizeText(label);
-  const digits = normalized.replace(/\D/g, '');
-  const hints = new Set<string>();
-  if (normalized) hints.add(normalized);
-  if (digits) {
-    hints.add(digits);
-    hints.add(`ROOM ${digits}`);
-    hints.add(`ROOM${digits}`);
-    hints.add(`NO.${digits}`);
-    hints.add(`NO ${digits}`);
-  }
-  return Array.from(hints);
-}
-
-function matchesRule(rule: UnitTableMatchRule, reference: ReferencePoolRow) {
-  const referenceText = normalizeText(reference.reference);
-  const payerText = normalizeText(reference.payerName);
-  const matcherValue = normalizeText(rule.matcherValue);
-
-  switch (rule.matcherType) {
-    case 'reference_equals':
-      return matcherValue.length > 0 && referenceText === matcherValue;
-    case 'reference_contains':
-      return matcherValue.length > 0 && referenceText.includes(matcherValue);
-    case 'payer_name_contains':
-      return matcherValue.length > 0 && payerText.includes(matcherValue);
-    case 'amount_equals':
-      return rule.amountValue !== null && Math.abs(reference.amount - rule.amountValue) <= 0.001;
-    case 'reference_regex':
-      if (!rule.matcherValue.trim()) return false;
-      try {
-        return new RegExp(rule.matcherValue, 'iu').test(reference.reference);
-      } catch {
-        return false;
-      }
-    default:
-      return false;
-  }
-}
-
-function scoreReferenceForUnit(row: UnitTableRow, reference: ReferencePoolRow) {
-  let score = 0;
-  const referenceText = normalizeText(reference.reference);
-  const payerText = normalizeText(reference.payerName);
-  const expectedRef = normalizeText(row.expectedReference);
-
-  if (expectedRef && referenceText === expectedRef) score += 120;
-  else if (expectedRef && referenceText.includes(expectedRef)) score += 90;
-
-  for (const keyword of [...row.matchKeywords, ...roomLabelHints(row.label)]) {
-    const token = normalizeText(keyword);
-    if (!token) continue;
-    if (referenceText.includes(token)) score += 24;
-    if (payerText.includes(token)) score += 18;
-  }
-
-  for (const rule of row.matchRules) {
-    if (!rule.isActive) continue;
-    if (!matchesRule(rule, reference)) continue;
-
-    switch (rule.matcherType) {
-      case 'reference_equals':
-        score += 110;
-        break;
-      case 'reference_regex':
-        score += 72;
-        break;
-      case 'payer_name_contains':
-        score += 38;
-        break;
-      case 'amount_equals':
-        score += 34;
-        break;
-      case 'reference_contains':
-      default:
-        score += 52;
-        break;
-    }
-  }
-
-  if (Math.abs(reference.amount - row.expectedAmount) <= 0.001) score += 35;
-  else if (reference.amount > 0 && row.expectedAmount > 0) {
-    const variance = Math.abs(reference.amount - row.expectedAmount) / row.expectedAmount;
-    if (variance <= 0.1) score += 10;
-  }
-
-  return score;
-}
-
-function sortReferencesForRow(row: UnitTableRow, references: ReferencePoolRow[]) {
-  return references
-    .map((reference) => ({
-      reference,
-      score: scoreReferenceForUnit(row, reference),
-    }))
-    .sort((left, right) => {
-      if (right.score !== left.score) return right.score - left.score;
-      return left.reference.transactionDate < right.reference.transactionDate ? 1 : -1;
-    });
 }
 
 async function postReferenceAction<T = unknown>(body: Record<string, string>): Promise<T | undefined> {
@@ -536,7 +438,7 @@ export function UnitsTable({
   }
 
   function renderInlineDetail(row: UnitTableRow) {
-    const rowCandidates = sortReferencesForRow(row, table.referencePool);
+    const rowCandidates = sortReferencesForUnit(row, table.referencePool);
     const showCandidates =
       row.status !== 'blocked' && (!row.reference || row.status === 'mismatch' || row.status === 'overpaid' || row.status === 'partial');
 
@@ -546,7 +448,7 @@ export function UnitsTable({
           <div>
             <p className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#a39d8d]">Contact</p>
             <p className="mt-1 text-[13px] text-[#292524]">
-              {row.contacts.length ? row.contacts.map(maskPhone).join(' · ') : '- vacant -'}
+              {unitOccupancySummary(row)}
             </p>
           </div>
           <div>
@@ -693,38 +595,14 @@ export function UnitsTable({
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f4ef] text-[#1c1a17]">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-[260px] shrink-0 flex-col gap-[26px] bg-[#0f172a] px-[18px] py-[22px] text-white lg:flex">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#7dd3fc]">
-              Monthly Payments
-            </p>
-            <p className="mt-2 text-[22px] font-bold tracking-normal">Workspace</p>
-          </div>
-          <nav className="flex flex-col gap-1.5">
-            <Link href="/monthly-payments" className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
-              Dashboard
-            </Link>
-            <Link href="/monthly-payments/locations" className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
-              Locations
-            </Link>
-            <Link href={`${base}?period=${table.periodKey}`} className="rounded-xl bg-sky-300/15 px-3 py-2.5 text-[13.5px] font-semibold text-white">
-              Match & sign off
-            </Link>
-            <Link href={`/monthly-payments/reference-pool?period=${table.periodKey}`} className="rounded-xl px-3 py-2.5 text-[13.5px] font-semibold text-slate-400">
-              Reference pool
-            </Link>
-          </nav>
-          <div className="mt-auto flex gap-2 border-t border-white/10 pt-4">
-            <Link href="/" className="flex-1 rounded-full bg-white py-2.5 text-center text-[12.5px] font-bold text-[#0f172a]">
-              Home
-            </Link>
-            <Link href="/property-assistance" className="flex-1 rounded-full border border-white/20 py-2.5 text-center text-[12.5px] font-bold text-white">
-              Chatbox
-            </Link>
-          </div>
-        </aside>
+    <main className="hamba-dashboard min-h-screen text-[#1c1a17]">
+      <div className="flex min-h-screen flex-col lg:flex-row">
+        <MonthlyPaymentsNavigation
+          active="units"
+          operationsHref={`${base}?period=${table.periodKey}`}
+          referencePoolHref={`/monthly-payments/reference-pool?period=${table.periodKey}`}
+          importAuditHref={`/monthly-payments/import-audit?period=${table.periodKey}`}
+        />
 
         <div className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
           <div className="mx-auto max-w-[960px]">
@@ -828,7 +706,7 @@ export function UnitsTable({
                         <div className="min-w-0">
                           <h2 className="text-[14.5px] font-bold text-[#1c1a17]">{row.label}</h2>
                           <p className="mt-0.5 truncate text-xs text-[#a39d8d]">
-                            {row.contacts.length ? row.contacts.map(maskPhone).join(' · ') : '- vacant -'}
+                            {unitOccupancySummary(row)}
                           </p>
                         </div>
                         <div className="min-w-0 max-lg:hidden" onClick={(event) => event.stopPropagation()}>

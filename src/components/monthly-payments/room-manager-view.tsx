@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2 } from 'lucide-react';
 import type { RoomManagerRoomRow, RoomManagerRule, RoomManagerView } from '@/lib/monthly-payments';
+import { MonthlyPaymentsNavigation } from './monthly-payments-navigation';
 
 type EditableRule = {
   id?: string;
@@ -304,40 +305,14 @@ export function RoomManagerPanel({
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f4ef] text-[#1c1a17]">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-[248px] shrink-0 flex-col gap-5 bg-[#0f172a] px-[18px] py-[18px] text-white lg:flex">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#7dd3fc]">
-              Monthly Payments
-            </p>
-            <p className="mt-2 text-[22px] font-bold tracking-normal">Workspace</p>
-          </div>
-
-          <nav className="flex flex-col gap-1.5">
-            <Link href="/monthly-payments" className="rounded-xl px-3 py-2 text-[13px] font-semibold text-slate-400">
-              Dashboard
-            </Link>
-            <Link href="/monthly-payments/locations" className="rounded-xl bg-sky-300/15 px-3 py-2 text-[13px] font-semibold text-white">
-              Locations
-            </Link>
-            <Link href={`/monthly-payments/${view.propertyId}?period=${view.periodKey}`} className="rounded-xl px-3 py-2 text-[13px] font-semibold text-slate-400">
-              Match & sign off
-            </Link>
-            <Link href={`/monthly-payments/reference-pool?period=${view.periodKey}`} className="rounded-xl px-3 py-2 text-[13px] font-semibold text-slate-400">
-              Reference pool
-            </Link>
-          </nav>
-
-          <div className="mt-auto flex gap-2 border-t border-white/10 pt-4">
-            <Link href="/" className="flex-1 rounded-full bg-white py-2 text-center text-[12.5px] font-bold text-[#0f172a]">
-              Home
-            </Link>
-            <Link href="/property-assistance" className="flex-1 rounded-full border border-white/20 py-2 text-center text-[12.5px] font-bold text-white">
-              Chatbox
-            </Link>
-          </div>
-        </aside>
+    <main className="hamba-dashboard min-h-screen text-[#1c1a17]">
+      <div className="flex min-h-screen flex-col lg:flex-row">
+        <MonthlyPaymentsNavigation
+          active="room-manager"
+          operationsHref={`/monthly-payments/${view.propertyId}?period=${view.periodKey}`}
+          referencePoolHref={`/monthly-payments/reference-pool?period=${view.periodKey}`}
+          importAuditHref={`/monthly-payments/import-audit?period=${view.periodKey}`}
+        />
 
         <div className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
           <div className="mx-auto max-w-[1080px]">

@@ -27,6 +27,39 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 
 These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ticket:
 
+- Import validation audit (REQUIREMENTS FR-2.12) — **shipped 2026-07-12** at
+  `/monthly-payments/import-audit`: period/source filters, file provenance,
+  parser/Drive status, transaction totals, database-presence indicators, and
+  matched/signed-off unit status. Live July Drive verification after reconciliation
+  showed 4 bank files, 23 accepted transactions (R56,700), 23/23 present in the
+  database, and 18 matched/signed-off.
+
+- Account-policy and cross-source reconciliation (REQUIREMENTS FR-2.14/FR-2.15) —
+  **shipped 2026-07-12, no known ticket**. Includes internal account and interest
+  exclusion, property locks, mixed legacy routing, and Gmail/PDF/CSV duplicate
+  reconciliation. Create a Linear ticket to own future policy changes and regression
+  fixtures; do not bury account decisions only in implementation notes.
+
+- Combined-payment allocation — **open, no known ticket**. One verified mixed-account
+  R4,400 reference names two rooms and correctly remains unmatched. Define and build
+  an explicit split workflow instead of guessing a unit.
+
+- Import-flow browser regression coverage — **partially addressed 2026-07-12
+  (review session), no known ticket**. `e2e/flow-11-import-audit-and-configuration.spec.ts`
+  now covers the read-only journey (dashboard → audit → configuration →
+  reference pool) plus a nav-consistency guard, safe on live data. Still open:
+  seeded Playwright coverage for the mutating flow (Drive import → audit →
+  reference pool → unit match, duplicate and excluded-row cases) — blocked on
+  the seeded TEST property fixture.
+
+- Unwired helper — **open, no known ticket**. `recomputePaymentPeriodStatuses`
+  (monthly-payments-ops.ts) is exported but never called; either wire it into
+  the import route after `ensurePaymentPeriodsForPeriod` or remove it. Also
+  queued for the owner: should cron (`source=both`) sweep the Bank uploads
+  folder (today only explicit `source=bank` does), and should the R1,900/R2,200
+  mixed-legacy thresholds move from the CSV parser into config? See
+  `docs/reviews/code-review-2026-07-12-evening-review-session.md`.
+
 - Deposit-split / partial-payment allocation logic (REQUIREMENTS FR-2.8) —
   **mostly done 2026-07-02**: owner ruled (paid = signed-off only; deposit
   ledger per unit; partial + outstanding). Shipped: status model
@@ -34,9 +67,9 @@ These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ti
   action (migration applied to live Supabase), functional test suite with
   failure→action map ([functional-test-map](./testing/functional-test-map.md)).
   Remaining: surplus-beyond-deposit rule + FR-2.7 feedback strengthening.
-- Drive → Supabase reverse import (REQUIREMENTS FR-2.11) — **found already
-  code-complete 2026-07-03** (source toggle → `importDrivePayments` in
-  `runBankImport`); needs one live Drive pull by the owner to call it Shipped.
+- ~~Drive → Supabase reverse import (REQUIREMENTS FR-2.11)~~ — **shipped and live
+  verified 2026-07-12** with controlled CSV/PDF Bank uploads, dedupe, archive
+  versioning, property routing, and audit visibility.
 - ~~RLS enablement on `public.prompt_settings` (REQUIREMENTS FR-5.3)~~ —
   **done 2026-07-03**: migration applied to live project + committed to repo;
   anon denied, service_role unaffected, advisor ERROR cleared.
@@ -44,9 +77,11 @@ These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ti
   table done 2026-07-03**; **shell sidebar + locations + room manager done
   2026-07-12**; **dashboard hub + reference pool done later the same day**
   (all with before/after fixture renders in `docs/audits/screenshots/`,
-  typecheck + 104 tests + prod build verified). All payments screens now have
-  the pass-2 treatment — gap closed pending owner sanity-check on
-  localhost:3000.
+  typecheck + 104 tests + prod build verified). The 2026-07-12 review session
+  found and fixed one screen the pass had missed (units-table sidebar, still
+  260px/13.5px) — all payments screens now genuinely have the pass-2
+  treatment. Gap closed pending owner sanity-check on localhost:**3001** (3000
+  is SAChatbot).
 - Post-match/sign-off operator feedback strengthening (REQUIREMENTS FR-2.7) —
   **FR-2.7b built 2026-07-04** (nightly run): sign-off learning prompt +
   `add_match_rule` action, verified with tests (104/104), typecheck, prod

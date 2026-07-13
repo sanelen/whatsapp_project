@@ -41,6 +41,22 @@ function normalize(value: string | null | undefined): string {
   return (value ?? '').replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
+function compactRoomReference(value: string) {
+  return normalize(value)
+    .replace(/[^A-Z0-9]/g, '')
+    .replace(/ROOM0+(\d+)/g, 'ROOM$1');
+}
+
+export function referenceContainsMatcherToken(reference: string, token: string) {
+  const normalizedReference = normalize(reference);
+  const normalizedToken = normalize(token);
+  return normalizedReference.includes(normalizedToken) || compactRoomReference(reference).includes(compactRoomReference(token));
+}
+
+function hasCombinedRoomReference(reference: string) {
+  return /\bROOM\s*0?\d+\s*(?:AND|&|\/)\s*0?\d+\b/i.test(reference);
+}
+
 /**
  * Rule values are comma/space separated token lists (that's how the operator
  * writes them in the room manager, e.g. "Room15,QHROOM15 ,15 QH15").
@@ -70,8 +86,8 @@ export function hintHit(reference: AutoMatchReference, hint: AutoMatchHint): Hin
     const haystack = normalize(reference.reference);
     let best: HintHit | null = null;
     for (const token of tokenizeMatcherValue(hint.matcher_value)) {
-      if (!haystack.includes(token)) continue;
-      const exact = haystack === token;
+      if (!referenceContainsMatcherToken(reference.reference, token)) continue;
+      const exact = haystack === token || compactRoomReference(reference.reference) === compactRoomReference(token);
       if (!best || token.length > best.token.length || (exact && !best.exact)) {
         best = { token, exact };
       }
@@ -153,6 +169,7 @@ export function shouldOfferReferenceRule(
  *    ambiguous and stay in the pool for review.
  */
 export function resolveAutoMatch(reference: AutoMatchReference, hints: AutoMatchHint[]): AutoMatchResolution {
+  if (hasCombinedRoomReference(reference.reference)) return { kind: 'none' };
   const hitsByUnit = new Map<string, { hintId: string; token: string; exact: boolean }>();
 
   for (const hint of hints) {

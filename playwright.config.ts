@@ -23,7 +23,9 @@ export default defineConfig({
     : [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
 
   use: {
-    baseURL: process.env.E2E_BASE_URL || 'http://localhost:3000',
+    // `npm run dev` serves this app on 3001 (3000 belongs to SAChatbot — see
+    // start-all.sh). E2E_BASE_URL still overrides for other setups.
+    baseURL: process.env.E2E_BASE_URL || 'http://localhost:3001',
     headless: !!process.env.CI,
     viewport: { width: 1440, height: 900 },
     actionTimeout: 15_000,
@@ -45,7 +47,7 @@ export default defineConfig({
       name: 'local',
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.E2E_BASE_URL || 'http://localhost:3000',
+        baseURL: process.env.E2E_BASE_URL || 'http://localhost:3001',
       },
     },
     {

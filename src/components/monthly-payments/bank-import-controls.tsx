@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { Download, ExternalLink, Loader2, MailCheck } from 'lucide-react';
+import Link from 'next/link';
 
-type BankImportSource = 'gmail' | 'drive' | 'both';
+type BankImportSource = 'gmail' | 'drive' | 'bank' | 'both';
 
 const SOURCE_OPTIONS: Array<{ value: BankImportSource; label: string }> = [
   { value: 'gmail', label: 'Gmail' },
   { value: 'drive', label: 'Drive' },
+  { value: 'bank', label: 'Bank' },
   { value: 'both', label: 'Both' },
 ];
 
@@ -34,6 +36,7 @@ type ImportResponse = {
     duplicateFiles: number;
     failedMessages: number;
     filesArchivedToDrive: number;
+    importedPeriods?: string[];
   }>;
 };
 
@@ -146,7 +149,7 @@ export function BankImportControls({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           billingPeriod: resolvedPeriod ?? activePeriod,
-          pullAll,
+          pullAll: source === 'bank' ? true : pullAll,
           source,
           maxMessages: pullAll ? 100 : 50,
         }),
@@ -180,6 +183,11 @@ export function BankImportControls({
       filesArchivedToDrive: 0,
     }
   );
+  // Distinct billing periods across mailboxes — summing per-mailbox lengths
+  // would double-count a period touched by more than one mailbox.
+  const importedPeriodCount = new Set(
+    (result?.data ?? []).flatMap((mailbox) => mailbox.importedPeriods ?? [])
+  ).size;
 
   return (
     <section className="mt-3 rounded-[14px] border border-[#e7e3d6] bg-white px-3.5 py-3">
@@ -193,8 +201,8 @@ export function BankImportControls({
               <select
                 value={activePeriod}
                 onChange={(event) => updateSelectedPeriod(event.target.value)}
-                disabled={pullAll || isPending}
-                className="h-8 rounded-[10px] border border-[#e7e3d6] bg-white px-2.5 text-[12px] font-semibold text-[#1c1a17] outline-none disabled:cursor-wait disabled:bg-[#f1efe9]"
+                disabled={pullAll || source === 'bank' || isPending}
+                className="h-8 rounded-[10px] border border-[#e7e3d6] bg-white px-2.5 text-[12px] font-semibold text-[#1c1a17] outline-none disabled:cursor-not-allowed disabled:bg-[#f1efe9]"
               >
                 {periodOptions.map((period) => (
                   <option key={period.key} value={period.key}>
@@ -208,8 +216,8 @@ export function BankImportControls({
                   type="checkbox"
                   checked={pullAll}
                   onChange={(event) => setPullAll(event.target.checked)}
-                  disabled={isPending}
-                  className="h-3.5 w-3.5 accent-[#0369a1]"
+                  disabled={isPending || source === 'bank'}
+                  className="h-3.5 w-3.5 accent-[#0369a1] disabled:cursor-not-allowed"
                 />
                 Pull everything
               </label>
@@ -249,7 +257,11 @@ export function BankImportControls({
             </button>
           </div>
           <p className="mt-1.5 text-[11px] text-[#a39d8d]">
-            {pullAll ? 'All importable months' : `${activePeriod} window: ${formatWindow(activePeriod)}`}
+            {source === 'bank'
+              ? 'Bank Uploads folder: all past-dated statement rows'
+              : pullAll
+                ? 'All importable months'
+                : `${activePeriod} window: ${formatWindow(activePeriod)}`}
           </p>
         </div>
       </div>
@@ -277,6 +289,18 @@ export function BankImportControls({
           </button>
         ) : null}
         {googleCloudStatus?.error ? <p className="text-[11px] text-[#b91c1c]">{googleCloudStatus.error}</p> : null}
+        <Link
+          href={`/monthly-payments/import-audit?period=${activePeriod}`}
+          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#e7e3d6] bg-white px-2.5 text-[11px] font-bold text-[#1c1a17]"
+        >
+          View import audit
+        </Link>
+        <Link
+          href="/monthly-payments/import-configuration"
+          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#e7e3d6] bg-white px-2.5 text-[11px] font-bold text-[#1c1a17]"
+        >
+          Import configuration
+        </Link>
       </div>
 
       {result ? (
@@ -293,12 +317,14 @@ export function BankImportControls({
               {totals.ignoredEntries ? ` ${totals.ignoredEntries} entries were ignored.` : ''}
               {totals.duplicateFiles ? ` ${totals.duplicateFiles} duplicate files were skipped.` : ''}
               {totals.filesArchivedToDrive ? ` ${totals.filesArchivedToDrive} files archived to Drive.` : ''}
+              {importedPeriodCount ? ` ${importedPeriodCount} billing period${importedPeriodCount === 1 ? '' : 's'} touched.` : ''}
             </p>
           ) : (
             <p>{result.error ?? 'Import failed'}</p>
           )}
         </div>
       ) : null}
+
     </section>
   );
 }

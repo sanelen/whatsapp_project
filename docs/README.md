@@ -1,6 +1,6 @@
 # Hamba Customer Service Docs
 
-Last updated: 2026-07-01
+Last updated: 2026-07-12
 
 This folder is the planning and implementation strategy hub for the project.
 
@@ -15,9 +15,11 @@ This folder is the planning and implementation strategy hub for the project.
    process for keeping them in sync.
 5. **[Latest voice-note brief](./voice-notes/2026-06-14-la-lucia-mall-16.md)** — the
    current product vision in the owner's words.
-6. **Design handoff package** — `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
+6. **[Latest session handover](./handovers/session-handover-2026-07-12.md)** —
+   implementation, live data reconciliation, verification, and restart checklist.
+7. **Design handoff package** — `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
    contains the reviewed wireframe canvas and screen exports for the Phase 7 work.
-7. Then dive into the themed sections below.
+8. Then dive into the themed sections below.
 
 ## Tenant operations (current vision)
 
@@ -58,6 +60,8 @@ is now the visual reference, not a separate competing plan.
 ## UI
 
 - [UI roadmap](./roadmap/ui/README.md) — navigation, tablet layout, workspace UX.
+- [Hamba hospitality visual system](./roadmap/ui/hamba-hospitality-refresh.md) —
+  the shared dashboard/chatbot design language, responsive rules, and screenshot evidence.
 - [HeroUI adoption](./roadmap/ui/heroui.md) — standard component layer (spike done).
 - [Forms enhancement protocol](./roadmap/ui/forms.md) — validation, typed inputs, uploads, accessibility, multi-step forms.
 
@@ -70,6 +74,9 @@ is now the visual reference, not a separate competing plan.
   pass/fail verdicts per flow, evidence, and a screenshot checklist for owner review.
 
 ## Full flow reviews
+
+- [Monthly payments import full-flow review — 2026-07-12](./reviews/full-flow-review-2026-07-12-monthly-payments-import-flow.md) — architecture, QA, UI/accessibility, roadmap fit, tensions, and prioritized follow-ups.
+- [Code + UI review — 2026-07-12 evening](./reviews/code-review-2026-07-12-evening-review-session.md) — line-level review of the day's diff, nav-consistency fixes across all seven pages, test-suite triage, and three queued owner decisions.
 
 - **[Full flow review skill](/Users/macdaddy/Documents/DEV/HambaCustomerService/.claude/skills/full-flow-review/SKILL.md)** —
   orchestrates architecture/flow, QA, UI/UX, and a roadmap-fit check into one

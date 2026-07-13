@@ -1,4 +1,4 @@
-Last updated: 2026-07-02
+Last updated: 2026-07-12
 
 # Requirements
 
@@ -124,13 +124,37 @@ tags: **Shipped**, **Partial**, **Planned**.
 - FR-2.10 **Shipped** — Billing window is 9th-of-previous-month through
   8th-of-selected-month; manual historical pulls ignore `last_synced_at` so
   backfills aren't blocked.
-- FR-2.11 **Partial** — Drive → Supabase reverse import. Code-complete since the
-  source-toggle work (`importDrivePayments` in `src/lib/bank-import.ts`, wired
-  into `runBankImport` for `source=drive|both`, exposed in the import API and
-  BankImportControls; skips app-archived and already-processed files). Marked
-  Partial, not Shipped, because a live Drive pull has not been re-verified
-  end-to-end — owner: drop a PDF into the Drive month folder and run a
-  `source=drive` import to confirm.
+- FR-2.11 **Shipped 2026-07-12** — Drive → Supabase reverse import accepts CSV and
+  PDF bank statements from the controlled Bank uploads folder via `source=bank`
+  (corrected 2026-07-12 review: `both` covers Gmail + the app's Drive archive
+  only, so scheduled `both` imports do NOT pull the Bank uploads folder — Bank
+  statement imports are an explicit operator action from the dashboard. If the
+  cron should also sweep Bank uploads, that is an owner decision, not a doc fix).
+  Live imports verified file hashing, timestamped archival, account/property
+  routing, billing-period placement, and database/reference creation while
+  skipping app-archived and previously processed files.
+- FR-2.12 **Shipped 2026-07-12** — Import audit provides a read-only,
+  period-scoped source-to-database ledger for Gmail PDFs, Drive bank uploads,
+  and extracted transactions. It shows parser and Drive archive status, file
+  provenance, database presence, and matched/signed-off unit state without
+  duplicating matching controls from the reference pool.
+- FR-2.13 **Shipped 2026-07-12** — Import configuration provides a read-only
+  explanation of connected mailboxes, masked account/property mappings,
+  parser acceptance policy, and unit matching hints. Outgoing `Account Paid
+  From` notifications and statement debits are explicitly ignored. Confirmed
+  internal accounts are excluded across Gmail, Drive, CSV, and PDF ingestion.
+- FR-2.14 **Shipped 2026-07-12** — Import dedupe is layered: source message/file
+  identity, SHA-256 file identity, transaction fingerprint, and cross-source bank
+  identity. The cross-source check reconciles statement rows with Gmail/PDF
+  notifications using account, transaction time/date, amount, and canonicalized
+  reference so the same payment cannot be posted twice merely because it arrived
+  through another source.
+- FR-2.15 **Shipped 2026-07-12** — Account policy controls ingestion before unit
+  matching. Property-locked accounts cannot be redirected by generic room hints;
+  shared legacy accounts use account-scoped reference hints before amount hints;
+  internal account `7467`, debits, transfers, merchant reservations, and interest
+  received create no payment entry or reference. Ambiguous combined-room payments
+  remain unmatched for operator review.
 
 ### Non-functional
 
@@ -161,6 +185,11 @@ tags: **Shipped**, **Partial**, **Planned**.
   - operator progress on the dashboard = matched-to-unit money / expected
   - audit-grade paid money = signed-off money only
   - period status is derived from all references attached to the period
+- NFR-2.4 **Shipped 2026-07-13** — Dashboard and assistant surfaces share the
+  approved cloud-and-powder-blue visual system: soft blue atmospheric fields,
+  translucent white operational panels, deep navy navigation, sans-serif headings,
+  rounded controls, restrained shadows, and consistent responsive behavior. The
+  refresh preserves existing routes, data, matching, import, and chat behavior.
 
 ## 3. WhatsApp Tenant Assistant (planning only)
 

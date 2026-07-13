@@ -313,6 +313,12 @@ async function recomputeAndPersistPeriodStatus(periodId: string) {
   };
 }
 
+export async function recomputePaymentPeriodStatuses(periodIds: string[]) {
+  const uniqueIds = Array.from(new Set(periodIds.filter(Boolean)));
+  for (const periodId of uniqueIds) await recomputeAndPersistPeriodStatus(periodId);
+  return { recomputed: uniqueIds.length };
+}
+
 export async function matchReferenceToUnit(input: {
   propertyId: string;
   unitId: string;

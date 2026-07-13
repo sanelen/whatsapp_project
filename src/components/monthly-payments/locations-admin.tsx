@@ -19,8 +19,17 @@ function progressWidth(collected: number, expected: number) {
 }
 
 export function LocationsAdmin({ view }: { view: MonthlyPaymentsLocationsView }) {
+  const primaryProperty = view.cards[0];
+  const operationsHref = primaryProperty
+    ? `/monthly-payments/${primaryProperty.propertyId}?period=${view.periodKey}`
+    : '/monthly-payments/locations';
+
   return (
-    <MonthlyPaymentsShell active="locations" referencePoolHref={`/monthly-payments/reference-pool?period=${view.periodKey}`}>
+    <MonthlyPaymentsShell
+      active="locations"
+      operationsHref={operationsHref}
+      referencePoolHref={`/monthly-payments/reference-pool?period=${view.periodKey}`}
+    >
       <div className="rounded-[20px] border border-white/80 bg-white/88 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -31,8 +40,7 @@ export function LocationsAdmin({ view }: { view: MonthlyPaymentsLocationsView })
               Locations
             </h1>
             <p className="mt-1.5 max-w-3xl text-[13px] leading-5 text-slate-500">
-              This is the setup branch for monthly payments. Choose a property, manage the room
-              definitions that feed matching, then jump back into unit operations when needed.
+              Room inventory, occupancy, and matching coverage across the Hamba portfolio.
             </p>
           </div>
 

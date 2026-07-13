@@ -165,3 +165,22 @@ test('FR-2.7b [decision: payer rules count as coverage] a payer_name_contains hi
 test('FR-2.7b [decision: rules stay scoped] a same-unit rule scoped to another property is not coverage', () => {
   assert.equal(unitHintsCoverReference(ref({}), [hint({ property_id: 'prop-OTHER' })], 'unit-1'), false);
 });
+
+test('FR-2.4 spaced and zero-padded room references match the canonical room rule', () => {
+  assert.deepEqual(
+    resolveAutoMatch(ref({ reference: 'Payment Received: Qh Room06' }), [hint({ matcher_value: 'QHROOM6' })]),
+    { kind: 'match', unitId: 'unit-1', hintId: 'h1' }
+  );
+  assert.deepEqual(
+    resolveAutoMatch(ref({ reference: 'PayShap Payment Received: Qhroom08' }), [hint({ matcher_value: 'QHROOM8' })]),
+    { kind: 'match', unitId: 'unit-1', hintId: 'h1' }
+  );
+});
+
+test('FR-2.4 combined room references remain human-reviewed', () => {
+  const result = resolveAutoMatch(ref({ reference: 'Payment Received: Qh Room 11 And 8', amount: 4400 }), [
+    hint({ id: 'room-11', unit_id: 'unit-11', matcher_value: 'QHROOM11' }),
+    hint({ id: 'room-8', unit_id: 'unit-8', matcher_value: 'QHROOM8' }),
+  ]);
+  assert.deepEqual(result, { kind: 'none' });
+});

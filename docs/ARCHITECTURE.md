@@ -1,4 +1,4 @@
-Last updated: 2026-07-01
+Last updated: 2026-07-12
 
 # Architecture
 
@@ -114,21 +114,74 @@ Status is mostly **derived at read time** in `src/lib/monthly-payments.ts`
 
 **Bank import pipeline** (`src/lib/bank-import.ts`):
 
-```
-Gmail (info.hambatrading@gmail.com)  ──┐
-                                        ├─► parse forwarded Capitec PDF ──► bank_import_entries
-Google Drive (archive folders)  ───────┘        │                              │
-                                                 ▼                              ▼
-                                     bank_import_property_mappings      payment_references
-                                     (account suffix → property)       (Incoming Funds only)
+```mermaid
+flowchart LR
+    G[Gmail notifications] --> F[File evidence]
+    D[Drive Bank uploads<br/>CSV or PDF] --> F
+    F --> H{File SHA already known?}
+    H -->|yes| X[Record duplicate/skip]
+    H -->|no| P[Parse normalized transactions]
+    P --> A{Account and transaction policy}
+    A -->|excluded, debit, transfer,<br/>interest, or invalid| Z[Retain audit metadata only]
+    A -->|accepted incoming payment| C{Cross-source identity exists?}
+    C -->|yes| X
+    C -->|no| E[bank_import_entries]
+    E --> R[payment_references]
+    R --> M[Property and unit matching]
+    M --> S[Operator sign-off]
 ```
 
-Tables: `bank_import_mailboxes`, `bank_import_messages`, `bank_import_files`,
-`bank_import_entries`, `bank_import_property_mappings`, `bank_import_unit_match_hints`.
+The cross-source identity is account suffix + transaction time/date + amount +
+canonical reference. This prevents a statement row from duplicating the same payment
+already received as a Gmail PDF. File SHA dedupe remains a separate layer so renamed
+copies of the same statement do not create another import.
+
+```mermaid
+flowchart TD
+    T[Parsed transaction] --> E{Excluded account or interest?}
+    E -->|yes| Reject[Do not create entry/reference]
+    E -->|no| I{Incoming payment under account policy?}
+    I -->|no| Reject
+    I -->|yes| L{Property-locked account?}
+    L -->|yes| Fixed[Use mapped property]
+    L -->|no| Q{Account-scoped reference hint?}
+    Q -->|yes| Hint[Use strongest unambiguous hint]
+    Q -->|no| V{Account-scoped amount hint?}
+    V -->|yes| Hint
+    V -->|no| Review[Leave unresolved for operator]
+```
+
+**Ownership and read models:**
+
+| Concern | Source of truth | Read surfaces |
+|---|---|---|
+| Source files and parser evidence | `bank_import_messages`, `bank_import_files` | Import audit |
+| Accepted normalized transactions | `bank_import_entries` | Import audit |
+| Account/property routing | `bank_import_property_mappings` plus source-controlled account policy | Import configuration |
+| Unit matching knowledge | `bank_import_unit_match_hints`, `property_units.match_keywords`, match rules | Import configuration, room manager |
+| Operator reconciliation | `payment_references`, `unit_payment_periods`, `payment_match_events` | Reference pool, unit table, import audit |
+
+The audit and configuration pages do not own another copy of payment state. Import
+audit is a current-state provenance join; import configuration explains the policies
+that produced that state. Reference pool remains the action surface for unresolved
+references.
+
 Billing window rule: **9th of the previous month → 8th of the selected month**.
-Known account map: `7904 → Essex/Berea`, `6088 → Quarry Heights`, `4079 → West Rich`.
-Drive archive is one-way (Gmail/DB → Drive) today; Drive → Supabase re-import is an
-open item (see HANDOFF.md §6e "Pick up here next").
+Current masked-account register:
+
+| Suffix | Role |
+|---|---|
+| `2815`, `6088` | Quarry Heights dedicated/legacy |
+| `4079`, `9613` | West Rich dedicated/legacy; `9613` is property-locked |
+| `7904` | Essex/Berea; property-locked |
+| `6570` | Mixed legacy Quarry Heights/West Rich; routed by account-scoped reference, then amount |
+| `7467` | Internal/excluded; never creates entries or payment references |
+
+Drive is bidirectional operationally: Gmail imports can archive into Drive, while
+files deliberately placed in the Bank uploads folder can be imported back into
+Supabase with `source=bank` (note: `source=both` means Gmail + the app's own
+Drive archive; it deliberately does not sweep the operator-managed Bank uploads
+folder, so those imports are always an explicit action).
 
 ## 6. Capability 3 — WhatsApp Tenant Assistant (planning only)
 
@@ -171,7 +224,13 @@ confirmed by the owner: rebuild into `src/` (resolves Linear **AUT-15**).
 2. One migration (`add_drive_archive_tracking_to_bank_import_files`) was applied
    live via MCP but has no local migration file yet — backfill needed.
 3. `public.prompt_settings` has RLS disabled (Supabase advisory, unresolved).
-4. Drive → Supabase reverse import path not built (files dropped into Drive don't
-   flow back into the dashboard).
-5. Deposit-split / partial-payment allocation logic not implemented — every
-   overpayment currently reads as a plain mismatch.
+4. Bank import currently runs synchronously in the request path. Large statement
+   batches should move to a durable import-run/job model with retry and progress.
+5. Import audit shows current file/transaction state but has no first-class import
+   run ledger, and duplicate rows do not yet retain a durable link to the canonical
+   transaction they were reconciled against.
+6. Account policy is intentionally split between source-controlled safety rules and
+   database mappings/hints. If operators need to edit policy, introduce a validated
+   admin workflow rather than making the read-only configuration page writable.
+7. Combined payments for more than one room remain human-reviewed; allocation of one
+   bank reference across multiple units is not implemented.

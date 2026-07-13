@@ -1,11 +1,11 @@
 # Payments Bank Import Notes
 
-Last updated: 2026-06-30
+Last updated: 2026-07-12
 
-> Evidence captured from the 2026-06-29 Record and Replay session.
-> Status: **schema, importer/parser, first manual dashboard trigger, and Google
-> Cloud Gmail API setup route are in place; live Gmail execution still needs runtime
-> credentials.**
+> Evidence began with the 2026-06-29 Record and Replay session and was extended with
+> live Gmail, Drive, PDF, and CSV reconciliation on 2026-07-12.
+> Status: **Gmail and controlled Drive imports are live. Import audit,
+> configuration, layered dedupe, account policies, and property routing are shipped.**
 
 ## Why this note exists
 
@@ -22,7 +22,8 @@ pipeline from scratch later.
 
 ### Source shape
 
-- The bank import source is Gmail, not a manual spreadsheet flow.
+- Gmail is the automatic notification source. Google Drive Bank uploads are the
+  controlled fallback for statement CSV/PDF files; there is no local upload control.
 - Messages carry attachments with names like `70006Capitec.pdf`,
   `98151Capitec.pdf`, `36683Capitec.pdf`, `109044Capitec.pdf`, and many others.
 - The session exposed a sizeable sample set of unique filenames, which is enough to
@@ -67,6 +68,24 @@ current working mapping until replaced by a more formal register.
 
 - Account ending `6088` = **Quarry Heights**
 - Account ending `7904` = **Essex / Berea**
+- Account ending `2815` = the **legacy Quarry Heights** account, verified from
+  the 2026-07-12 Capitec transaction-history CSV. It will be phased out.
+- Account ending `9613` = **West Rich legacy**, property-locked.
+- Account ending `7904` = **Essex/Berea**, property-locked.
+- Account ending `6570` = **mixed legacy Quarry Heights and West Rich**.
+- Account ending `7467` = **internal/excluded**. It must never create an import
+  entry or payment reference.
+
+Some current/main accounts can contain both Quarry Heights and West Rich
+transactions. For those shared accounts, property resolution follows this order:
+
+1. account-scoped reference rule
+2. account-scoped exact-amount rule
+3. single-property account mapping
+4. unresolved/operator review when the strongest signals disagree
+
+Amount-only rules must be scoped to an account. Do not create a global `R 2,200`
+or West Rich amount rule because the same amount can legitimately occur elsewhere.
 
 The user also referred to "688" while reviewing older records; based on the same
 conversation this appears to be shorthand for the same **6088 / Quarry Heights**
@@ -95,6 +114,11 @@ For the first importer/admin workflow:
 5. Keep only rows where `Transaction Type = Incoming Funds`
 6. Exclude transfers and other non-incoming transaction types from the dashboard
    reference pool
+7. Exclude interest received across every source
+8. Exclude account `7467`, outgoing `Account Paid From` notifications, merchant
+   reservations, and statement debits before payment-reference creation
+9. On mixed account `6570`, accept only positive `Payment Received` rows of at
+   least R1,900; route explicit QH/WR references before the R2,200/R1,900 fallback
 
 ### Billing period window
 
@@ -135,6 +159,8 @@ Do not trust any single signal on its own. Use layered dedupe:
 1. Gmail message id to avoid re-importing the same email
 2. file hash to avoid re-importing the same attachment
 3. extracted transaction fingerprint to avoid double-posting the same payment line
+4. cross-source identity (account + transaction time/date + amount + canonical
+   reference) so a statement row cannot duplicate its Gmail/PDF notification
 
 ### Matching rules
 
@@ -168,14 +194,12 @@ the per-unit table.
 
 ## What is still missing
 
-- The recording did **not** reliably preserve the spoken mapping of which files
-  belong to which property/location.
-- We still need one cleaner capture pass, or direct sample uploads, for:
-  - verification of the `6088` / `688` shorthand nuance
-  - a formal room-reference lookup table by property
-  - any non-Capitec formats
-  - exceptions like partial payments, bundled payments, or forwarded messages with
-    altered subject lines
+- A durable `import_run` model with progress, retry, and immutable run totals.
+- A link from every skipped duplicate to the canonical transaction it matched.
+- Seeded browser tests covering Drive import through audit, reference pool, and match.
+- An explicit split workflow for one payment naming more than one room. These remain
+  unmatched by design today.
+- A validated operator-editing workflow if account policy must move out of code/SQL.
 
 ## Current implementation status
 
@@ -188,7 +212,7 @@ The database layer for this flow already exists in Supabase:
 - `bank_import_property_mappings`
 - `bank_import_unit_match_hints`
 
-The first backend execution slice is now implemented in code:
+The backend and operator validation slices are implemented:
 
 - `src/lib/bank-import.ts` — Gmail fetch, forwarded-mail extraction, Capitec PDF
   parsing, lookup resolution, and persistence into the import/reference tables
@@ -196,9 +220,13 @@ The first backend execution slice is now implemented in code:
   manual runs or a future Vercel cron
 - `src/app/api/monthly-payments/import/google-cloud/route.ts` — protected Google
   Cloud Gmail API setup/status route
-- `src/components/monthly-payments/bank-import-controls.tsx` — first manual import
-  panel on `/monthly-payments`, with Google Cloud configuration status, a period
-  selector, `Pull everything`, and an `Import` trigger
+- `src/components/monthly-payments/bank-import-controls.tsx` — source selector,
+  period selector, and import trigger on `/monthly-payments`; no local file upload
+- `src/lib/import-audit.ts` and `/monthly-payments/import-audit` — read-only
+  file/transaction/database/match provenance
+- `src/lib/import-configuration.ts` and
+  `/monthly-payments/import-configuration` — read-only mailbox, masked account,
+  parser policy, property mapping, and unit-hint explanation
 
 ### Current runtime requirement
 
@@ -229,11 +257,34 @@ shape includes forwarded messages with `message/rfc822` attachments. One sample 
 `Capitec Business Transaction Notification.eml`, which matches the nested `.eml`
 path the importer handles.
 
+The read-only import validation slice shipped on 2026-07-12:
+
+- `/monthly-payments/import-audit` groups source files by the selected rent
+  period and source (`Gmail`, `Drive bank`, or generic `Drive`).
+- Each file exposes parser status, Drive archive/source state, hash provenance,
+  extracted incoming amounts, database presence, and current unit match or
+  sign-off status.
+- The page deliberately does not edit matches; operators continue matching in
+  the reference pool or property table.
+- `/monthly-payments/import-configuration` documents the live Gmail mailbox,
+  masked account/property mappings, parser acceptance policy, and the folded
+  unit-rule inventory. An account observed on an outgoing `Account Paid From`
+  notification was confirmed as internal and is shown as excluded; it is not
+  promoted to a property mapping, and no ingestion source creates payments
+  from that account.
+- West Rich account `9613` is a property-locked historical source: its account
+  mapping establishes West Rich before room-reference hints are evaluated, so
+  generic room tokens from another property cannot make the import ambiguous.
+- Essex/Berea account `7904` is also property-locked across Gmail notifications
+  and statement CSVs. Source format decides provenance, never property linkage.
+- Mixed legacy account `6570` accepts only `Payment Received` rows of at least
+  R1,900 and rejects transfer descriptions. Explicit QH/WR references decide
+  property first; R2,200/R1,900 provide the fallback. Combined room payments
+  stay unmatched for operator review.
+
 The next implementation slice should build:
 
-1. add the Google Cloud Gmail API env to the runtime
-2. execute the first live import against `info.hambatrading@gmail.com`
-3. bind Quarry Heights once its property row exists in Supabase
-4. add operator-managed unit hint rows for room/reference lookup
-5. expand the admin review UI from the current trigger into month-range pull,
-   dedupe review, and provenance audit
+1. durable import runs/jobs with retry and progress
+2. canonical duplicate provenance and source comparison
+3. combined-payment splitting with an explicit operator decision
+4. seeded Playwright coverage for the complete import/reconciliation path

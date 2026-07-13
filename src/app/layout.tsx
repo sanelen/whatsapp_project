@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SAChatbot",
-  description: "Bare-bones OpenAI chatbot with localStorage memory",
+  title: "Hamba Operations",
+  description: "Property operations, payment reconciliation, and tenant assistance.",
 };
 
 export default function RootLayout({
