@@ -212,9 +212,9 @@ See [tenant-offboarding.md](./roadmap/functionality/tenant-offboarding.md).
 
 ## 5. Platform / production readiness
 
-- FR-5.1 **Planned** — Vercel production environment variables set from
-  `.env.local` (Linear **AUT-14**, highest-priority open platform item — prod app is
-  deployed but cannot reach Supabase/LLMs without this).
+- FR-5.1 **Shipped 2026-07-13** — Required Vercel Preview/Production variables are
+  configured as encrypted or sensitive values for Supabase, LLM providers, the auth
+  allowlist, Gmail OAuth, and the Drive Bank Uploads folder (Linear **AUT-14**).
 - FR-5.2 **Partial** — Schema unification between `supabase/schema.sql` and
   `supabase/workspace-schema.sql` (Linear **AUT-9**).
 - FR-5.3 **Shipped** (2026-07-03) — RLS enabled on `public.prompt_settings` and

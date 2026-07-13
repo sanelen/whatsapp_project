@@ -246,8 +246,15 @@ Alternative for Google Workspace domain-wide delegation:
 
 Operational helpers:
 
-- optional callback override: `GMAIL_OAUTH_REDIRECT_URI`
+- `BANK_UPLOADS_DRIVE_FOLDER_ID` — operator-managed Drive folder read by the
+  explicit **Bank** import source
+- production callback override: `GMAIL_OAUTH_REDIRECT_URI`
 - optional for cron protection: `BANK_IMPORT_CRON_SECRET`
+
+Vercel Preview and Production were configured on 2026-07-13 with the OAuth client,
+refresh token, production callback, and Bank Uploads folder as sensitive environment
+variables. The stored refresh token was verified against the Gmail profile endpoint,
+and the configured Drive folder was verified active and listable before deployment.
 
 The product integration uses Google Cloud credentials to call the Gmail API
 directly; mailbox data is not pulled through an app connector. During the

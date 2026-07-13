@@ -1,4 +1,4 @@
-Last updated: 2026-07-12
+Last updated: 2026-07-13
 
 # Linear Sync
 
@@ -17,7 +17,7 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 | AUT-9 | In Review | [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-known-architectural-debt) | Schema unification (`schema.sql` vs `workspace-schema.sql`) + migration not applied. |
 | AUT-11 | Todo | Phase 2/3 (KB) | Seed knowledge base; structure-agnostic, can run anytime. |
 | AUT-13 | Done | — | Record of the 2026-05-30 deploy fix + env + DeepSeek/Node config session. |
-| AUT-14 | Todo (Urgent) | Phase 6 / [REQUIREMENTS.md FR-5.1](./REQUIREMENTS.md#5-platform--production-readiness) | Set Vercel production env vars — highest-priority open item. |
+| AUT-14 | Implemented locally; live ticket sync pending | Phase 6 / [REQUIREMENTS.md FR-5.1](./REQUIREMENTS.md#5-platform--production-readiness) | Vercel Preview/Production variables configured and verified for Supabase, LLM providers, auth allowlist, Gmail OAuth, and Drive Bank Uploads on 2026-07-13. |
 | AUT-15 | Todo (High) | Phase 7 / [REQUIREMENTS.md FR-3.2](./REQUIREMENTS.md#3-whatsapp-tenant-assistant-planning-only) | WhatsApp/Twilio platform decision — **owner confirmed: rebuild into `src/`.** Ticket should be re-scoped to reflect this, not closed. |
 | AUT-16 | Done | — | Supabase Auth (Google OAuth + email/password) shipped. |
 | AUT-17 | In progress | Phase 2–4 (vector retrieval) | Document upload → 768-dim vector retrieval → grounded chat; implementation started 2026-06-04. |

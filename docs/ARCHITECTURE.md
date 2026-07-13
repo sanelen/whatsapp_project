@@ -45,14 +45,13 @@ has no shipped code yet — see [whatsapp-tenant-assistant.md](./roadmap/functio
 
 | Layer | Provider | Notes |
 |---|---|---|
-| App hosting | Vercel (`whatsapp-project`) | Production **READY**, but missing prod env vars (Linear **AUT-14**) |
+| App hosting | Vercel (`whatsapp-project`) | Production **READY**; Supabase, LLM, auth allowlist, Gmail OAuth, and Drive Bank Uploads variables configured (Linear **AUT-14**) |
 | Database | Supabase (`hambatrading`, ref `ddlykzackuehdexldazv`, eu-central-1) | `ACTIVE_HEALTHY` |
 | Auth | Supabase Auth | Google OAuth + server-side email allowlist |
 | File storage | Supabase Storage | `uploads` bucket (private, KB docs); `property-images` bucket planned |
 | External APIs | OpenAI, Anthropic, DeepSeek (LLM); Gmail API + Google Drive API (bank import) | Key resolution: DB `prompt_settings.llm_api_key` > env var |
 
-Local dev target is `http://localhost:3000` (see HANDOFF.md §7 — a stray `3001`
-reference in older docs is stale).
+Local dev target is `http://localhost:3001` (`npm run dev`).
 
 ## 3. Auth architecture
 

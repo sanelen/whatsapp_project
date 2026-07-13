@@ -100,7 +100,9 @@ and visual, and standardizes the UI on HeroUI.
 
 ## Phase 6: Production And Platform Readiness
 
-- Add required Vercel production environment variables.
+- ~~Add required Vercel production environment variables.~~ **Shipped 2026-07-13:**
+  Supabase, LLM, auth allowlist, Gmail OAuth, and Drive Bank Uploads variables are
+  configured for Preview and Production.
 - Verify production auth, workspace loading, KB indexing, and chat completion.
 - Resolve the old WhatsApp/Twilio platform decision and either port it into the current app or close/re-scope that work.
 
