@@ -20,9 +20,12 @@ test('authentication always returns to the workspace chooser', () => {
   const callbackSource = readFileSync('src/app/auth/callback/route.ts', 'utf8');
   const proxySource = readFileSync('src/proxy.ts', 'utf8');
 
-  assert.match(loginSource, /const postLoginDestination = '\/'/);
+  assert.match(loginSource, /new URL\('\/auth\/callback'/);
+  assert.doesNotMatch(loginSource, /signInWithPassword|signUp\(/);
   assert.doesNotMatch(loginSource, /searchParams\.get\('redirect'\)/);
   assert.ok(callbackSource.includes('NextResponse.redirect(`${origin}/`)'));
+  assert.match(callbackSource, /isAuthUserAllowed/);
+  assert.match(proxySource, /isAuthUserAllowed/);
   assert.doesNotMatch(callbackSource, /searchParams\.get\('next'\)/);
   assert.doesNotMatch(proxySource, /loginUrl\.searchParams\.set\('redirect'/);
 });

@@ -27,6 +27,13 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 
 These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ticket:
 
+- Security baseline and recurring exposure review — **shipped 2026-07-13, no known
+  ticket**. Google-only exact-email authorization is enforced in callback, proxy, and
+  DAL; Vercel holds the allowlist as a sensitive server variable; GitHub/Vercel/
+  Supabase/dependency findings are recorded in `docs/SECURITY.md`. Open owner decisions:
+  make the repository private or redact operational history, and replace/isolate the
+  unpatched `xlsx` parser.
+
 - Import validation audit (REQUIREMENTS FR-2.12) — **shipped 2026-07-12** at
   `/monthly-payments/import-audit`: period/source filters, file provenance,
   parser/Drive status, transaction totals, database-presence indicators, and

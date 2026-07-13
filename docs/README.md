@@ -75,6 +75,7 @@ is now the visual reference, not a separate competing plan.
 
 ## Full flow reviews
 
+- [Auth security baseline full-flow review — 2026-07-13](./reviews/full-flow-review-2026-07-13-auth-security-baseline.md) — Google-only allowlist enforcement, repository/deployment exposure, QA, and release caveats.
 - [Monthly payments import full-flow review — 2026-07-12](./reviews/full-flow-review-2026-07-12-monthly-payments-import-flow.md) — architecture, QA, UI/accessibility, roadmap fit, tensions, and prioritized follow-ups.
 - [Code + UI review — 2026-07-12 evening](./reviews/code-review-2026-07-12-evening-review-session.md) — line-level review of the day's diff, nav-consistency fixes across all seven pages, test-suite triage, and three queued owner decisions.
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  ACCESS_DENIED_LOGIN_ERROR,
   DEFAULT_LOGIN_ERROR,
   MISSING_ACCOUNT_LOGIN_ERROR,
   getLoginErrorMessage,
@@ -15,6 +16,10 @@ test('login message helper guides unknown email/password users to sign up', () =
     getLoginErrorMessage('Invalid login credentials'),
     MISSING_ACCOUNT_LOGIN_ERROR
   );
+});
+
+test('login message helper explains an unapproved Google account', () => {
+  assert.equal(getLoginErrorMessage('access_denied'), ACCESS_DENIED_LOGIN_ERROR);
 });
 
 test('login message helper keeps OAuth failures on the login page with retry copy', () => {

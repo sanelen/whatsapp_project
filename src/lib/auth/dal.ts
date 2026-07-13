@@ -2,6 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
+import { isAuthUserAllowed } from '@/lib/auth/access-control';
 import { getLocalAuthBypassUser, isLocalAuthBypassEnabled } from '@/lib/auth/local-testing';
 import { createClient } from '@/lib/supabase/server';
 
@@ -15,7 +16,7 @@ export const getUser = cache(async (): Promise<User | null> => {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  return user;
+  return user && isAuthUserAllowed(user) ? user : null;
 });
 
 // For Server Components / pages: redirect to /login when unauthenticated.

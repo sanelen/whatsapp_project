@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { isAuthUserAllowed } from '@/lib/auth/access-control';
 import { createClient } from '@/lib/supabase/server';
 
 // OAuth / email-confirmation callback: exchange the code, then always show
@@ -11,7 +12,16 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(`${origin}/`);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user && isAuthUserAllowed(user)) {
+        return NextResponse.redirect(`${origin}/`);
+      }
+
+      await supabase.auth.signOut();
+      return NextResponse.redirect(`${origin}/login?error=access_denied`);
     }
   }
 

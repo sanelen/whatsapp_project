@@ -47,7 +47,7 @@ has no shipped code yet — see [whatsapp-tenant-assistant.md](./roadmap/functio
 |---|---|---|
 | App hosting | Vercel (`whatsapp-project`) | Production **READY**, but missing prod env vars (Linear **AUT-14**) |
 | Database | Supabase (`hambatrading`, ref `ddlykzackuehdexldazv`, eu-central-1) | `ACTIVE_HEALTHY` |
-| Auth | Supabase Auth | Google OAuth + email/password |
+| Auth | Supabase Auth | Google OAuth + server-side email allowlist |
 | File storage | Supabase Storage | `uploads` bucket (private, KB docs); `property-images` bucket planned |
 | External APIs | OpenAI, Anthropic, DeepSeek (LLM); Gmail API + Google Drive API (bank import) | Key resolution: DB `prompt_settings.llm_api_key` > env var |
 
@@ -59,7 +59,10 @@ reference in older docs is stale).
 Next 16 uses `proxy` (not `middleware`):
 
 - `src/proxy.ts` — refreshes the Supabase session per request; unauthenticated users
-  are redirected to `/login` (pages) or `401`'d (`/api/*`).
+  are redirected to `/login` (pages) or `401`'d (`/api/*`), while authenticated but
+  unapproved users receive a `403` API response or an access-denied login redirect.
+- `src/lib/auth/access-control.ts` — enforces Google provider plus the server-only
+  `AUTH_ALLOWED_EMAILS` allowlist. Production fails closed when the allowlist is absent.
 - `src/lib/supabase/{env,client,server,proxy}.ts` — SSR Supabase clients.
 - `src/lib/auth/dal.ts` — `getUser()`, `requireUser()`, `getApiUser()`.
 - `src/lib/auth/api-guard.ts` — `requireApiAuth()`, applied to every API route.
@@ -228,7 +231,9 @@ confirmed by the owner: rebuild into `src/` (resolves Linear **AUT-15**).
    (Linear **AUT-9**).
 2. One migration (`add_drive_archive_tracking_to_bank_import_files`) was applied
    live via MCP but has no local migration file yet — backfill needed.
-3. `public.prompt_settings` has RLS disabled (Supabase advisory, unresolved).
+3. Several service-only tables have RLS enabled with no client policies (Supabase
+   informational advisory). Keep them service-only or add explicit ownership policies
+   before exposing them to authenticated browser clients.
 4. Bank import currently runs synchronously in the request path. Large statement
    batches should move to a durable import-run/job model with retry and progress.
 5. Import audit shows current file/transaction state but has no first-class import

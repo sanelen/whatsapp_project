@@ -224,10 +224,12 @@ See [tenant-offboarding.md](./roadmap/functionality/tenant-offboarding.md).
   bypasses RLS. Verified live: anon role denied (42501), service_role reads
   normally, advisor ERROR finding cleared (now INFO "no policy", same as other
   service-role-only tables).
-- FR-5.4 **Shipped** — Google OAuth + email/password auth via Supabase Auth, gating
-  all routes except `/login` and `/auth/*`.
-- FR-5.5 **Shipped 2026-07-13** — Every successful Google, email/password, and
-  signup authentication lands on the root workspace chooser. The user explicitly
+- FR-5.4 **Shipped; hardened 2026-07-13** — Google OAuth via Supabase Auth gates all
+  routes except `/login` and `/auth/*`. Preview/Production additionally require the
+  Google identity's normalized email to appear in the server-only
+  `AUTH_ALLOWED_EMAILS` allowlist. The login UI does not expose email/password signup.
+- FR-5.5 **Shipped 2026-07-13** — Every successful Google authentication lands on
+  the root workspace chooser. The user explicitly
   selects **Chatbox** or **Dashboard**; protected-route redirect parameters cannot
   silently bypass this choice. The chooser also exposes a direct sign-out action.
 

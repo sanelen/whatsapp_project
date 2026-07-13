@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { isAuthUserAllowed } from '@/lib/auth/access-control';
 import { isLocalAuthBypassEnabled } from '@/lib/auth/local-testing';
 import { getProxySession } from '@/lib/supabase/proxy';
 
@@ -22,17 +23,23 @@ export async function proxy(request: NextRequest) {
 
   const { user, response } = await getProxySession(request);
   const { pathname } = request.nextUrl;
+  const isAllowed = Boolean(user && isAuthUserAllowed(user));
 
-  if (!user && !isPublicPath(pathname)) {
+  if (!isAllowed && !isPublicPath(pathname)) {
     // API routes get a 401 instead of a redirect.
     if (pathname.startsWith('/api/')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { error: user ? 'Forbidden' : 'Unauthorized' },
+        { status: user ? 403 : 401 }
+      );
     }
-    return NextResponse.redirect(new URL('/login', request.url));
+    const loginUrl = new URL('/login', request.url);
+    if (user) loginUrl.searchParams.set('error', 'access_denied');
+    return NextResponse.redirect(loginUrl);
   }
 
   // Signed-in users shouldn't see the login page.
-  if (user && pathname === '/login') {
+  if (isAllowed && pathname === '/login') {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
