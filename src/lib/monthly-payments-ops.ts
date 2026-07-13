@@ -13,6 +13,7 @@ import {
   unitHintsCoverReference,
   type AutoMatchHint,
 } from '@/lib/auto-match';
+import { canReverseReferenceSplit, planReferenceSplit } from '@/lib/reference-split';
 
 function toMoney(value: number | string | null | undefined): number {
   const parsed = typeof value === 'number' ? value : Number(value ?? 0);
@@ -125,7 +126,9 @@ async function logPaymentMatchEvent(input: {
     | 'deposit_split_reversed'
     | 'credit_held'
     | 'credit_allocated'
-    | 'credit_allocation_reversed';
+    | 'credit_allocation_reversed'
+    | 'reference_split_accepted'
+    | 'reference_split_reversed';
   actor: string;
   referenceText: string;
   amount: number;
@@ -330,7 +333,7 @@ export async function matchReferenceToUnit(input: {
   const admin = getSupabaseAdmin();
   const { data: reference, error: referenceError } = await admin
     .from('payment_references')
-    .select('id,organization_id,property_id,unit_id,unit_payment_period_id,reference,amount,received_at,signed_off')
+    .select('id,organization_id,property_id,unit_id,unit_payment_period_id,reference,amount,received_at,signed_off,split_at')
     .eq('id', input.paymentReferenceId)
     .maybeSingle<{
       id: string;
@@ -342,12 +345,16 @@ export async function matchReferenceToUnit(input: {
       amount: number | string;
       received_at: string;
       signed_off: boolean;
+      split_at: string | null;
     }>();
   if (referenceError || !reference) {
     throw new Error(referenceError?.message ?? 'Payment reference not found');
   }
   if (reference.signed_off) {
     throw new Error('Signed-off references must be reversed before re-matching');
+  }
+  if (reference.split_at) {
+    throw new Error('This reference was split; match its child references instead');
   }
   if (reference.property_id && reference.property_id !== input.propertyId) {
     throw new Error('Reference belongs to a different property');
@@ -458,6 +465,7 @@ export async function autoMatchUnmatchedReferences(input: {
     .from('payment_references')
     .select('id,property_id,reference,amount,bank_import_entry_id')
     .is('unit_id', null)
+    .is('split_at', null)
     .eq('signed_off', false);
   if (input.propertyId) referenceQuery = referenceQuery.eq('property_id', input.propertyId);
   const { data: references, error: referencesError } = await referenceQuery;
@@ -1334,6 +1342,214 @@ export async function reverseSignOffAndUnmatch(input: {
     expectedAmount,
     previousStatus: period.data?.status ?? '',
     newStatus: recomputed?.persistedStatus ?? 'unpaid',
+  });
+
+  return { reversed: true };
+}
+
+/**
+ * Combined-payment split (explicit operator decision — see
+ * src/lib/reference-split.ts for the rules). Divides one pooled reference
+ * into per-unit child references that flow through the normal match →
+ * sign-off machinery; the parent keeps its bank_import_entry_id linkage and
+ * leaves the pool (split_at set).
+ */
+export async function splitPaymentReference(input: {
+  paymentReferenceId: string;
+  allocations: Array<{ unitId: string; amount: number }>;
+  actor: string;
+}) {
+  const admin = getSupabaseAdmin();
+  const { data: parent, error: parentError } = await admin
+    .from('payment_references')
+    .select('id,organization_id,property_id,unit_id,reference,amount,received_at,transaction_at,bank,signed_off,split_at,split_parent_id')
+    .eq('id', input.paymentReferenceId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      property_id: string | null;
+      unit_id: string | null;
+      reference: string;
+      amount: number | string;
+      received_at: string;
+      transaction_at: string | null;
+      bank: string;
+      signed_off: boolean;
+      split_at: string | null;
+      split_parent_id: string | null;
+    }>();
+  if (parentError || !parent) {
+    throw new Error(parentError?.message ?? 'Payment reference not found');
+  }
+
+  const unitIds = input.allocations.map((allocation) => allocation.unitId?.trim()).filter(Boolean);
+  const { data: units, error: unitsError } = await admin
+    .from('property_units')
+    .select('id,property_id')
+    .in('id', unitIds);
+  if (unitsError) {
+    throw new Error(`Failed to load units for split: ${unitsError.message}`);
+  }
+  const unitsById = new Map(
+    (units ?? []).map((unit) => [unit.id as string, { id: unit.id as string, propertyId: unit.property_id as string }])
+  );
+
+  const plan = planReferenceSplit(
+    {
+      id: parent.id,
+      amount: toMoney(parent.amount),
+      propertyId: parent.property_id,
+      unitId: parent.unit_id,
+      signedOff: parent.signed_off,
+      splitAt: parent.split_at,
+      splitParentId: parent.split_parent_id,
+    },
+    input.allocations,
+    unitsById
+  );
+  if (!plan.ok) {
+    throw new Error(plan.error);
+  }
+
+  // Mark the parent split FIRST with a conditional update so a concurrent
+  // split of the same reference loses the race instead of duplicating rows.
+  const now = new Date().toISOString();
+  const { data: claimed, error: claimError } = await admin
+    .from('payment_references')
+    .update({ split_at: now, split_by: input.actor })
+    .eq('id', parent.id)
+    .is('split_at', null)
+    .select('id');
+  if (claimError) {
+    throw new Error(`Failed to mark reference as split: ${claimError.message}`);
+  }
+  if (!claimed || claimed.length === 0) {
+    throw new Error('Reference was split by someone else — refresh and review the pool');
+  }
+
+  const childRows = plan.children.map((child, index) => ({
+    organization_id: parent.organization_id,
+    property_id: child.propertyId,
+    reference: `${parent.reference} — split ${index + 1}/${plan.children.length}`,
+    amount: child.amount,
+    received_at: parent.received_at,
+    transaction_at: parent.transaction_at,
+    bank: parent.bank,
+    split_parent_id: parent.id,
+  }));
+  const { data: inserted, error: insertError } = await admin
+    .from('payment_references')
+    .insert(childRows)
+    .select('id,reference,amount,property_id');
+  if (insertError) {
+    // Roll the parent claim back so the reference returns to the pool intact.
+    await admin
+      .from('payment_references')
+      .update({ split_at: null, split_by: '' })
+      .eq('id', parent.id);
+    throw new Error(`Failed to create split references: ${insertError.message}`);
+  }
+
+  await logPaymentMatchEvent({
+    organizationId: parent.organization_id,
+    propertyId: parent.property_id,
+    unitId: null,
+    unitPaymentPeriodId: null,
+    paymentReferenceId: parent.id,
+    eventType: 'reference_split_accepted',
+    actor: input.actor,
+    referenceText: parent.reference,
+    amount: toMoney(parent.amount),
+    expectedAmount: 0,
+    note: `Split into ${plan.children.length} references: ${plan.children
+      .map((child) => `R${child.amount.toFixed(2)}`)
+      .join(' + ')}`,
+  });
+
+  return {
+    split: true,
+    children: (inserted ?? []).map((row) => ({
+      id: row.id as string,
+      reference: row.reference as string,
+      amount: toMoney(row.amount as number | string),
+      propertyId: (row.property_id as string | null) ?? null,
+    })),
+  };
+}
+
+/**
+ * Reverses a split while every child is still untouched (unmatched, not
+ * signed off). Children are deleted and the parent returns to the pool.
+ */
+export async function reverseReferenceSplit(input: { paymentReferenceId: string; actor: string }) {
+  const admin = getSupabaseAdmin();
+  const { data: parent, error: parentError } = await admin
+    .from('payment_references')
+    .select('id,organization_id,property_id,reference,amount,split_at')
+    .eq('id', input.paymentReferenceId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      property_id: string | null;
+      reference: string;
+      amount: number | string;
+      split_at: string | null;
+    }>();
+  if (parentError || !parent) {
+    throw new Error(parentError?.message ?? 'Payment reference not found');
+  }
+  if (!parent.split_at) {
+    throw new Error('Reference has not been split');
+  }
+
+  const { data: children, error: childrenError } = await admin
+    .from('payment_references')
+    .select('id,unit_id,signed_off')
+    .eq('split_parent_id', parent.id);
+  if (childrenError) {
+    throw new Error(`Failed to load split children: ${childrenError.message}`);
+  }
+
+  const gate = canReverseReferenceSplit(
+    (children ?? []).map((child) => ({
+      unitId: (child.unit_id as string | null) ?? null,
+      signedOff: Boolean(child.signed_off),
+    }))
+  );
+  if (!gate.ok) {
+    throw new Error(gate.error);
+  }
+
+  const { error: deleteError } = await admin
+    .from('payment_references')
+    .delete()
+    .eq('split_parent_id', parent.id)
+    .is('unit_id', null)
+    .eq('signed_off', false);
+  if (deleteError) {
+    throw new Error(`Failed to remove split references: ${deleteError.message}`);
+  }
+
+  const { error: restoreError } = await admin
+    .from('payment_references')
+    .update({ split_at: null, split_by: '' })
+    .eq('id', parent.id);
+  if (restoreError) {
+    throw new Error(`Failed to restore reference to the pool: ${restoreError.message}`);
+  }
+
+  await logPaymentMatchEvent({
+    organizationId: parent.organization_id,
+    propertyId: parent.property_id,
+    unitId: null,
+    unitPaymentPeriodId: null,
+    paymentReferenceId: parent.id,
+    eventType: 'reference_split_reversed',
+    actor: input.actor,
+    referenceText: parent.reference,
+    amount: toMoney(parent.amount),
+    expectedAmount: 0,
+    note: `Removed ${(children ?? []).length} unmatched split references`,
   });
 
   return { reversed: true };

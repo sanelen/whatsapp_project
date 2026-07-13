@@ -6,9 +6,11 @@ import {
   allocateUnitCredit,
   autoMatchUnmatchedReferences,
   matchReferenceToUnit,
+  reverseReferenceSplit,
   reverseSignOffAndUnmatch,
   reverseUnitCreditAllocation,
   signOffMatchedReference,
+  splitPaymentReference,
 } from '@/lib/monthly-payments-ops';
 
 export async function POST(request: NextRequest) {
@@ -27,7 +29,9 @@ export async function POST(request: NextRequest) {
           | 'auto_match'
           | 'allocate_credit'
           | 'reverse_credit_allocation'
-          | 'add_match_rule';
+          | 'add_match_rule'
+          | 'split_reference'
+          | 'reverse_split';
         propertyId?: string;
         unitId?: string;
         paymentReferenceId?: string;
@@ -36,6 +40,7 @@ export async function POST(request: NextRequest) {
         targetPeriodId?: string;
         allocationId?: string;
         amount?: number;
+        allocations?: Array<{ unitId?: string; amount?: number }>;
       }
     | undefined;
 
@@ -126,6 +131,36 @@ export async function POST(request: NextRequest) {
       const data = await addUnitReferenceRule({
         paymentReferenceId,
         unitId: body.unitId.trim(),
+        actor: user.email ?? user.id,
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'split_reference') {
+      const allocations = (body?.allocations ?? []).map((allocation) => ({
+        unitId: allocation.unitId?.trim() ?? '',
+        amount: typeof allocation.amount === 'number' ? allocation.amount : Number.NaN,
+      }));
+      if (
+        allocations.length < 2 ||
+        allocations.some((allocation) => !allocation.unitId || !Number.isFinite(allocation.amount))
+      ) {
+        return NextResponse.json(
+          { error: 'split_reference needs at least two allocations, each with unitId and amount' },
+          { status: 400 }
+        );
+      }
+      const data = await splitPaymentReference({
+        paymentReferenceId,
+        allocations,
+        actor: user.email ?? user.id,
+      });
+      return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'reverse_split') {
+      const data = await reverseReferenceSplit({
+        paymentReferenceId,
         actor: user.email ?? user.id,
       });
       return NextResponse.json({ success: true, data });

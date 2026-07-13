@@ -1683,6 +1683,7 @@ export async function readReferencePoolView(
       .from('payment_references')
       .select('id,property_id,unit_id,bank_import_entry_id,reference,amount,received_at,transaction_at,signed_off')
       .is('unit_id', null)
+      .is('split_at', null)
       .gte('received_at', billingWindow.startDate)
       .lte('received_at', billingWindow.endDate)
       .order('received_at', { ascending: false }),
