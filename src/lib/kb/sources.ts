@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { extractPdfText } from '../pdf-text';
 
 // Heavy/native-ish parsers are imported lazily inside their branches. Importing
 // `pdf-parse` (which pulls in `pdfjs-dist`) at module scope crashes the whole
@@ -137,12 +138,8 @@ export async function parseKnowledgeFile(input: ParseKnowledgeFileInput): Promis
 
   if (extension === 'pdf') {
     try {
-      const { PDFParse } = await import('pdf-parse');
-      const parser = new PDFParse({ data: input.buffer });
-      const parsed = await parser.getText();
-      await parser.destroy();
       return {
-        content: parsed.text.trim(),
+        content: await extractPdfText(input.buffer),
         extension,
         mimeType,
         parserStatus: 'indexed',

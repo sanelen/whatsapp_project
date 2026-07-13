@@ -1,4 +1,5 @@
 import { createHash, createSign } from 'node:crypto';
+import { extractPdfText } from './pdf-text';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { referenceContainsMatcherToken, tokenizeMatcherValue } from '@/lib/auto-match';
 import { EXCLUDED_BANK_ACCOUNT_SUFFIXES, MIXED_LEGACY_BANK_ACCOUNT_SUFFIXES, PROPERTY_LOCKED_BANK_ACCOUNT_SUFFIXES } from '@/config/bank-import-metadata';
@@ -750,17 +751,6 @@ export function extractAttachmentsFromEml(raw: Buffer, nestedFrom = 'message.eml
   }
 
   return attachments;
-}
-
-async function extractPdfText(buffer: Buffer) {
-  const { PDFParse } = await import('pdf-parse');
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const parsed = await parser.getText();
-    return parsed.text.trim();
-  } finally {
-    await parser.destroy();
-  }
 }
 
 function signJwtWithServiceAccount(input: {

@@ -255,6 +255,9 @@ Vercel Preview and Production were configured on 2026-07-13 with the OAuth clien
 refresh token, production callback, and Bank Uploads folder as sensitive environment
 variables. The stored refresh token was verified against the Gmail profile endpoint,
 and the configured Drive folder was verified active and listable before deployment.
+PDF extraction must go through `src/lib/pdf-text.ts`. It loads the
+`pdf-parse/worker` Node runtime before `pdf-parse`, ensuring Vercel functions ship
+the native canvas dependency and install the DOM globals required by PDF.js.
 
 The product integration uses Google Cloud credentials to call the Gmail API
 directly; mailbox data is not pulled through an app connector. During the

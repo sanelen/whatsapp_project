@@ -190,6 +190,10 @@ Supabase with `source=bank` (note: `source=both` means Gmail + the app's own
 Drive archive; it deliberately does not sweep the operator-managed Bank uploads
 folder, so those imports are always an explicit action).
 
+Server-side PDF extraction is centralized in `src/lib/pdf-text.ts`. The helper
+initializes `pdf-parse/worker` before loading PDF.js so Vercel traces the native
+canvas binary and provides `DOMMatrix`, `Path2D`, and `ImageData` at runtime.
+
 ## 6. Capability 3 — WhatsApp Tenant Assistant (planning only)
 
 No shipped code. Planned to reuse the KB/LLM pipeline above with guardrails and a
