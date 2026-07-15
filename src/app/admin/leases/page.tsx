@@ -68,6 +68,7 @@ export default function LeaseGeneratorPage() {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [bankAccounts, setBankAccounts] = useState<AdminBankAccount[]>([]);
   const [bankLoadError, setBankLoadError] = useState('');
+  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'working' | 'downloaded' | 'failed'>('idle');
   const deferredDraft = useDeferredValue(draft);
   const property = propertyConfigs[deferredDraft.propertyId];
   const errors = validateLeaseDraft(deferredDraft);
@@ -146,6 +147,24 @@ export default function LeaseGeneratorPage() {
     window.setTimeout(() => {
       document.title = 'Lease Agreement Generator';
     }, 500);
+  };
+
+  const downloadPdf = async () => {
+    const leaseElement = document.querySelector<HTMLElement>('.lease-document');
+    if (!leaseElement) {
+      setDownloadStatus('failed');
+      return;
+    }
+
+    setDownloadStatus('working');
+    try {
+      const { downloadLeasePdf } = await import('@/lib/lease-pdf');
+      await downloadLeasePdf(leaseElement, leaseFilename(draft));
+      setDownloadStatus('downloaded');
+    } catch {
+      setDownloadStatus('failed');
+    }
+    window.setTimeout(() => setDownloadStatus('idle'), 3000);
   };
 
   return (
@@ -353,6 +372,20 @@ export default function LeaseGeneratorPage() {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
+                disabled={errors.length > 0 || downloadStatus === 'working'}
+                onClick={downloadPdf}
+                className="rounded-xl bg-[#173f35] px-5 py-3 text-sm font-black text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-500"
+              >
+                {downloadStatus === 'working'
+                  ? 'Creating PDF...'
+                  : downloadStatus === 'downloaded'
+                    ? 'PDF downloaded'
+                    : downloadStatus === 'failed'
+                      ? 'Download failed - try again'
+                      : 'Download PDF'}
+              </button>
+              <button
+                type="button"
                 disabled={errors.length > 0}
                 onClick={printLease}
                 className="rounded-xl bg-[#d88b22] px-5 py-3 text-sm font-black text-stone-950 transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-500"
@@ -380,7 +413,7 @@ export default function LeaseGeneratorPage() {
               </ul>
             )}
             <p className="mt-3 text-xs leading-5 text-stone-600">
-              On a phone, Open WhatsApp launches the app with this handoff prefilled. On a computer it opens WhatsApp Web. Save the lease as a PDF first, then attach that PDF in the selected chat.
+              On a phone, Download PDF saves the agreement to Files or Downloads. Open WhatsApp then launches the app with this handoff prefilled; attach the saved PDF in the selected chat. Print / save as PDF remains available for computers.
             </p>
           </div>
         </section>
