@@ -63,6 +63,10 @@ function LeaseClause({ number, title, children }: { number: number; title: strin
   );
 }
 
+function tenantFullName(draft: LeaseDraft): string {
+  return [draft.tenantName.trim(), draft.tenantSurname.trim()].filter(Boolean).join(' ');
+}
+
 export default function LeaseGeneratorPage() {
   const [draft, setDraft] = useState<LeaseDraft>(() => createLeaseDraft('quarry-heights'));
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
@@ -75,9 +79,10 @@ export default function LeaseGeneratorPage() {
   const reference = buildPaymentReference(deferredDraft);
   const selectedBankAccount = bankAccounts.find((account) => account.id === deferredDraft.bankAccountId);
   const propertyBankAccounts = bankAccounts.filter((account) => account.propertyId === deferredDraft.propertyId);
+  const fullTenantName = tenantFullName(deferredDraft);
   const handoffMessage = [
     `Lease draft prepared: ${property.name}, Unit ${deferredDraft.unit || '[unit]'}`,
-    `Tenant: ${deferredDraft.tenantName || '[name pending]'}`,
+    `Tenant: ${fullTenantName || '[name pending]'}`,
     `Rent: ${formatRand(deferredDraft.rent)} | Deposit: ${formatRand(deferredDraft.deposit)}`,
     `Payment reference: ${buildPaymentReference(deferredDraft) || '[reference pending]'}`,
     ...(selectedBankAccount?.status === 'approved'
@@ -108,6 +113,13 @@ export default function LeaseGeneratorPage() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    const preloadTimer = window.setTimeout(() => {
+      void import('@/lib/lease-pdf');
+    }, 500);
+    return () => window.clearTimeout(preloadTimer);
+  }, []);
+
   const update = <K extends keyof LeaseDraft>(field: K, value: LeaseDraft[K]) => {
     setDraft((current) => ({ ...current, [field]: value }));
   };
@@ -118,6 +130,7 @@ export default function LeaseGeneratorPage() {
       return {
         ...next,
         tenantName: current.tenantName,
+        tenantSurname: current.tenantSurname,
         tenantId: current.tenantId,
         tenantPhone: current.tenantPhone,
         tenantEmail: current.tenantEmail,
@@ -210,8 +223,11 @@ export default function LeaseGeneratorPage() {
               <Field label="Room / unit">
                 <input className={fieldClass} value={draft.unit} onChange={(event) => update('unit', event.target.value)} placeholder="e.g. 6" />
               </Field>
-              <Field label="Tenant full name" hint="Required for signature-ready PDF. Leave blank only for an internal working draft.">
-                <input className={fieldClass} value={draft.tenantName} onChange={(event) => update('tenantName', event.target.value)} placeholder="Full legal name" />
+              <Field label="Tenant first name(s)" hint="Use the tenant's legal first name or names.">
+                <input className={fieldClass} value={draft.tenantName} onChange={(event) => update('tenantName', event.target.value)} placeholder="Legal first name(s)" />
+              </Field>
+              <Field label="Tenant surname" hint="Required for the lease and property payment reference.">
+                <input className={fieldClass} value={draft.tenantSurname} onChange={(event) => update('tenantSurname', event.target.value)} placeholder="Legal surname" />
               </Field>
               <Field label="ID / passport">
                 <input className={fieldClass} value={draft.tenantId} onChange={(event) => update('tenantId', event.target.value)} placeholder="Optional at draft stage" />
@@ -435,7 +451,7 @@ export default function LeaseGeneratorPage() {
 
             <div className="mt-7 grid gap-3 sm:grid-cols-2">
               {[
-                ['Tenant', deferredDraft.tenantName],
+                ['Tenant', fullTenantName],
                 ['ID / passport', deferredDraft.tenantId],
                 ['Contact', deferredDraft.tenantPhone],
                 ['Email', deferredDraft.tenantEmail],
@@ -452,7 +468,7 @@ export default function LeaseGeneratorPage() {
 
             <LeaseClause number={1} title="Parties, purpose and premises">
               <p>
-                This agreement is between <strong>Hamba Trading (Property Management Company) (Pty) Ltd</strong>, represented by Sanele Ngcobo (the landlord or management), and <strong className={deferredDraft.tenantName ? '' : 'inline-block min-w-48 border-b border-stone-500'}>{deferredDraft.tenantName || '\u00A0'}</strong> (the tenant).
+                This agreement is between <strong>Hamba Trading (Property Management Company) (Pty) Ltd</strong>, represented by Sanele Ngcobo (the landlord or management), and <strong className={fullTenantName ? '' : 'inline-block min-w-48 border-b border-stone-500'}>{fullTenantName || '\u00A0'}</strong> (the tenant).
               </p>
               <p>
                 The premises are Unit <strong className={deferredDraft.unit ? '' : 'inline-block min-w-16 border-b border-stone-500'}>{deferredDraft.unit || '\u00A0'}</strong> at <strong>{property.address}</strong>. They are let solely as a studio or en-suite residential unit for the approved occupants recorded in this agreement. Management may be contacted on 081 267 4647 or info.hambatrading@gmail.com.

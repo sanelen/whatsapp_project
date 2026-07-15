@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { buildPaymentReference, createLeaseDraft, propertyConfigs } from '@/lib/lease-generator';
+import {
+  buildPaymentReference,
+  createLeaseDraft,
+  propertyConfigs,
+  validateLeaseDraft,
+} from '@/lib/lease-generator';
 
 test('lease tools use the existing Hamba authentication guard', () => {
   const layout = readFileSync('src/app/admin/leases/layout.tsx', 'utf8');
@@ -19,10 +24,21 @@ test('verified property facts remain location-specific', () => {
 });
 
 test('payment references follow the verified source formats', () => {
-  const quarry = { ...createLeaseDraft('quarry-heights'), unit: '6', tenantName: 'Ayanda Dlamini' };
-  const westridge = { ...createLeaseDraft('westridge'), unit: '6', tenantName: 'Ayanda Dlamini' };
-  const essex = { ...createLeaseDraft('33-essex'), unit: '6', tenantName: 'Ayanda Dlamini' };
+  const quarry = { ...createLeaseDraft('quarry-heights'), unit: '6', tenantName: 'Ayanda', tenantSurname: 'Dlamini' };
+  const westridge = { ...createLeaseDraft('westridge'), unit: '6', tenantName: 'Ayanda', tenantSurname: 'Dlamini' };
+  const essex = { ...createLeaseDraft('33-essex'), unit: '6', tenantName: 'Ayanda', tenantSurname: 'Dlamini' };
   assert.equal(buildPaymentReference(quarry), 'QH06 DLAMINI');
   assert.equal(buildPaymentReference(westridge), 'WR06 AYANDA DLAMINI');
   assert.equal(buildPaymentReference(essex), 'EssexRoom06');
+});
+
+test('signature-ready leases require both tenant first name and surname', () => {
+  const draft = {
+    ...createLeaseDraft('quarry-heights'),
+    unit: '6',
+    tenantName: 'Ayanda',
+    commencementDate: '2026-08-01',
+  };
+  assert.match(validateLeaseDraft(draft).join(' '), /tenant surname/i);
+  assert.doesNotMatch(validateLeaseDraft({ ...draft, tenantSurname: 'Dlamini' }).join(' '), /tenant surname/i);
 });

@@ -175,6 +175,7 @@ export async function createLeasePdfBytes(leaseText: string): Promise<Uint8Array
       });
       state.y -= 12;
     } else if (/^\d+\.\s/.test(line)) {
+      ensureSpace(state, 88);
       drawLines(state, line.toUpperCase(), {
         font: bold,
         size: 10.5,
@@ -214,30 +215,32 @@ export async function createLeasePdfBytes(leaseText: string): Promise<Uint8Array
   return document.save();
 }
 
-export async function downloadLeasePdf(leaseElement: HTMLElement, filename: string): Promise<void> {
-  const clone = leaseElement.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll('p, strong').forEach((element) => {
-    if (!element.textContent?.trim()) element.textContent = '____________________________';
-  });
-  clone.style.position = 'fixed';
-  clone.style.left = '-10000px';
-  clone.style.top = '0';
-  clone.style.width = '794px';
-  clone.style.background = '#ffffff';
-  document.body.appendChild(clone);
+export function extractLeaseText(leaseElement: HTMLElement): string {
+  const blocks = leaseElement.querySelectorAll<HTMLElement>(
+    'h2, h3, p, li, .lease-signature-block .border-t'
+  );
 
-  try {
-    const bytes = await createLeasePdfBytes(clone.innerText);
-    const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${filename}.pdf`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-  } finally {
-    clone.remove();
-  }
+  return Array.from(blocks)
+    .map((block) => {
+      const clone = block.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('strong').forEach((element) => {
+        if (!element.textContent?.trim()) element.textContent = '____________________________';
+      });
+      const text = clone.textContent?.replace(/\s+/g, ' ').trim();
+      return text || '____________________________';
+    })
+    .join('\n');
+}
+
+export async function downloadLeasePdf(leaseElement: HTMLElement, filename: string): Promise<void> {
+  const bytes = await createLeasePdfBytes(extractLeaseText(leaseElement));
+  const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${filename}.pdf`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

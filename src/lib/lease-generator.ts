@@ -27,6 +27,7 @@ export interface LeaseDraft {
   propertyId: PropertyId;
   unit: string;
   tenantName: string;
+  tenantSurname: string;
   tenantId: string;
   tenantPhone: string;
   tenantEmail: string;
@@ -129,6 +130,7 @@ export function createLeaseDraft(propertyId: PropertyId): LeaseDraft {
     propertyId,
     unit: '',
     tenantName: '',
+    tenantSurname: '',
     tenantId: '',
     tenantPhone: '',
     tenantEmail: '',
@@ -153,8 +155,9 @@ export function buildPaymentReference(draft: LeaseDraft): string {
   const property = propertyConfigs[draft.propertyId];
   const cleanUnit = draft.unit.trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   const formattedUnit = /^\d+$/.test(cleanUnit) ? cleanUnit.padStart(2, '0') : cleanUnit;
-  const fullName = draft.tenantName.trim().replace(/[^a-zA-Z\s]/g, '').replace(/\s+/g, ' ').toUpperCase();
-  const surname = draft.tenantName.trim().split(/\s+/).at(-1)?.replace(/[^a-zA-Z]/g, '').toUpperCase();
+  const firstNames = draft.tenantName.trim().replace(/[^a-zA-Z\s]/g, '').replace(/\s+/g, ' ').toUpperCase();
+  const surname = draft.tenantSurname.trim().replace(/[^a-zA-Z\s-]/g, '').replace(/\s+/g, ' ').toUpperCase();
+  const fullName = [firstNames, surname].filter(Boolean).join(' ');
 
   if (property.referenceStyle === 'essex-room') {
     return formattedUnit ? `EssexRoom${formattedUnit}` : '';
@@ -168,7 +171,7 @@ export function buildPaymentReference(draft: LeaseDraft): string {
 export function leaseFilename(draft: LeaseDraft): string {
   const property = propertyConfigs[draft.propertyId];
   const unit = draft.unit.trim().replace(/[^a-zA-Z0-9-]/g, '-') || 'unit';
-  const tenant = draft.tenantName.trim().replace(/[^a-zA-Z0-9-]/g, '-') || 'tenant-pending';
+  const tenant = [draft.tenantName, draft.tenantSurname].join(' ').trim().replace(/[^a-zA-Z0-9-]/g, '-') || 'tenant-pending';
   return `${property.shortCode}-${unit}-${tenant}-full-lease-draft`;
 }
 
@@ -177,7 +180,8 @@ export function validateLeaseDraft(draft: LeaseDraft): string[] {
   const errors: string[] = [];
 
   if (!draft.unit.trim()) errors.push('Enter the room or unit number.');
-  if (!draft.tenantName.trim()) errors.push('Enter the tenant name before producing a signature-ready lease.');
+  if (!draft.tenantName.trim()) errors.push('Enter the tenant first name before producing a signature-ready lease.');
+  if (!draft.tenantSurname.trim()) errors.push('Enter the tenant surname before producing a signature-ready lease.');
   if (!draft.commencementDate) errors.push('Select the commencement date.');
   if (draft.termType === 'fixed-term' && !draft.endDate) errors.push('Select the fixed-term lease end date.');
   if (draft.termType === 'fixed-term' && draft.commencementDate && draft.endDate && draft.endDate <= draft.commencementDate) {
