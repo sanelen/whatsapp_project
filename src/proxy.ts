@@ -9,8 +9,12 @@ import { getProxySession } from '@/lib/supabase/proxy';
 // 401 (API). Authenticated users hitting /login are sent to the app root.
 
 // Public paths that never require authentication.
-function isPublicPath(pathname: string): boolean {
-  return pathname === '/login' || pathname.startsWith('/auth/');
+export function isPublicPath(pathname: string): boolean {
+  return (
+    pathname === '/login' ||
+    pathname.startsWith('/auth/') ||
+    pathname === '/api/whatsapp/webhook'
+  );
 }
 
 export async function proxy(request: NextRequest) {
