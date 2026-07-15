@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { LogOut } from 'lucide-react';
 
+const propertyAdminUrl =
+  process.env.NEXT_PUBLIC_PROPERTY_ADMIN_URL || 'https://hamba-property-admin.vercel.app/admin';
+
 const appLinks = [
   {
     href: '/property-assistance',
@@ -15,6 +18,13 @@ const appLinks = [
     description:
       'Enter the payments and CRM view for monthly rent tracking, reconciliation, and account visibility.',
     eyebrow: 'New view',
+  },
+  {
+    href: propertyAdminUrl,
+    title: 'Admin tools',
+    description:
+      'Open property metadata and create controlled lease agreements for tenants.',
+    eyebrow: 'Internal admin',
   },
 ];
 
@@ -40,8 +50,8 @@ export default function HomePage() {
               Where do you want to go?
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
-              The entry layer now splits the existing chat workspace from the dashboard so
-              Hamba can move between assistant operations and monthly payments cleanly.
+              Move between assistant operations, monthly payments, and protected property
+              administration from one internal starting point.
             </p>
           </section>
 
@@ -59,7 +69,7 @@ export default function HomePage() {
           </section>
         </div>
 
-        <section className="mt-12 grid gap-5 lg:grid-cols-2">
+        <section className="mt-12 grid gap-5 lg:grid-cols-3">
           {appLinks.map((link) => (
             <Link
               key={link.href}
