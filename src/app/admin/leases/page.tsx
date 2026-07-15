@@ -115,7 +115,7 @@ export default function LeaseGeneratorPage() {
 
   useEffect(() => {
     const preloadTimer = window.setTimeout(() => {
-      void import('@/lib/lease-pdf');
+      void Promise.all([import('@/lib/lease-pdf'), import('html2canvas')]);
     }, 500);
     return () => window.clearTimeout(preloadTimer);
   }, []);
@@ -174,7 +174,8 @@ export default function LeaseGeneratorPage() {
       const { downloadLeasePdf } = await import('@/lib/lease-pdf');
       await downloadLeasePdf(leaseElement, leaseFilename(draft));
       setDownloadStatus('downloaded');
-    } catch {
+    } catch (error) {
+      console.error('Lease PDF download failed.', error);
       setDownloadStatus('failed');
     }
     window.setTimeout(() => setDownloadStatus('idle'), 3000);

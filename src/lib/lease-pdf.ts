@@ -232,8 +232,179 @@ export function extractLeaseText(leaseElement: HTMLElement): string {
     .join('\n');
 }
 
+async function createStyledLeasePdfBytes(leaseElement: HTMLElement): Promise<Uint8Array> {
+  const { default: html2canvas } = await import('html2canvas');
+  const captureLease = leaseElement.cloneNode(true) as HTMLElement;
+  captureLease.dataset.pdfCapture = 'true';
+  captureLease.style.position = 'fixed';
+  captureLease.style.left = '-10000px';
+  captureLease.style.top = '0';
+  captureLease.style.width = '850px';
+  captureLease.style.maxWidth = 'none';
+  captureLease.style.minHeight = '0';
+  captureLease.style.background = '#ffffff';
+  window.document.body.appendChild(captureLease);
+
+  const rootHeight = captureLease.scrollHeight;
+  const sectionStarts = Array.from(captureLease.children)
+    .filter((child): child is HTMLElement => child.tagName === 'SECTION')
+    .map((section) => Math.max(0, section.offsetTop));
+  const breakpoints = [0, ...sectionStarts, rootHeight]
+    .filter((value, index, values) => value >= 0 && value <= rootHeight && values.indexOf(value) === index)
+    .sort((a, b) => a - b);
+
+  const normalizePdfColors = (root: HTMLElement) => {
+    const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))];
+    for (const element of elements) {
+      const classes = element.className;
+      element.style.color = '#44403c';
+      element.style.backgroundColor = 'transparent';
+      element.style.borderColor = '#e7e5e4';
+      element.style.outlineColor = '#a8a29e';
+      element.style.textDecorationColor = '#a8a29e';
+      element.style.boxShadow = 'none';
+
+      if (classes.includes('text-[#173f35]')) element.style.color = '#173f35';
+      if (classes.includes('text-[#b66f14]')) element.style.color = '#b66f14';
+      if (classes.includes('text-white')) element.style.color = '#ffffff';
+      if (classes.includes('text-stone-900')) element.style.color = '#1c1917';
+      if (classes.includes('text-stone-700')) element.style.color = '#44403c';
+      if (classes.includes('text-stone-600')) element.style.color = '#57534e';
+      if (classes.includes('text-stone-500')) element.style.color = '#78716c';
+      if (classes.includes('text-amber-800')) element.style.color = '#92400e';
+      if (classes.includes('text-emerald-950')) element.style.color = '#022c22';
+      if (classes.includes('text-emerald-800')) element.style.color = '#065f46';
+      if (classes.includes('text-emerald-100')) element.style.color = '#d1fae5';
+      if (classes.includes('text-emerald-50')) element.style.color = '#ecfdf5';
+      if (classes.includes('text-red-800')) element.style.color = '#991b1b';
+
+      if (classes.includes('bg-[#173f35]')) element.style.backgroundColor = '#173f35';
+      if (classes.includes('bg-stone-50')) element.style.backgroundColor = '#fafaf9';
+      if (classes.includes('bg-amber-50')) element.style.backgroundColor = '#fffbeb';
+      if (classes.includes('bg-emerald-50')) element.style.backgroundColor = '#ecfdf5';
+      if (classes.includes('bg-red-50')) element.style.backgroundColor = '#fef2f2';
+
+      if (classes.includes('border-[#173f35]')) element.style.borderColor = '#173f35';
+      if (classes.includes('border-stone-500')) element.style.borderColor = '#78716c';
+      if (classes.includes('border-stone-400')) element.style.borderColor = '#a8a29e';
+      if (classes.includes('border-stone-300')) element.style.borderColor = '#d6d3d1';
+      if (classes.includes('border-stone-200')) element.style.borderColor = '#e7e5e4';
+      if (classes.includes('border-emerald-200')) element.style.borderColor = '#a7f3d0';
+      if (classes.includes('border-red-200')) element.style.borderColor = '#fecaca';
+    }
+  };
+
+  let canvas: HTMLCanvasElement;
+  try {
+    canvas = await html2canvas(captureLease, {
+      backgroundColor: '#ffffff',
+      logging: false,
+      scale: 1.25,
+      useCORS: true,
+      windowWidth: 1024,
+      onclone: (clonedDocument) => {
+        const clonedLease = clonedDocument.querySelector<HTMLElement>('[data-pdf-capture="true"]');
+        if (!clonedLease) return;
+
+        clonedLease.style.minHeight = '0';
+        clonedLease.style.background = '#ffffff';
+        normalizePdfColors(clonedLease);
+      },
+    });
+  } finally {
+    captureLease.remove();
+  }
+
+  if (!rootHeight || breakpoints.length < 2) {
+    throw new Error('The styled lease could not be measured for PDF pagination.');
+  }
+
+  const pdfDocument = await PDFDocument.create();
+  const regular = await pdfDocument.embedFont(StandardFonts.Helvetica);
+  const bold = await pdfDocument.embedFont(StandardFonts.HelveticaBold);
+  const contentWidth = PAGE_WIDTH - 48;
+  const contentTop = PAGE_HEIGHT - 34;
+  const contentBottom = 38;
+  const availableHeight = contentTop - contentBottom;
+  const canvasScaleY = canvas.height / rootHeight;
+  let page: PDFPage | null = null;
+  let cursorY = contentTop;
+
+  const nextPage = () => {
+    page = pdfDocument.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    cursorY = contentTop;
+    if (pdfDocument.getPageCount() > 1) {
+      page.drawText('HAMBA TRADING PROPERTIES  |  RESIDENTIAL LEASE AGREEMENT', {
+        x: 24,
+        y: PAGE_HEIGHT - 22,
+        size: 7,
+        font: bold,
+        color: rgb(0.09, 0.25, 0.21),
+      });
+    }
+  };
+
+  nextPage();
+
+  for (let index = 0; index < breakpoints.length - 1; index += 1) {
+    const startY = Math.max(0, Math.floor(breakpoints[index] * canvasScaleY));
+    const endY = Math.min(canvas.height, Math.ceil(breakpoints[index + 1] * canvasScaleY));
+    const segmentHeight = endY - startY;
+    if (segmentHeight <= 2) continue;
+
+    const segmentCanvas = window.document.createElement('canvas');
+    segmentCanvas.width = canvas.width;
+    segmentCanvas.height = segmentHeight;
+    const context = segmentCanvas.getContext('2d');
+    if (!context) throw new Error('The browser could not prepare a lease page.');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, segmentCanvas.width, segmentCanvas.height);
+    context.drawImage(
+      canvas,
+      0,
+      startY,
+      canvas.width,
+      segmentHeight,
+      0,
+      0,
+      segmentCanvas.width,
+      segmentHeight
+    );
+
+    const image = await pdfDocument.embedJpg(segmentCanvas.toDataURL('image/jpeg', 0.94));
+    let renderedHeight = (segmentHeight / canvas.width) * contentWidth;
+
+    if (renderedHeight > availableHeight) {
+      renderedHeight = availableHeight;
+    }
+    if (cursorY - renderedHeight < contentBottom) nextPage();
+
+    page!.drawImage(image, {
+      x: 24,
+      y: cursorY - renderedHeight,
+      width: contentWidth,
+      height: renderedHeight,
+    });
+    cursorY -= renderedHeight + 4;
+  }
+
+  const pages = pdfDocument.getPages();
+  pages.forEach((pdfPage, index) => {
+    const label = `Page ${index + 1} of ${pages.length}`;
+    pdfPage.drawText(label, {
+      x: PAGE_WIDTH - 24 - regular.widthOfTextAtSize(label, 7.5),
+      y: 20,
+      size: 7.5,
+      font: regular,
+      color: rgb(0.42, 0.4, 0.37),
+    });
+  });
+
+  return pdfDocument.save();
+}
+
 export async function downloadLeasePdf(leaseElement: HTMLElement, filename: string): Promise<void> {
-  const bytes = await createLeasePdfBytes(extractLeaseText(leaseElement));
+  const bytes = await createStyledLeasePdfBytes(leaseElement);
   const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
