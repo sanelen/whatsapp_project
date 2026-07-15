@@ -543,7 +543,7 @@ export default function LeaseGeneratorPage() {
             </LeaseClause>
 
             <LeaseClause number={8} title="Common areas, laundry and waste">
-              <p>Corridors, entrances, kitchens, washing areas, washing lines, basins and other shared spaces must be used at the posted or agreed times and left clean, safe and unobstructed. Personal items may not be stored in common areas.</p>
+              <p>Corridors, entrances, washing areas, washing lines, basins and other shared spaces must be used at the posted or agreed times and left clean, safe and unobstructed. No shared kitchen is provided. Personal items may not be stored in common areas.</p>
               <p>Waste must be placed in the allocated bins or collection area. Littering, dumping, vandalism and damage to common facilities are prohibited.</p>
             </LeaseClause>
 
@@ -573,7 +573,8 @@ export default function LeaseGeneratorPage() {
 
             <LeaseClause number={11} title="Damage, alterations, keys and security">
               <p>The tenant may not paint, drill, alter locks, make structural or electrical changes, install fixtures, duplicate controlled keys or interfere with security systems without prior written approval.</p>
-              <p>The tenant is liable for reasonable, documented repair, cleaning or replacement costs caused by the tenant, occupants or visitors, excluding fair wear and tear. Arbitrary fines do not apply; any charge must relate to an agreed fee or actual loss and remain subject to applicable law.</p>
+              <p>Lost or damaged keys and access devices will be replaced at the tenant&apos;s cost. Management will communicate the current replacement price, and the tenant must pay the reasonable documented cost of the replacement and any necessary lock or access-system work caused by the loss.</p>
+              <p>The tenant is fully liable for the reasonable, documented repair, cleaning or replacement costs of damage caused by the tenant, occupants or visitors, excluding fair wear and tear. Arbitrary fines do not apply; every charge must relate to an agreed fee or the actual documented loss and remain subject to applicable law.</p>
             </LeaseClause>
 
             <LeaseClause number={12} title="Non-payment, breach and lawful remedies">

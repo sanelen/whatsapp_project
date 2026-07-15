@@ -42,3 +42,11 @@ test('signature-ready leases require both tenant first name and surname', () => 
   assert.match(validateLeaseDraft(draft).join(' '), /tenant surname/i);
   assert.doesNotMatch(validateLeaseDraft({ ...draft, tenantSurname: 'Dlamini' }).join(' '), /tenant surname/i);
 });
+
+test('all generated leases exclude shared kitchens and charge for lost keys and tenant-caused damage', () => {
+  const page = readFileSync('src/app/admin/leases/page.tsx', 'utf8');
+  assert.match(page, /No shared kitchen is provided/);
+  assert.match(page, /Lost or damaged keys and access devices will be replaced at the tenant/);
+  assert.match(page, /fully liable for the reasonable, documented repair/);
+  assert.doesNotMatch(page, /entrances, kitchens,/);
+});
