@@ -1,9 +1,6 @@
 import Link from 'next/link';
 import { LogOut } from 'lucide-react';
 
-const propertyAdminUrl =
-  process.env.NEXT_PUBLIC_PROPERTY_ADMIN_URL || 'https://hamba-property-admin.vercel.app/admin';
-
 const appLinks = [
   {
     href: '/property-assistance',
@@ -20,7 +17,7 @@ const appLinks = [
     eyebrow: 'New view',
   },
   {
-    href: propertyAdminUrl,
+    href: '/admin/leases',
     title: 'Admin tools',
     description:
       'Open property metadata and create controlled lease agreements for tenants.',
