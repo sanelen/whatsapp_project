@@ -25,7 +25,7 @@ export function isPublicPath(pathname: string): boolean {
 export async function proxy(request: NextRequest) {
   if (isLocalAuthBypassEnabled()) {
     if (request.nextUrl.pathname === '/login') {
-      return NextResponse.redirect(new URL('/', request.url));
+      return NextResponse.redirect(new URL('/staff', request.url));
     }
     return NextResponse.next();
   }
@@ -53,7 +53,7 @@ export async function proxy(request: NextRequest) {
 
   // Signed-in users shouldn't see the login page.
   if (isAllowed && pathname === '/login') {
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(new URL('/staff', request.url));
   }
 
   return response;

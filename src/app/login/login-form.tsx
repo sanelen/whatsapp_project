@@ -20,7 +20,7 @@ export function LoginForm() {
     setError(null);
     setPending(true);
     const callback = new URL('/auth/callback', window.location.origin);
-    callback.searchParams.set('next', safeRedirectPath(searchParams.get('next')));
+    callback.searchParams.set('next', safeRedirectPath(searchParams.get('next'), '/staff'));
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: callback.toString() },

@@ -35,12 +35,13 @@ test('Google authentication safely returns staff to their selected destination',
   assert.match(loginSource, /new URL\('\/auth\/callback'/);
   assert.doesNotMatch(loginSource, /signInWithPassword|signUp\(/);
   assert.doesNotMatch(loginSource, /searchParams\.get\('redirect'\)/);
-  assert.match(loginSource, /safeRedirectPath\(searchParams\.get\('next'\)\)/);
+  assert.match(loginSource, /safeRedirectPath\(searchParams\.get\('next'\), '\/staff'\)/);
   assert.match(callbackSource, /NextResponse\.redirect\(new URL\(nextPath, origin\)\)/);
   assert.match(callbackSource, /isAuthUserAllowed/);
   assert.match(proxySource, /isAuthUserAllowed/);
-  assert.match(callbackSource, /safeRedirectPath\(searchParams\.get\('next'\)\)/);
+  assert.match(callbackSource, /safeRedirectPath\(searchParams\.get\('next'\), '\/staff'\)/);
   assert.match(proxySource, /safeRedirectPath/);
+  assert.match(proxySource, /isAllowed && pathname === '\/login'[\s\S]*new URL\('\/staff'/);
   assert.doesNotMatch(proxySource, /loginUrl\.searchParams\.set\('redirect'/);
 });
 
