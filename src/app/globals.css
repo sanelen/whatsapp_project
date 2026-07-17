@@ -279,6 +279,31 @@ body {
   letter-spacing: 0;
 }
 
+.hamba-assistant-modern {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(186, 230, 253, 0.72), transparent 30%),
+    radial-gradient(circle at 92% 18%, rgba(204, 251, 241, 0.58), transparent 28%),
+    #eef5f7;
+}
+
+.hamba-chat-canvas {
+  background-color: #f4f8f7;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.62)),
+    radial-gradient(circle at 1px 1px, rgba(14, 116, 144, 0.1) 1px, transparent 0);
+  background-size: auto, 22px 22px;
+  scrollbar-color: #94a3b8 transparent;
+  scrollbar-width: thin;
+}
+
+.hamba-assistant-mobile-tabs {
+  scrollbar-width: none;
+}
+
+.hamba-assistant-mobile-tabs::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 639px) {
   .hamba-home::after {
     height: 42%;
@@ -294,50 +319,6 @@ body {
     font-size: 0.64rem;
   }
 
-  .hamba-assistant > aside:first-child {
-    width: 52px !important;
-  }
-
-  .hamba-assistant > aside:first-child > div:first-child {
-    padding-left: 0.35rem !important;
-    padding-right: 0.35rem !important;
-  }
-
-  .hamba-assistant > aside:first-child nav {
-    padding-left: 0.25rem !important;
-    padding-right: 0.25rem !important;
-  }
-
-  .hamba-assistant > section > div:first-child,
-  .hamba-assistant > section > header {
-    display: none !important;
-  }
-
-  .hamba-assistant > section > div:last-child > section:first-child,
-  .hamba-assistant > section > div:last-child > aside:last-child {
-    width: 36px !important;
-  }
-
-  .hamba-assistant > section > div:last-child > section:nth-child(2) > div:first-child {
-    height: 72px !important;
-    padding-left: 0.75rem !important;
-    padding-right: 0.5rem !important;
-  }
-
-  .hamba-assistant > section > div:last-child > section:nth-child(2) h1 {
-    font-size: 1.5rem !important;
-    line-height: 1.05 !important;
-  }
-
-  .hamba-assistant > section > div:last-child > section:nth-child(2) form {
-    padding: 0.6rem !important;
-  }
-
-  .hamba-assistant > section > div:last-child > section:nth-child(2) form input {
-    font-size: 0.75rem !important;
-    padding-left: 0.7rem !important;
-    padding-right: 0.7rem !important;
-  }
 }
 
 @media (max-width: 767px) {

@@ -1,5 +1,10 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
+> **Historical implementation log.** This file contains useful evidence alongside
+> old branch names, removed paths, and superseded plans. It is not an execution
+> queue. Current work must follow `AGENTS.md`, `docs/REQUIREMENTS.md`,
+> `docs/ROADMAP.md`, `docs/LINEAR-SYNC.md`, live Linear, and the current Git branch.
+
 **Last updated:** 2026-07-01 — operator-loop stabilization pass: dashboard rollups were split into matched vs unmatched money, property drill-down now preserves period context, room-manager create/save flows were extended, and the units-table matching drawer runtime error (duplicate React keys in hint chips) was fixed and browser-verified. Prior: 2026-06-30 — Claude operator-loop review adopted: period auto-creation, inline match/sign-off inside the unit table, and dashboard CTA wiring now lead the build; room manager follows after the operational loop.
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`

@@ -114,6 +114,19 @@ test('legacy chatbot URL renders the same property chatbot workspace', () => {
   assert.match(source, /<WorkspaceRoute view="chatbot" propertyId={propertyId}/);
 });
 
+test('property chatbot keeps mobile navigation, a full-width composer, and accessible settings', () => {
+  const source = readFileSync('src/components/workspace/workspace-route.tsx', 'utf8');
+  const styles = readFileSync('src/app/globals.css', 'utf8');
+
+  assert.match(source, /hamba-assistant-mobile-tabs/);
+  assert.match(source, /aria-label="Ask the property assistant"/);
+  assert.match(source, /aria-label="Open assistant settings"/);
+  assert.match(source, /aria-label="Collapse settings panel"/);
+  assert.match(source, /fixed inset-0 z-50 w-full/);
+  assert.doesNotMatch(styles, /\.hamba-assistant > aside:first-child \{\s*width: 52px !important/);
+  assert.doesNotMatch(styles, /section:first-child,\s*\.hamba-assistant > section > div:last-child > aside:last-child \{\s*width: 36px !important/);
+});
+
 test('auth test page exposes a logout form without importing server-only code', () => {
   const source = readFileSync('src/app/auth-test/page.tsx', 'utf8');
 

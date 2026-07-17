@@ -1,12 +1,21 @@
 # Project Roadmap
 
-Last updated: 2026-07-12
+Last updated: 2026-07-17
 
 See also: [Architecture](./ARCHITECTURE.md) (structural view), [Requirements](./REQUIREMENTS.md)
 (what each capability must do, with shipped/partial/planned status), and
 [Linear sync](./LINEAR-SYNC.md) (ticket ↔ phase mapping).
 
 ## Current Focus
+
+The current focused branch is `feature/property-assistant-ui-modernization`. It is a
+presentation-only refresh of the shipped property-scoped chatbot workspace: improve
+friendliness, mobile viewport use, navigation clarity, conversation hierarchy, and
+settings access without introducing a new workflow or changing backend behavior.
+
+The earlier July 2 nightly branch/configuration is retired. New sessions must start
+from `main` or the explicitly named active branch and follow current requirements plus
+live Linear, not historical handover task lists.
 
 The KB/retrieval shell is in place and monthly payments is in operator-loop
 stabilization. As of 2026-07-12, the bank-import reconciliation slice is functional:

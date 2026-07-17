@@ -1,4 +1,4 @@
-Last updated: 2026-07-12
+Last updated: 2026-07-17
 
 # Requirements
 
@@ -6,6 +6,18 @@ This turns the roadmap phases and the owner's voice-note vision into concrete,
 testable requirements per capability. Pair with [ARCHITECTURE.md](./ARCHITECTURE.md)
 (how it's built) and [ROADMAP.md](./ROADMAP.md) (build order and status). Status
 tags: **Shipped**, **Partial**, **Planned**.
+
+## Operating baseline
+
+- `main` is the production baseline. Historical branch notes and dated handovers are
+  evidence only and do not override this file, owner decisions, live Linear, or
+  verified production behavior.
+- Active presentation work lives on `feature/property-assistant-ui-modernization`.
+  It may modernize the property-assistant experience but must not change chat API,
+  retrieval, property scoping, knowledge persistence, authentication, or approved
+  property facts.
+- The retired July 2 nightly configuration and `codex/monthly-payments` execution
+  instructions are disabled in `AGENTS.md`; agents must not resume them.
 
 ## 1. Property Assistance (chatbot workspace)
 
@@ -38,6 +50,11 @@ tags: **Shipped**, **Partial**, **Planned**.
   resumable/TUS upload not yet decided as needed.
 - NFR-1.3 **Planned** — Public `property-images` Storage bucket alongside the
   private `uploads` bucket. See [storage.md](./roadmap/functionality/storage.md).
+- NFR-1.4 **In progress 2026-07-17** — Modernize the property-assistant chatbot as
+  a friendly, conversation-first workspace. Desktop keeps clear access to threads,
+  settings, and property navigation; mobile gives the conversation and composer the
+  full usable width, replaces permanent narrow rails with tabs/drawers, avoids
+  horizontal overflow, and preserves every shipped chat/retrieval/settings behavior.
 
 ## 2. Monthly Payments (operator loop)
 

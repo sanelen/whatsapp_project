@@ -1,12 +1,20 @@
-Last updated: 2026-07-13
+Last updated: 2026-07-17
 
 # Linear Sync
 
-**Connector status:** the Linear connector is installed but not yet authorized in
-this environment — Claude cannot read or write live tickets until you connect it
-(claude.ai connector settings, or `/mcp` in an interactive session). Everything
-below is reconstructed from HANDOFF.md ticket references and should be reconciled
-against live Linear once connected.
+**Connector status:** connected and read/write verified on 17 July 2026. Live Linear
+is authoritative for ticket state; this file is the repository-side capability map.
+
+The Hamba Property Welcome & Assistant Enablement project was also reconciled on
+17 July 2026. Its older tickets remained Todo despite completed evidence, so current
+status and UI-modernization work must be synced there rather than inferred from old
+ticket timestamps.
+
+Live reconciliation completed: AUT-23 (property cards), AUT-24 (welcome/location
+flows), and AUT-28 (requirements/handover maintenance) are In Progress. AUT-31 was
+created for `feature/property-assistant-ui-modernization` and contains the responsive
+UI acceptance criteria. Portfolio curation, promotional media, and Facebook work
+remain Todo rather than being implied complete by adjacent implementation work.
 
 Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 

@@ -1,13 +1,17 @@
 ---
-sessionName: "Codex Nightly - Monthly Payments Stabilization"
+sessionName: "DISABLED - Historical Codex Nightly Session"
 sessionTime: "2:05 AM - 3:00 AM, July 2, 2026"
 sessionOwner: "Codex"
-branch: "codex/monthly-payments"
+branch: "DISABLED"
 autoCommit: true
 pushOnComplete: true
 ---
 
-# Codex Nightly Session Instructions
+# Archived Instructions - Do Not Run
+
+> Disabled 2026-07-17. This file is retained only as historical evidence. Do not
+> switch to `codex/monthly-payments`, run the old task list, or push from this
+> configuration. Follow `AGENTS.md`, current requirements, and live Linear instead.
 
 You have been assigned to work autonomously on the **HambaCustomerService** project for this nightly session.
 

@@ -4,16 +4,27 @@ import {
   BarChart3,
   Bot,
   BriefcaseBusiness,
+  Building2,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Gauge,
   LayoutDashboard,
   LoaderCircle,
   type LucideIcon,
   MessageSquareText,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search,
+  SendHorizontal,
   SlidersHorizontal,
+  Sparkles,
   Settings2,
+  Trash2,
   Users,
+  X,
 } from 'lucide-react';
 import { Button, Input, Label, TextArea, TextField } from '@heroui/react';
 import Link from 'next/link';
@@ -1633,36 +1644,36 @@ function PropertyChatbotWorkspaceView({
   }, []);
 
   return (
-    <main className="hamba-assistant flex h-screen overflow-hidden text-slate-950">
-      <aside className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-all ${isAppNavCollapsed ? 'w-16' : 'w-56 xl:w-64'}`}>
-        <div className={`flex h-16 items-center border-b border-slate-100 px-3 ${isAppNavCollapsed ? 'justify-center' : 'gap-3'}`}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 text-xs font-bold">PA</div>
+    <main className="hamba-assistant hamba-assistant-modern relative flex h-dvh overflow-hidden text-slate-950">
+      <aside className={`hidden shrink-0 flex-col border-r border-white/10 bg-slate-950 text-white transition-all duration-200 md:flex ${isAppNavCollapsed ? 'w-[72px]' : 'w-60 xl:w-64'}`}>
+        <div className={`flex h-[72px] items-center border-b border-white/10 px-4 ${isAppNavCollapsed ? 'justify-center' : 'gap-3'}`}>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500 text-xs font-black tracking-[0.12em] text-white shadow-[0_10px_30px_rgba(14,165,233,0.24)]">HT</div>
           {!isAppNavCollapsed && (
             <div>
-              <p className="hamba-display text-[19px]">Property assistants</p>
-              <p className="text-xs text-slate-500">Hamba operations</p>
+              <p className="hamba-display text-[17px] text-white">Property assistant</p>
+              <p className="text-xs text-slate-400">Hamba Trading</p>
             </div>
           )}
         </div>
-        <div className={`border-b border-slate-200 px-3 py-5 ${isAppNavCollapsed ? 'text-center' : ''}`}>
+        <div className={`border-b border-white/10 px-3 py-4 ${isAppNavCollapsed ? 'text-center' : ''}`}>
           <div className={`flex ${isAppNavCollapsed ? 'justify-center' : 'items-center justify-between gap-3'}`}>
             {!isAppNavCollapsed && (
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{property.name}</p>
-                <p className="truncate text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{organization.name}</p>
+                <p className="truncate text-sm font-semibold text-white">{property.name}</p>
+                <p className="mt-1 truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{organization.name}</p>
               </div>
             )}
             <button
               type="button"
               onClick={() => setIsAppNavCollapsed((current) => !current)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
               aria-label={isAppNavCollapsed ? 'Expand workspace navigation' : 'Collapse workspace navigation'}
             >
-              {isAppNavCollapsed ? '>' : '<'}
+              {isAppNavCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </button>
           </div>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 p-2">
+        <nav className="flex flex-1 flex-col gap-1.5 p-3">
           {workspaceNavItems.map((item) => {
             const ItemIcon = workspaceSectionIcons[item];
 
@@ -1672,17 +1683,17 @@ function PropertyChatbotWorkspaceView({
                   type="button"
                   title={item}
                   onClick={() => setActiveWorkspaceSection(item)}
-                  className={`flex w-full items-center rounded-lg py-3 text-left text-sm font-medium transition ${
+                  className={`flex w-full items-center rounded-xl py-2.5 text-left text-sm font-medium transition ${
                     item === activeWorkspaceSection
-                      ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+                      ? 'bg-sky-500 text-white shadow-[0_10px_24px_rgba(14,165,233,0.18)]'
+                      : 'text-slate-400 hover:bg-white/8 hover:text-white'
                   } ${isAppNavCollapsed ? 'justify-center px-2' : 'gap-3 px-3'}`}
                 >
                   <span
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition ${
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${
                       item === activeWorkspaceSection
-                        ? 'border-blue-200 bg-white/80 text-blue-700'
-                        : 'border-slate-200 bg-slate-50 text-slate-500'
+                        ? 'bg-white/16 text-white'
+                        : 'bg-white/5 text-slate-400'
                     }`}
                   >
                     <ItemIcon className="h-4 w-4" strokeWidth={2} />
@@ -1693,22 +1704,63 @@ function PropertyChatbotWorkspaceView({
             );
           })}
         </nav>
-        <div className="border-t border-slate-200 p-3">
+        <div className="space-y-2 border-t border-white/10 p-3">
+          <Link
+            href="/staff"
+            className={`flex items-center rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/8 hover:text-white ${isAppNavCollapsed ? 'justify-center' : 'gap-3'}`}
+            title="Back to staff home"
+          >
+            <Building2 className="h-4 w-4" />
+            {!isAppNavCollapsed && 'Staff home'}
+          </Link>
           <button
             type="button"
             onClick={() => onDelete(property)}
             title="Delete"
-            className={`w-full rounded-lg border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 ${
-              isAppNavCollapsed ? 'text-center' : 'text-left'
+            className={`flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-medium text-rose-300 transition hover:bg-rose-500/10 hover:text-rose-200 ${
+              isAppNavCollapsed ? 'justify-center' : 'gap-3'
             }`}
           >
-            {isAppNavCollapsed ? 'D' : 'Delete'}
+            <Trash2 className="h-4 w-4" />
+            {!isAppNavCollapsed && 'Delete property'}
           </button>
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
-        <div className="shrink-0 border-b border-slate-200 px-4 pt-4 lg:px-6">
+      <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur md:hidden">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-[11px] font-black tracking-[0.12em] text-white">HT</div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-950">{property.name}</p>
+              <p className="truncate text-xs text-slate-500">Property assistant</p>
+            </div>
+          </div>
+          <Link href="/staff" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
+            Staff home
+          </Link>
+        </div>
+
+        <nav className="hamba-assistant-mobile-tabs flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 md:hidden" aria-label="Property assistant sections">
+          {workspaceNavItems.map((item) => {
+            const ItemIcon = workspaceSectionIcons[item];
+            return (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setActiveWorkspaceSection(item)}
+                className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                  item === activeWorkspaceSection ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                <ItemIcon className="h-3.5 w-3.5" />
+                {item}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="hidden shrink-0 border-b border-slate-200 bg-white/80 px-4 pt-4 backdrop-blur md:block lg:px-6">
           <TopNav
             organizations={organizations}
             properties={properties}
@@ -1719,16 +1771,16 @@ function PropertyChatbotWorkspaceView({
           />
         </div>
 
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4 lg:px-6">
+        <header className="hidden h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white/70 px-4 md:flex lg:px-6">
           <div>
-            <p className="text-xs text-slate-500">Organization</p>
-            <p className="text-sm font-semibold">{organization.name}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-700">Property workspace</p>
+            <p className="mt-0.5 text-sm font-semibold">{organization.name} / {property.name}</p>
           </div>
           <div className="flex items-center gap-4">
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-sm font-semibold text-slate-600">
-              Free Plan
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+              Workspace connected
             </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-700 text-sm font-bold text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-sm font-bold text-white">
               {organization.name.slice(0, 1).toUpperCase()}
             </span>
           </div>
@@ -1746,125 +1798,168 @@ function PropertyChatbotWorkspaceView({
         ) : activeWorkspaceSection === 'Overview' ? (
           <OverviewWorkspaceView organization={organization} property={property} />
         ) : activeWorkspaceSection === 'Chatbot' ? (
-        <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
           {isThreadsCollapsed ? (
-            <section className="flex w-12 shrink-0 flex-col items-center border-r border-slate-200 bg-slate-50/70 py-4">
+            <section className="hidden w-14 shrink-0 flex-col items-center border-r border-slate-200 bg-sky-50/60 py-4 lg:flex">
               <button
                 type="button"
                 onClick={() => setIsThreadsCollapsed(false)}
-                className="rounded-lg px-3 py-2 text-lg font-semibold text-slate-700 transition hover:bg-white"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:text-sky-700"
                 aria-label="Expand threads panel"
                 >
-                  {'>'}
+                  <PanelLeftOpen className="h-4 w-4" />
               </button>
-              <button className="mt-8 rounded-lg px-3 py-2 text-xl text-slate-700 transition hover:bg-white" title="New thread">+</button>
-              <span className="mt-4 text-xs text-slate-500">1</span>
+              <button className="mt-6 flex h-9 w-9 items-center justify-center rounded-xl text-slate-600 transition hover:bg-white" title="New test conversation"><Plus className="h-4 w-4" /></button>
+              <span className="mt-3 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500">1</span>
             </section>
           ) : (
-            <section className="w-56 shrink-0 border-r border-slate-200 bg-slate-50/60 lg:w-64 xl:w-80">
+            <section className="absolute inset-y-0 left-0 z-40 w-[min(88vw,320px)] shrink-0 border-r border-slate-200 bg-sky-50/95 shadow-2xl backdrop-blur lg:static lg:w-64 lg:bg-sky-50/70 lg:shadow-none xl:w-72">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
-                <h3 className="text-lg font-bold">Threads <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-500">1</span></h3>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Test inbox</p>
+                  <h3 className="mt-1 text-base font-semibold">Conversations <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">1</span></h3>
+                </div>
                 <div className="flex items-center gap-2">
-                  <button className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700">+ New</button>
+                  <button className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm"><Plus className="h-3.5 w-3.5" /> New</button>
                   <button
                     type="button"
                     onClick={() => setIsThreadsCollapsed(true)}
-                    className="rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-600 transition hover:bg-white"
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-600 transition hover:bg-white"
                     aria-label="Collapse threads panel"
                   >
-                    {'<'}
+                    <PanelLeftClose className="h-4 w-4" />
                   </button>
                 </div>
               </div>
               <div className="border-b border-slate-200 p-4">
-                <input
-                  placeholder="Search threads..."
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
-                />
+                <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100">
+                  <Search className="h-4 w-4 text-slate-400" />
+                  <input placeholder="Search test conversations" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
+                </label>
               </div>
               <div className="p-3">
-                <div className="rounded-lg border-l-4 border-blue-600 bg-white p-4 shadow-sm">
+                <div className="rounded-2xl border border-sky-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold">New Conversation</p>
-                    <span className="text-xs text-slate-400">Edit</span>
+                    <p className="text-sm font-semibold">Property test</p>
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" aria-label="Active" />
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">{chatMessages.filter((message) => message.role === 'user').length} messages</p>
+                  <p className="mt-1 text-xs text-slate-500">{chatMessages.filter((message) => message.role === 'user').length} questions sent</p>
+                  <p className="mt-3 line-clamp-2 text-xs leading-5 text-slate-600">Test the answers a prospective tenant would receive.</p>
                 </div>
               </div>
             </section>
           )}
 
-          <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
-            <div className="flex h-20 items-center justify-between border-b border-slate-200 px-4">
-              <div>
-                <h1 className="text-[28px]">Tenant conversation</h1>
-                <p className="text-sm text-slate-500">Assistant online <span className="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" /></p>
+          <section className="flex min-w-0 flex-1 flex-col bg-white/95">
+            <div className="flex min-h-[72px] shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-3 py-3 backdrop-blur sm:px-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsThreadsCollapsed(false)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm lg:hidden"
+                  aria-label="Open test conversations"
+                >
+                  <MessageSquareText className="h-4 w-4" />
+                </button>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="truncate text-base font-semibold text-slate-950 sm:text-lg">Tenant conversation</h1>
+                    <span className="hidden rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 sm:inline-flex">Test mode</span>
+                  </div>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500"><span className="inline-block h-2 w-2 rounded-full bg-emerald-500" /> Assistant ready for {property.name}</p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => onDelete(property)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-50"
+                onClick={() => setIsSettingsCollapsed(false)}
+                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-sky-200 hover:text-sky-700"
+                aria-label="Open assistant settings"
               >
-                Delete
+                <SlidersHorizontal className="h-4 w-4" />
+                <span className="hidden sm:inline">Tune assistant</span>
               </button>
             </div>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-              <div className="mr-auto max-w-md rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-700">
-                Welcome. How can I help with the property today?
+            <div className="hamba-chat-canvas min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-5 sm:px-6 sm:py-6" aria-live="polite">
+              <div className="mx-auto max-w-3xl">
+                <div className="mb-6 flex flex-col items-center text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700 ring-8 ring-white/70">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <p className="mt-3 text-sm font-semibold text-slate-800">Try the prospective tenant experience</p>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-slate-500">Ask about rent, parking, Wi-Fi, applications, or location. Answers stay scoped to this property.</p>
+                </div>
+                <div className="mr-auto flex max-w-[88%] items-end gap-2 sm:max-w-[78%]">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-[10px] font-bold text-white">HT</div>
+                  <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
+                    Welcome. How can I help with {property.name} today?
+                  </div>
+                </div>
               </div>
               {chatMessages.map((message, index) => (
-                <div key={`${message.role}-${index}`}>
+                <div key={`${message.role}-${index}`} className="mx-auto max-w-3xl">
                   <div
-                    className={`max-w-[80%] rounded-lg px-4 py-3 text-sm ${
+                    className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[78%] ${
                       message.role === 'user'
-                        ? 'ml-auto bg-blue-600 text-white'
-                        : 'mr-auto bg-slate-100 text-slate-700'
+                        ? 'ml-auto rounded-br-md bg-sky-700 text-white'
+                        : 'mr-auto rounded-bl-md border border-slate-200 bg-white text-slate-700'
                     }`}
                   >
                     {message.content}
                   </div>
-                  <p className={`mt-1 text-xs italic text-slate-400 ${message.role === 'user' ? 'text-right' : ''}`}>Just now</p>
+                  <p className={`mt-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-400 ${message.role === 'user' ? 'text-right' : ''}`}>{message.role === 'user' ? 'You / just now' : 'Assistant / just now'}</p>
                 </div>
               ))}
               {chatError && (
-                <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
+                <div className="mx-auto max-w-3xl rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">
                   {chatError}
                 </div>
               )}
             </div>
-            <form onSubmit={onSendTestMessage} className="border-t border-slate-200 p-4">
-              <div className="flex items-center gap-3">
-                <input
-                  value={chatInput}
-                  onChange={(event) => onChatInputChange(event.target.value)}
-                  placeholder="Ask about this property..."
-                  className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
-                />
-                <button
-                  disabled={isSending}
-                  className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isSending ? 'Sending' : 'Send'}
-                </button>
+            <form onSubmit={onSendTestMessage} className="shrink-0 border-t border-slate-200 bg-white/95 px-3 py-3 backdrop-blur sm:px-6 sm:py-4">
+              <div className="mx-auto max-w-3xl">
+                <div className="mb-2 hidden flex-wrap gap-2 sm:flex">
+                  {['Is Wi-Fi included?', 'What is the parking situation?', 'What do I need to apply?'].map((prompt) => (
+                    <button key={prompt} type="button" onClick={() => onChatInputChange(prompt)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 shadow-[0_8px_30px_rgba(15,23,42,0.06)] focus-within:border-sky-300 focus-within:bg-white focus-within:ring-4 focus-within:ring-sky-100/70">
+                  <input
+                    value={chatInput}
+                    onChange={(event) => onChatInputChange(event.target.value)}
+                    placeholder="Ask a tenant question..."
+                    aria-label="Ask the property assistant"
+                    className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm outline-none placeholder:text-slate-400"
+                  />
+                  <button
+                    disabled={isSending || !chatInput.trim()}
+                    className="flex h-10 shrink-0 items-center gap-2 rounded-xl bg-slate-950 px-3.5 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <span className="hidden sm:inline">{isSending ? 'Sending' : 'Send'}</span>
+                    <SendHorizontal className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="mt-2 text-center text-[10px] text-slate-400">Test workspace only. Check important property facts before publishing.</p>
               </div>
             </form>
           </section>
 
           {isSettingsCollapsed ? (
-            <aside className="flex w-12 shrink-0 flex-col items-center border-l border-slate-200 bg-white py-4">
+            <aside className="hidden w-14 shrink-0 flex-col items-center border-l border-slate-200 bg-white py-4 xl:flex">
               <button
                 type="button"
                 onClick={() => setIsSettingsCollapsed(false)}
-                className="rounded-lg px-3 py-2 text-lg font-semibold text-slate-700 transition hover:bg-slate-50"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:text-sky-700"
                 aria-label="Expand settings panel"
               >
-                {'<'}
+                <SlidersHorizontal className="h-4 w-4" />
               </button>
-              <span className="mt-8 rotate-90 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-500">Settings</span>
+              <span className="mt-8 rotate-90 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Tune assistant</span>
             </aside>
           ) : (
-          <aside className="w-72 shrink-0 overflow-y-auto bg-white p-4 xl:w-[420px] xl:p-6">
-            <div className="mb-5 flex items-center gap-8 border-b border-slate-200">
+          <aside className="fixed inset-0 z-50 w-full shrink-0 overflow-y-auto bg-white p-4 shadow-2xl sm:left-auto sm:w-[420px] xl:static xl:z-auto xl:w-[400px] xl:border-l xl:border-slate-200 xl:p-5 xl:shadow-none 2xl:w-[430px]">
+            <div className="mb-5 flex items-center gap-5 border-b border-slate-200">
               <button
                 type="button"
                 onClick={() => onSettingsTabChange('instructions')}
@@ -1901,10 +1996,10 @@ function PropertyChatbotWorkspaceView({
               <button
                 type="button"
                 onClick={() => setIsSettingsCollapsed(true)}
-                className="ml-auto rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
+                className="ml-auto flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
                 aria-label="Collapse settings panel"
               >
-                {'>'}
+                <X className="h-4 w-4" />
               </button>
             </div>
 
