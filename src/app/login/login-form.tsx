@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { Alert, Button } from '@heroui/react';
 import { getLoginErrorMessage } from '@/lib/auth/login-messages';
+import { safeRedirectPath } from '@/lib/auth/redirect-path';
 import { createClient } from '@/lib/supabase/client';
 
 export function LoginForm() {
@@ -19,6 +20,7 @@ export function LoginForm() {
     setError(null);
     setPending(true);
     const callback = new URL('/auth/callback', window.location.origin);
+    callback.searchParams.set('next', safeRedirectPath(searchParams.get('next'), '/staff'));
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: callback.toString() },

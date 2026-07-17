@@ -8,14 +8,26 @@ import test from 'node:test';
 // under the bare `node --test` runner. Source assertions keep the contract
 // without booting the whole component tree.
 
-test('root page links to property assistance and monthly payments', () => {
+test('public root page exposes tenant help and legal information without staff tools', () => {
   const source = readFileSync('src/app/page.tsx', 'utf8');
+  assert.match(source, /https:\/\/wa\.me\/27812674647/);
+  assert.match(source, /href="\/staff"/);
+  assert.match(source, /href: '\/privacy'/);
+  assert.match(source, /href: '\/terms'/);
+  assert.match(source, /href: '\/data-deletion'/);
+  assert.doesNotMatch(source, /property-assistance|monthly-payments|admin\/leases/);
+});
+
+test('protected staff hub exposes the three tools and logout after server-side authorization', () => {
+  const source = readFileSync('src/app/staff/page.tsx', 'utf8');
+  assert.match(source, /await requireUser\(\)/);
   assert.match(source, /href: '\/property-assistance'/);
   assert.match(source, /href: '\/monthly-payments'/);
+  assert.match(source, /href: '\/admin\/leases'/);
   assert.match(source, /action="\/auth\/signout"/);
 });
 
-test('authentication always returns to the workspace chooser', () => {
+test('Google authentication safely returns staff to their selected destination', () => {
   const loginSource = readFileSync('src/app/login/login-form.tsx', 'utf8');
   const callbackSource = readFileSync('src/app/auth/callback/route.ts', 'utf8');
   const proxySource = readFileSync('src/proxy.ts', 'utf8');
@@ -23,10 +35,13 @@ test('authentication always returns to the workspace chooser', () => {
   assert.match(loginSource, /new URL\('\/auth\/callback'/);
   assert.doesNotMatch(loginSource, /signInWithPassword|signUp\(/);
   assert.doesNotMatch(loginSource, /searchParams\.get\('redirect'\)/);
-  assert.ok(callbackSource.includes('NextResponse.redirect(`${origin}/`)'));
+  assert.match(loginSource, /safeRedirectPath\(searchParams\.get\('next'\), '\/staff'\)/);
+  assert.match(callbackSource, /NextResponse\.redirect\(new URL\(nextPath, origin\)\)/);
   assert.match(callbackSource, /isAuthUserAllowed/);
   assert.match(proxySource, /isAuthUserAllowed/);
-  assert.doesNotMatch(callbackSource, /searchParams\.get\('next'\)/);
+  assert.match(callbackSource, /safeRedirectPath\(searchParams\.get\('next'\), '\/staff'\)/);
+  assert.match(proxySource, /safeRedirectPath/);
+  assert.match(proxySource, /isAllowed && pathname === '\/login'[\s\S]*new URL\('\/staff'/);
   assert.doesNotMatch(proxySource, /loginUrl\.searchParams\.set\('redirect'/);
 });
 
