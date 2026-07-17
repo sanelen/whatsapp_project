@@ -8,13 +8,23 @@ import test from 'node:test';
 // under the bare `node --test` runner. Source assertions keep the contract
 // without booting the whole component tree.
 
-test('public root page exposes tenant help and the three staff destinations', () => {
+test('public root page exposes tenant help and legal information without staff tools', () => {
   const source = readFileSync('src/app/page.tsx', 'utf8');
+  assert.match(source, /https:\/\/wa\.me\/27812674647/);
+  assert.match(source, /href="\/staff"/);
+  assert.match(source, /href: '\/privacy'/);
+  assert.match(source, /href: '\/terms'/);
+  assert.match(source, /href: '\/data-deletion'/);
+  assert.doesNotMatch(source, /property-assistance|monthly-payments|admin\/leases/);
+});
+
+test('protected staff hub exposes the three tools and logout after server-side authorization', () => {
+  const source = readFileSync('src/app/staff/page.tsx', 'utf8');
+  assert.match(source, /await requireUser\(\)/);
   assert.match(source, /href: '\/property-assistance'/);
   assert.match(source, /href: '\/monthly-payments'/);
   assert.match(source, /href: '\/admin\/leases'/);
-  assert.match(source, /https:\/\/wa\.me\/27812674647/);
-  assert.match(source, /href="\/login"/);
+  assert.match(source, /action="\/auth\/signout"/);
 });
 
 test('Google authentication safely returns staff to their selected destination', () => {

@@ -13,6 +13,9 @@ import { getProxySession } from '@/lib/supabase/proxy';
 export function isPublicPath(pathname: string): boolean {
   return (
     pathname === '/' ||
+    pathname === '/privacy' ||
+    pathname === '/terms' ||
+    pathname === '/data-deletion' ||
     pathname === '/login' ||
     pathname.startsWith('/auth/') ||
     pathname === '/api/whatsapp/webhook'
