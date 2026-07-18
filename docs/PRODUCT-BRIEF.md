@@ -2,6 +2,11 @@
 
 Owner: San. Last updated: 2026-07-12 (dictated by San mid-session; do not drift from this without his say-so).
 
+> Scope note (2026-07-18): this is the durable **payments-domain** brief, not the
+> whole application's navigation specification and not an unattended job queue.
+> Current app-wide access/navigation requirements live in `docs/REQUIREMENTS.md`;
+> approved next work lives only in `docs/ACTIVE-WORK.md`.
+
 ## What this product is
 
 A simple system with two nouns: **units** and **payments** (plus buildings/locations that group units). Everything else exists to serve one question:

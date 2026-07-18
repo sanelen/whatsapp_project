@@ -1,12 +1,10 @@
-Last updated: 2026-07-13
+Last updated: 2026-07-18
 
 # Linear Sync
 
-**Connector status:** the Linear connector is installed but not yet authorized in
-this environment — Claude cannot read or write live tickets until you connect it
-(claude.ai connector settings, or `/mcp` in an interactive session). Everything
-below is reconstructed from HANDOFF.md ticket references and should be reconciled
-against live Linear once connected.
+**Status note:** values below are a local snapshot and must be checked against live
+Linear by the scheduled job before it updates an issue. The active implementation
+order comes from `requirements/CHAT-WHATSAPP.md`, not from an old ticket description.
 
 Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 
@@ -18,10 +16,10 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 | AUT-11 | Todo | Phase 2/3 (KB) | Seed knowledge base; structure-agnostic, can run anytime. |
 | AUT-13 | Done | — | Record of the 2026-05-30 deploy fix + env + DeepSeek/Node config session. |
 | AUT-14 | Implemented locally; live ticket sync pending | Phase 6 / [REQUIREMENTS.md FR-5.1](./REQUIREMENTS.md#5-platform--production-readiness) | Vercel Preview/Production variables configured and verified for Supabase, LLM providers, auth allowlist, Gmail OAuth, and Drive Bank Uploads on 2026-07-13. |
-| AUT-15 | Todo (High) | Phase 7 / [REQUIREMENTS.md FR-3.2](./REQUIREMENTS.md#3-whatsapp-tenant-assistant-planning-only) | WhatsApp/Twilio platform decision — **owner confirmed: rebuild into `src/`.** Ticket should be re-scoped to reflect this, not closed. |
-| AUT-16 | Done | — | Supabase Auth (Google OAuth + email/password) shipped. |
+| AUT-15 | Re-scope against live ticket | Phase 7 / [REQUIREMENTS.md §3](./REQUIREMENTS.md#3-whatsapp-tenant-assistant-active-foundation) | Direction is confirmed: build provider-neutral foundations in current `src/`; do not revive the removed nested platform as production architecture. |
+| AUT-16 | Done | [REQUIREMENTS.md FR-5.4/5.5](./REQUIREMENTS.md#5-platform--production-readiness) | Supabase Auth is Google-only with an approved-email allowlist; public legal/landing routes remain open and staff enter through `/staff`. |
 | AUT-17 | In progress | Phase 2–4 (vector retrieval) | Document upload → 768-dim vector retrieval → grounded chat; implementation started 2026-06-04. |
-| AUT-5, 7, 8, 12 | Stale (pre-flatten) | Phase 7 (WhatsApp) | All point at `SAWhatsApp/platform` paths removed in the 2026-05-30 flatten. Should be re-scoped or closed once AUT-15's rebuild starts, so they don't reference dead paths. |
+| AUT-5, 7, 8, 12, 29, 30 | Revalidate live | [Chat/WhatsApp requirements](./requirements/CHAT-WHATSAPP.md) | Use the current requirement IDs and source paths. Any description pointing at removed `SAWhatsApp/platform` paths is stale and must be re-scoped before implementation. |
 
 ## Gaps not yet ticketed
 

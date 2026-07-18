@@ -80,70 +80,28 @@ routine edits.
 **Skill location:** `.claude/skills/full-flow-review/SKILL.md`
 <!-- END:full-flow-review-rule -->
 
-<!-- BEGIN:codex-nightly-session -->
-# Codex Nightly Session — Autonomous Work Block (2:05 AM – 3:00 AM)
+<!-- BEGIN:codex-job-requirements -->
+# Automated job requirement hygiene
 
-This project runs an autonomous nightly session where **Codex** works unsupervised on 
-high-priority, high-confidence tasks from the monthly-payments operator-loop stabilization phase.
+Scheduled jobs remain active. Their current inputs are `docs/ACTIVE-WORK.md`,
+`docs/REQUIREMENTS.md`, and the workstream-specific requirement file named by the
+job. The July 2 monthly-payments brief is historical and must not override them.
 
-## Session Trigger
+Before an unattended or scheduled job changes this repository:
 
-To run or reschedule the Codex nightly session:
+1. Read `docs/ACTIVE-WORK.md`, then `docs/REQUIREMENTS.md`.
+2. For Chat/WhatsApp work, read `docs/requirements/CHAT-WHATSAPP.md` and its linked
+   plan, tests, and validation ledger before looking at handovers.
+3. Select only an item marked **Active**. `Planned`, `Deferred`, `Candidate`, and
+   `Historical` are not implementation instructions.
+4. Start a fresh `codex/*` worktree branch from `origin/main`; never revive a branch
+   simply because an old handover names it.
+5. Re-check source and tests before editing. If an Active item is already satisfied,
+   record evidence and take the next Active item rather than rebuilding it.
+6. Treat handovers, audits, reviews, transcripts, screenshots, and wireframes as
+   evidence. They do not outrank current requirements.
 
-1. **Read the session brief:**
-   ```bash
-   cat docs/handovers/CODEX-NIGHTLY-SESSION-2026-07-02.md
-   ```
-
-2. **Review the agent instructions:**
-   ```bash
-   cat .claude/agents/CODEX-NIGHTLY-SESSION.agent.md
-   ```
-
-3. **Activate Codex for this session:**
-   - Invoke this agent with: `@codex` (or equivalent in your Claude interface)
-   - Pass: `docs/handovers/CODEX-NIGHTLY-SESSION-2026-07-02.md`
-   - Expected output: Focused work on E2E tests, state machine verification, and breadcrumb fixes
-
-## What Codex Will Do
-
-**Duration:** 55 minutes  
-**Branch:** `codex/monthly-payments`  
-**Expected commits:** 1–2 focused commits  
-**Push target:** `codex/monthly-payments` on GitHub
-
-Tasks (in priority order):
-1. Fix E2E test selectors and timing (aim for 50%+ pass rate, ~15/29 passing)
-2. Verify reversal workflow leaves no orphaned state
-3. Fix navigation breadcrumbs on child pages
-4. Confirm reference pool respects property scope
-
-## Success Criteria
-
-By 3:00 AM, the session is successful if:
-- ✅ 15+ E2E tests passing
-- ✅ Reversal workflow audit clean
-- ✅ Navigation breadcrumbs visible
-- ✅ Reference pool filters by property
-- ✅ Commits pushed to GitHub
-
-## Fallback / Support
-
-If Codex gets stuck:
-- Check the Playwright HTML report: `npm run test:e2e:report`
-- Look at test screenshots to understand selector issues
-- Use `page.pause()` to manually inspect the DOM
-- Reference `docs/testing/monthly-payments-flow-tests.md` for expected behaviors
-
-## Between Sessions
-
-After Codex completes:
-- Review the commits and run the test suite
-- Decide whether to merge to `main` or continue stabilization
-- Update `LINEAR-SYNC.md` ticket status
-- Plan the next nightly session focus (import refresh, AUT-14 env setup, etc.)
-
-**Session owner files:**
-- Handover: `docs/handovers/CODEX-NIGHTLY-SESSION-2026-07-02.md`
-- Agent instructions: `.claude/agents/CODEX-NIGHTLY-SESSION.agent.md`
-<!-- END:codex-nightly-session -->
+When an Active implementation item is blocked, continue with the next safe Active
+validation or documentation item and leave a concise handover. Do not disable the
+job or invent work from stale material.
+<!-- END:codex-job-requirements -->

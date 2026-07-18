@@ -1,30 +1,34 @@
 # Hamba Customer Service Docs
 
-Last updated: 2026-07-12
+Last updated: 2026-07-18
 
 This folder is the planning and implementation strategy hub for the project.
 
 ## Start here
 
-1. **[Roadmap](./ROADMAP.md)** — the single source of truth for phases and status.
-2. **[Architecture](./ARCHITECTURE.md)** — the structural view: what runs where,
+1. **[Active work](./ACTIVE-WORK.md)** — selects the current workstream and links
+   its executable requirements.
+2. **[Requirements](./REQUIREMENTS.md)** — the current product contract and status.
+3. **[Chat/WhatsApp requirements](./requirements/CHAT-WHATSAPP.md)** — current
+   requirements read by the active scheduled implementation job.
+4. **[Roadmap](./ROADMAP.md)** — longer-term phases and deferred ideas; not a job queue.
+5. **[Architecture](./ARCHITECTURE.md)** — the structural view: what runs where,
    data model, and pipelines per capability.
-3. **[Requirements](./REQUIREMENTS.md)** — functional/non-functional requirements
-   per capability, with shipped/partial/planned status.
-4. **[Linear sync](./LINEAR-SYNC.md)** — how tickets map to roadmap phases and the
+6. **[Linear sync](./LINEAR-SYNC.md)** — how tickets map to roadmap phases and the
    process for keeping them in sync.
-5. **[Latest voice-note brief](./voice-notes/2026-06-14-la-lucia-mall-16.md)** — the
+7. **[Latest voice-note brief](./voice-notes/2026-06-14-la-lucia-mall-16.md)** — the
    current product vision in the owner's words.
-6. **[Latest session handover](./handovers/session-handover-2026-07-12.md)** —
+8. **[Latest session handover](./handovers/session-handover-2026-07-12.md)** —
    implementation, live data reconciliation, verification, and restart checklist.
-7. **Design handoff package** — `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
+9. **Design handoff package** — `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
    contains the reviewed wireframe canvas and screen exports for the Phase 7 work.
-8. Then dive into the themed sections below.
+10. Then dive into the themed sections below.
 
 ## Tenant operations (current vision)
 
-The big push: a layer above organizations with two entry points — **Chatbox**
-(existing) and **Dashboard** (new) — and three tenant capabilities.
+The shipped entry flow is public landing → Google sign-in → protected `/staff` hub
+with **Chatbox**, **Payments**, and **Admin**. The active tenant-operations workstream
+is the Chat/WhatsApp foundation; later servicing and offboarding remain deferred.
 
 - [WhatsApp tenant assistant](./roadmap/functionality/whatsapp-tenant-assistant.md) — guardrailed LLM flow for inquiring / servicing / leaving tenants, with human takeover.
 - [Tenant conversation flows](./roadmap/functionality/tenant-conversation-flows.md) — **decision trees / flow diagrams** for routing, inquiring, leaving, and human takeover.
@@ -75,6 +79,7 @@ is now the visual reference, not a separate competing plan.
 
 ## Full flow reviews
 
+- [Requirements/UI rebaseline — 2026-07-18](./reviews/full-flow-review-2026-07-18-requirements-rebaseline.md) — current navigation/auth baseline and clean scheduled-job inputs.
 - [Auth security baseline full-flow review — 2026-07-13](./reviews/full-flow-review-2026-07-13-auth-security-baseline.md) — Google-only allowlist enforcement, repository/deployment exposure, QA, and release caveats.
 - [Monthly payments import full-flow review — 2026-07-12](./reviews/full-flow-review-2026-07-12-monthly-payments-import-flow.md) — architecture, QA, UI/accessibility, roadmap fit, tensions, and prioritized follow-ups.
 - [Code + UI review — 2026-07-12 evening](./reviews/code-review-2026-07-12-evening-review-session.md) — line-level review of the day's diff, nav-consistency fixes across all seven pages, test-suite triage, and three queued owner decisions.
