@@ -27,7 +27,7 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 | AUT-20 | Done | [REQUIREMENTS.md §2](./REQUIREMENTS.md#2-monthly-payments-operations) | Payments operator loop is shipped; the umbrella ticket is closed. |
 | AUT-21, AUT-22 | Backlog | Future work | Offboarding and selective HeroUI adoption remain valid but are not general nightly queues. |
 | AUT-32 | In Progress | [Requirement tracker](./REQUIREMENT-TRACKER.md) | Owns the two-day requirements reconciliation and tracker hygiene. |
-| AUT-33 | In Progress | [REQUIREMENTS.md §2](./REQUIREMENTS.md#2-monthly-payments-operations) | Refresh the recent-month strip and surface imported-but-unmatched payments. |
+| AUT-33 | In Review | [REQUIREMENTS.md §2](./REQUIREMENTS.md#2-monthly-payments-operations) | PR #3 refreshes the recent-month strip and surfaces imported-but-unmatched payments; merge and production re-check remain. |
 
 ## Gaps not yet ticketed
 
