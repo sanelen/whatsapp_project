@@ -38,12 +38,12 @@ issue can still need its description corrected when the shipped product changed.
 | DATA-1 / AUT-9 | Valid | Partial | Active only when required by CHAT-1/2 | Current root schemas still need one clean source of truth; legacy nested migration claims are not current proof. |
 | KB-1 / AUT-17 | Valid | Partial | Deferred from Chat nightly | 768-dim vector upload/retrieval is shipped; remaining data-source breadth/race-hardening must be re-scoped rather than rebuilding the core. |
 | PAY-1 / AUT-20 | Valid | Met | No | Payments operator loop, imports, matching, sign-off/reversal, audit/config and staff navigation shipped. |
-| PAY-2 / AUT-33 | Valid | Partial | No — In Review | PR #3 shows imported/unmatched money separately, selects the active billing period after the 9th, and uses the approved blue palette; merge and production re-check remain. |
+| PAY-2 / AUT-33 | Valid | Met | No | PR #3 is merged and production-verified: August is selected, R8,700 imported/unmatched is visible, the blue Imported/Matched strip is live, and the signed-in route has no browser errors. |
 | OFFBOARD-1 / AUT-21 | Valid | Not started | Deferred | Leaving/offboarding remains a future owner-promoted workstream. |
 | UI-1 / AUT-22 | Valid in part | Partial | Only when a selected UI slice needs it | HeroUI is installed and used selectively. No wholesale component migration or dark-mode job is approved. |
 | TOOL-1 / AUT-19 | Valid | Met | No | Voice-note transcription CLI shipped. |
 | ACCESS-OLD / AUT-18 | Invalid | Not applicable | Never | Unspecified Equal Experts account reconnection is unrelated to the current approved Hamba access model. |
-| OPS-1 / AUT-32 | Valid | Partial | Reconciliation job only | Two-day requirements reconciliation is active; this register still needs to merge to `main` before it becomes the shared job input. |
+| OPS-1 / AUT-32 | Valid | Partial | Reconciliation job only | This register is on `main` and the two-day requirements reconciliation is active; acceptance of the prepared implementation-job prompt update remains. |
 
 ## Nightly completion protocol
 
