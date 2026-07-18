@@ -43,7 +43,7 @@ issue can still need its description corrected when the shipped product changed.
 | UI-1 / AUT-22 | Valid in part | Partial | Only when a selected UI slice needs it | HeroUI is installed and used selectively. No wholesale component migration or dark-mode job is approved. |
 | TOOL-1 / AUT-19 | Valid | Met | No | Voice-note transcription CLI shipped. |
 | ACCESS-OLD / AUT-18 | Invalid | Not applicable | Never | Unspecified Equal Experts account reconnection is unrelated to the current approved Hamba access model. |
-| OPS-1 / AUT-32 | Valid | Partial | Reconciliation job only | This register is on `main` and the two-day requirements reconciliation is active; acceptance of the prepared implementation-job prompt update remains. |
+| OPS-1 / AUT-32 | Valid | Met | Reconciliation job only | This register is on `main`; the two-day reconciliation is active; the existing twice-daily implementation job now reads the tracker and writes evidence back to Linear and this register. |
 
 ## Nightly completion protocol
 

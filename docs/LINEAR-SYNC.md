@@ -26,7 +26,7 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 | AUT-18 | Canceled | — | Unspecified Equal Experts reconnection request is unrelated to the approved Hamba access model. |
 | AUT-20 | Done | [REQUIREMENTS.md §2](./REQUIREMENTS.md#2-monthly-payments-operations) | Payments operator loop is shipped; the umbrella ticket is closed. |
 | AUT-21, AUT-22 | Backlog | Future work | Offboarding and selective HeroUI adoption remain valid but are not general nightly queues. |
-| AUT-32 | In Progress | [Requirement tracker](./REQUIREMENT-TRACKER.md) | Owns the two-day requirements reconciliation and tracker hygiene. |
+| AUT-32 | Done | [Requirement tracker](./REQUIREMENT-TRACKER.md) | The tracker is on `main`, two-day reconciliation is active, and implementation jobs now write evidence back to Linear and the register. |
 | AUT-33 | Done | [REQUIREMENTS.md §2](./REQUIREMENTS.md#2-monthly-payments-operations) | PR #3 is merged and production-verified: August shows R8,700 imported and 0% matched in the refreshed blue strip. |
 
 ## Gaps not yet ticketed
