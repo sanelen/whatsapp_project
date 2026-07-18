@@ -57,6 +57,15 @@ test('monthly payments page renders the monthly payments hub', () => {
   assert.match(source, /await requireUser\(\)/);
 });
 
+test('recent-month strip distinguishes imported money from matched progress', () => {
+  const source = readFileSync('src/components/monthly-payments/monthly-payments-hub.tsx', 'utf8');
+  assert.match(source, /Payment bar legend/);
+  assert.match(source, />Imported</);
+  assert.match(source, />Matched</);
+  assert.match(source, /month\.collectedAmount/);
+  assert.match(source, /month\.rollingTotal\.matchedCollectedAmount/);
+});
+
 test('monthly payments property page renders the per-unit units table', () => {
   const source = readFileSync('src/app/monthly-payments/[propertyId]/page.tsx', 'utf8');
   assert.match(source, /<UnitsTable table={table} initialUnitId={unitId} \/>/);
