@@ -1,4 +1,4 @@
-Last updated: 2026-07-12
+Last updated: 2026-07-18
 
 # Architecture
 
@@ -9,32 +9,28 @@ it must do) and [ROADMAP.md](./ROADMAP.md) (build order and status).
 ## 1. System overview
 
 A single Next.js 16 (App Router, Turbopack) app, deployed to Vercel, backed by one
-Supabase project. Two top-level product surfaces branch from `/`:
+Supabase project. The public site is `/`; approved staff enter the internal tools
+through `/staff`:
 
 ```
-                        ┌────────────┐
-                        │   /  entry │
-                        └─────┬──────┘
-              ┌───────────────┴───────────────┐
-     ┌────────▼─────────┐            ┌────────▼─────────┐
-     │ Property          │            │ Monthly Payments  │
-     │ Assistance         │            │ (operator loop)   │
-     │ (chatbot workspace)│            │                   │
-     └────────┬───────────┘            └────────┬──────────┘
-              │                                 │
-     ┌────────▼───────────┐            ┌────────▼──────────────────┐
-     │ KB + vector search  │            │ Bank import (Gmail/Drive) │
-     │ LLM chat (OpenAI /  │            │ → property_units /        │
-     │ Anthropic/DeepSeek) │            │   payment_references      │
-     └────────┬───────────┘            └────────┬──────────────────┘
-              │                                 │
-              └───────────────┬─────────────────┘
-                               │
-                     ┌─────────▼─────────┐
-                     │ Supabase (Postgres │
-                     │ + pgvector + Auth  │
-                     │ + Storage)         │
-                     └────────────────────┘
+                         ┌────────────────────┐
+                         │ / public landing   │
+                         └─────────┬──────────┘
+                   ┌───────────────┴───────────────┐
+          ┌────────▼─────────┐            ┌────────▼─────────┐
+          │ WhatsApp + legal │            │ Google sign-in   │
+          │ public content   │            │ → /staff         │
+          └──────────────────┘            └────────┬─────────┘
+                                      ┌────────────┼────────────┐
+                             ┌────────▼──────┐ ┌───▼────────┐ ┌─▼──────────────┐
+                             │ Chatbox       │ │ Payments   │ │ Admin console  │
+                             │ + KB / LLM    │ │ + imports  │ │ + leases       │
+                             └───────┬───────┘ └────┬───────┘ └──────┬─────────┘
+                                     └──────────────┼────────────────┘
+                                            ┌───────▼────────┐
+                                            │ Supabase       │
+                                            │ data/auth/files│
+                                            └────────────────┘
 ```
 
 A third planned surface, the **WhatsApp tenant assistant**, sits conceptually beside
@@ -51,15 +47,17 @@ has no shipped code yet — see [whatsapp-tenant-assistant.md](./roadmap/functio
 | File storage | Supabase Storage | `uploads` bucket (private, KB docs); `property-images` bucket planned |
 | External APIs | OpenAI, Anthropic, DeepSeek (LLM); Gmail API + Google Drive API (bank import) | Key resolution: DB `prompt_settings.llm_api_key` > env var |
 
-Local dev target is `http://localhost:3001` (`npm run dev`).
+`npm run dev` defaults to port 3001. The Hermes WhatsApp bridge may own that port on
+this workstation; use `npm run dev -- --port 3002` for the website when it does.
 
 ## 3. Auth architecture
 
 Next 16 uses `proxy` (not `middleware`):
 
-- `src/proxy.ts` — refreshes the Supabase session per request; unauthenticated users
-  are redirected to `/login` (pages) or `401`'d (`/api/*`), while authenticated but
-  unapproved users receive a `403` API response or an access-denied login redirect.
+- `src/proxy.ts` — keeps the public landing/legal/auth/webhook allowlist open and
+  protects every staff page and internal API. Unauthenticated protected pages redirect
+  to `/login`; protected APIs return `401`; authenticated but unapproved users receive
+  `403` or an access-denied login redirect.
 - `src/lib/auth/access-control.ts` — enforces Google provider plus the server-only
   `AUTH_ALLOWED_EMAILS` allowlist. Production fails closed when the allowlist is absent.
 - `src/lib/supabase/{env,client,server,proxy}.ts` — SSR Supabase clients.
@@ -67,10 +65,10 @@ Next 16 uses `proxy` (not `middleware`):
 - `src/lib/auth/api-guard.ts` — `requireApiAuth()`, applied to every API route.
 - `src/app/login/`, `src/app/auth/callback/`, `src/app/auth/signout/`, `src/app/auth-test/`.
 
-Successful authentication always returns to `/`, the shared workspace chooser.
-The chooser is the single transition into Property Assistance (`/property-assistance`)
-or Monthly Payments (`/monthly-payments`); login redirects never select a capability
-on the user's behalf.
+Successful authentication defaults to `/staff`. Safe selected protected destinations
+can survive the OAuth round-trip. `/staff` is the single protected hub for Property
+Assistance (`/property-assistance`), Monthly Payments (`/monthly-payments`), and the
+Admin lease console (`/admin/leases`). `/` remains public.
 
 A local-only auth bypass exists (`NEXT_PUBLIC_LOCAL_AUTH_BYPASS=true`, non-production
 only) to let browser automation exercise protected routes.

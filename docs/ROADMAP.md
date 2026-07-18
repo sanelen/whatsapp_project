@@ -1,6 +1,6 @@
 # Project Roadmap
 
-Last updated: 2026-07-12
+Last updated: 2026-07-18
 
 See also: [Architecture](./ARCHITECTURE.md) (structural view), [Requirements](./REQUIREMENTS.md)
 (what each capability must do, with shipped/partial/planned status), and
@@ -8,16 +8,23 @@ See also: [Architecture](./ARCHITECTURE.md) (structural view), [Requirements](./
 
 ## Current Focus
 
-The KB/retrieval shell is in place and monthly payments is in operator-loop
-stabilization. As of 2026-07-12, the bank-import reconciliation slice is functional:
+The 2026-07-17 navigation/authentication and shared visual baseline is now the
+production foundation. The current focus is **requirements redefinition plus the
+active Chat/WhatsApp foundation**, not automatically continuing the oldest unfinished
+roadmap item.
 
-- Gmail and controlled Drive CSV/PDF sources converge on one import pipeline
-- import audit exposes file-to-database-to-match provenance
-- import configuration explains account, parser, and unit-routing policy
-- file, transaction, and cross-source dedupe prevent repeated payment creation
-- dedicated, property-locked, mixed legacy, and excluded accounts have explicit rules
-- the next focus is durable import-run history, combined-payment allocation, and
-  automated browser coverage for the import/audit/configuration flow
+- Preserve the approved cloud/powder-blue UI system and refine it consistently.
+- Keep public content separate from the protected `/staff` hub.
+- Treat Chatbox, Payments, and Admin as the three internal destinations.
+- Continue the active Chat/WhatsApp order in
+  `docs/requirements/CHAT-WHATSAPP.md`.
+- Reconfirm older Planned/Partial requirements before building them.
+- Use `docs/ACTIVE-WORK.md` and its named workstream requirements, not this roadmap
+  alone, to select the next job item.
+
+Scheduled jobs remain active. The Chat/WhatsApp foundation is their current
+implementation queue; historical payments, offboarding, media, and upload items
+remain reference material until the owner promotes a specific slice.
 
 ## Execution Status
 
@@ -26,10 +33,9 @@ stabilization. As of 2026-07-12, the bank-import reconciliation slice is functio
   modes (`hybrid`/`rolling_window`/`retrieval_only`), graceful handling of corrupt/
   unsupported uploads, and direct (non-HTTP) KB retrieval from the chat route. The
   vector-pipeline audit now reports **0 findings across 32 checks**.
-- Shipped on branch `codex/monthly-payments` (2026-06-29): the new top-level split
-  between **Property Assistance** and **Monthly Payments**, plus a local-data monthly
-  payments admin workspace for building, unit-count, occupancy, price, reference, and
-  keyword setup.
+- Shipped to production through `main` (2026-07-17): public landing and legal pages,
+  protected `/staff` hub, Google-only approved-email sign-in, Chatbox/Payments/Admin
+  destinations, visible logout, and safe protected return paths.
 - Already shipped: restored top navigation, local-storage selection persistence, tablet
   layout improvements, KB text chunk settings UI, retrieval settings, vector audit
   script, and roadmap docs.
@@ -109,12 +115,14 @@ and visual, and standardizes the UI on HeroUI.
 ## Phase 7: Tenant Operations (from voice-note planning)
 
 Captured from the [2026-06-14 La Lucia Mall session](./voice-notes/2026-06-14-la-lucia-mall-16.md).
-Adds a **layer above organizations** with two entry points — **Chatbox** (existing
-route) and **Dashboard** (new) — and three tenant-operations capabilities. The
+The earlier plan proposed a layer above organizations with Chatbox and Dashboard.
+That entry requirement is superseded by the shipped `/staff` hub with **three**
+destinations: Chatbox, Payments, and Admin. The Chat/WhatsApp foundation is active;
+offboarding and servicing automation remain deferred. The
 wireframe package in `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
-was reviewed on 2026-06-29 and now serves as the primary visual reference. Payments
-has already begun implementation on branch `codex/monthly-payments`; WhatsApp
-assistant and offboarding remain planning-only.
+was reviewed on 2026-06-29 and remains flow/history context; the shipped 2026-07-17
+UI is the current visual reference. Payments
+has already shipped through `main`.
 
 - **WhatsApp tenant assistant** — guardrailed LLM conversations for inquiring,
   servicing (deferred), and leaving tenants, with human takeover. Resolves the
@@ -130,7 +138,8 @@ assistant and offboarding remain planning-only.
 
 ### Reviewed linear flow
 
-1. **Entry layer**: org-level choice between `Chatbox` and `Dashboard`.
+1. **Entry layer**: public `/` → Google staff sign-in → protected `/staff` choice
+   between Chatbox, Payments, and Admin.
 2. **Payments dashboard**: dashboard home with month stepper, recent-month strip,
    rolling total, by-location cards, and a CTA into the operator loop.
 3. **Payments drill-down**: clicking a location opens the per-location unit table
@@ -148,24 +157,12 @@ assistant and offboarding remain planning-only.
 9. **Offboarding**: leaving stepper, operational tracker, exit survey, and
    banking/deposit reconciliation screen.
 
-### Immediate implementation order
+### Former implementation order (retired as a job queue)
 
-For the next monthly-payments execution slice, the agreed order is:
-
-1. **Match / sign-off loop completion**
-   - finish inline `match ref`
-   - make sign-off and reverse-sign-off feel explicit and trustworthy
-   - keep row state, totals, and unmatched counts in sync without reload confusion
-2. **Operator feedback and state clarity**
-   - make row/payment/workflow states easier to read
-   - show unmatched money clearly when it explains dashboard totals
-3. **Room manager polish**
-   - keep room editing centralized there
-   - make create/edit/source-rule flows more obvious
-   - ensure saved room rules feed back into later matching suggestions
-4. **Deposit split / partial-payment rules**
-   - handle overpayments that include rent plus deposit contribution
-   - avoid treating every overpayment as a simple mismatch
+The match/sign-off, state-clarity, room-manager, and deposit-allocation list below was
+useful during the June/July payments stabilization phase, but it is no longer an
+automatic next-work sequence. Its surviving requirements remain in
+`REQUIREMENTS.md`; the owner must promote any new slice through `ACTIVE-WORK.md`.
 
 ## Tooling
 

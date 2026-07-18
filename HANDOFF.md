@@ -1,16 +1,26 @@
 # Project Handoff — HambaCustomerService (whatsapp_project)
 
-**Last updated:** 2026-07-01 — operator-loop stabilization pass: dashboard rollups were split into matched vs unmatched money, property drill-down now preserves period context, room-manager create/save flows were extended, and the units-table matching drawer runtime error (duplicate React keys in hint chips) was fixed and browser-verified. Prior: 2026-06-30 — Claude operator-loop review adopted: period auto-creation, inline match/sign-off inside the unit table, and dashboard CTA wiring now lead the build; room manager follows after the operational loop.
+**Current-state override — 2026-07-18:** This long handoff is historical. Do not use its
+branch, "pick up here," authentication, environment, or next-task sections as current
+instructions. Current product truth is `docs/REQUIREMENTS.md`; current work selection
+starts in `docs/ACTIVE-WORK.md`, with executable Chat/WhatsApp detail in
+`docs/requirements/CHAT-WHATSAPP.md`. Scheduled jobs remain active. Production `main`
+is at merge `9c6d1c7` or later.
+
+Current shipped access model: public `/` + WhatsApp/legal pages; Google-only approved
+staff authentication; protected `/staff` with Chatbox, Payments, and Admin; logout
+returns to the public site. No password login or public signup.
+
+**Historical snapshot last updated:** 2026-07-01 — operator-loop stabilization pass: dashboard rollups were split into matched vs unmatched money, property drill-down now preserves period context, room-manager create/save flows were extended, and the units-table matching drawer runtime error (duplicate React keys in hint chips) was fixed and browser-verified. Prior: 2026-06-30 — Claude operator-loop review adopted: period auto-creation, inline match/sign-off inside the unit table, and dashboard CTA wiring now lead the build; room manager follows after the operational loop.
 **Repo:** github.com/sanelen/whatsapp_project
 **Local folder:** `/Users/macdaddy/Documents/DEV/HambaCustomerService`
-**Working branch:** `codex/monthly-payments`
-**Production branch:** `main` (currently at `2174bde`, == working branch tip)
+**Historical working branch:** `codex/monthly-payments` (do not revive from this note)
+**Production branch:** `main`
 **Vercel project:** `whatsapp-project` (team "sanele's projects") — production **READY**
 **Supabase project:** `hambatrading` (ref `ddlykzackuehdexldazv`, eu-central-1, ACTIVE_HEALTHY)
 **Linear project:** WhatsApp Tenant Assistant Guardrails (team Automatemylife)
 
-> Read this top-to-bottom to resume. The "Pick up here" section at the bottom is the
-> shortest path back into the work.
+> Do not resume from this file. Read `docs/ACTIVE-WORK.md` first.
 
 ---
 
@@ -677,7 +687,7 @@ Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (app
 
 ---
 
-## 8. Pick up here (fastest resume path)
+## 8. Historical pick-up list (retired — do not execute)
 
 1. `cd /Users/macdaddy/Documents/DEV/HambaCustomerService` — confirm branch + clean tree.
 2. **Start the next payments slice from the operator loop, in this order:**
@@ -718,7 +728,10 @@ Migration: `supabase/migrations/20260630000000_add_match_signoff_audit.sql` (app
 
 ---
 
-## 9. Authentication (added/completed 2026-05-30, AUT-16)
+## 9. Historical authentication notes (superseded 2026-07-17)
+
+The text below records the earlier design. It is superseded by Google-only approved
+email authentication, public landing/legal routes, and the protected `/staff` hub.
 
 Supabase Auth — **Google OAuth + email/password**, open sign-up, gating everything
 except `/login` and `/auth/*`. Code shipped to `main` in earlier AUT-16 work; dashboard

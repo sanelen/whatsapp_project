@@ -14,7 +14,9 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3001](http://localhost:3001) with your browser to see the result.
+If another local Hamba service already owns that port, use
+`npm run dev -- --port 3002` and open `http://localhost:3002`.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

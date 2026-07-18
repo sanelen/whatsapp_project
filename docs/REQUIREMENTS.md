@@ -1,4 +1,4 @@
-Last updated: 2026-07-12
+Last updated: 2026-07-18
 
 # Requirements
 
@@ -6,6 +6,31 @@ This turns the roadmap phases and the owner's voice-note vision into concrete,
 testable requirements per capability. Pair with [ARCHITECTURE.md](./ARCHITECTURE.md)
 (how it's built) and [ROADMAP.md](./ROADMAP.md) (build order and status). Status
 tags: **Shipped**, **Partial**, **Planned**.
+
+## 0. Requirement authority and current product boundary
+
+This file is the authoritative requirement catalogue. `docs/ACTIVE-WORK.md` and the
+linked workstream requirement file define what may be picked up next. Dated handovers, audits,
+reviews, voice-note transcripts, wireframes, and branch names are historical context;
+they are not an automatic backlog and cannot reactivate work by themselves.
+
+Approved product boundary after the 2026-07-17 production review:
+
+- **Public:** `/`, WhatsApp tenant contact, `/privacy`, `/terms`, and
+  `/data-deletion` require no sign-in.
+- **Staff:** `/staff` is the protected hub and exposes exactly three destinations:
+  Chatbox (`/property-assistance`), Payments (`/monthly-payments`), and Admin
+  (`/admin/leases`).
+- **Authentication:** Google OAuth only, restricted by the server-side approved-email
+  allowlist. No password login, public signup, or automatic account creation.
+- **Visual baseline:** the cloud/powder-blue field, translucent white panels, deep
+  navy navigation, and restrained shadows shipped on 2026-07-17 are the approved
+  foundation. Future UI work should refine that system, not replace it without a new
+  owner-approved requirement.
+- **Workstream status:** Chat/WhatsApp foundation work is Active through
+  `docs/requirements/CHAT-WHATSAPP.md`. Tenant offboarding, property photo galleries,
+  `summary_memory`, resumable uploads, and other Planned items remain deferred unless
+  explicitly promoted in `docs/ACTIVE-WORK.md`.
 
 ## 1. Property Assistance (chatbot workspace)
 
@@ -173,8 +198,8 @@ tags: **Shipped**, **Partial**, **Planned**.
   compact month switcher and summary rail; all seven columns now fit at
   1440px) — see
   `docs/audits/screenshots/2026-07-12-{hub,reference-pool}-density-{before,after}-fixture.png`.
-  Pass-2 treatment now covers every payments screen; owner sanity-check on
-  localhost:3000 outstanding.
+  Pass-2 treatment now covers every payments screen; owner sanity-check on the
+  current local dev URL remains outstanding.
 - NFR-2.2 **Shipped** — Navigation safety: every payments page must expose a clear
   path back (dashboard/locations/units/room-manager/reference-pool), verified by
   `e2e/navigation-safety.spec.ts`.
@@ -191,17 +216,32 @@ tags: **Shipped**, **Partial**, **Planned**.
   rounded controls, restrained shadows, and consistent responsive behavior. The
   refresh preserves existing routes, data, matching, import, and chat behavior.
 
-## 3. WhatsApp Tenant Assistant (planning only)
+## 3. WhatsApp Tenant Assistant (active foundation)
 
-- FR-3.1 **Planned** — Guardrailed conversation flow: greet → detect intent →
-  interested / servicing (deferred) / leaving → human takeover from any branch.
-- FR-3.2 **Planned** — Rebuild into `src/` (Linear AUT-15 direction confirmed by
-  owner) rather than reviving the removed Twilio platform as-is.
-- FR-3.3 **Planned** — Reuse the existing KB/retrieval pipeline for grounded
-  responses, scoped per property.
+- FR-3.1 **Active** — Build the provider-neutral assistant into the current `src/`
+  application. Do not restore the removed nested Twilio platform as the production
+  architecture.
+- FR-3.2 **Active** — Persist inbound conversations and messages in a durable,
+  server-only Inbox repository before adding automated reply behavior.
+- FR-3.3 **Active** — Persist audited human takeover, manual reply, and bot-resume
+  transitions. Human state always wins over automation.
+- FR-3.4 **Active** — Accept provider-neutral webhook events with signature
+  verification, idempotency, and explicit delivery-state handling. The exact public
+  endpoint remains `/api/whatsapp/webhook`.
+- FR-3.5 **Active** — Build the interested-tenant happy path only after durable
+  storage and takeover controls exist. Responses must use verified, property-scoped
+  truth and escalate rather than invent values.
+- FR-3.6 **Active with safety gate** — Validate through fixtures and a provider
+  sandbox/test sender. Never send a real tenant message or cut over the production
+  number unattended.
+- FR-3.7 **Deferred** — Existing-tenant servicing automation and tenant offboarding
+  remain outside the current workstream.
 
-See [whatsapp-tenant-assistant.md](./roadmap/functionality/whatsapp-tenant-assistant.md)
-and [tenant-conversation-flows.md](./roadmap/functionality/tenant-conversation-flows.md).
+The executable detail lives in
+[CHAT-WHATSAPP.md](./requirements/CHAT-WHATSAPP.md). The older
+[assistant roadmap](./roadmap/functionality/whatsapp-tenant-assistant.md) and
+[conversation flows](./roadmap/functionality/tenant-conversation-flows.md) are design
+context where they do not conflict with it.
 
 ## 4. Tenant Offboarding (planning only)
 
@@ -224,14 +264,24 @@ See [tenant-offboarding.md](./roadmap/functionality/tenant-offboarding.md).
   bypasses RLS. Verified live: anon role denied (42501), service_role reads
   normally, advisor ERROR finding cleared (now INFO "no policy", same as other
   service-role-only tables).
-- FR-5.4 **Shipped; hardened 2026-07-13** — Google OAuth via Supabase Auth gates all
-  routes except `/login` and `/auth/*`. Preview/Production additionally require the
-  Google identity's normalized email to appear in the server-only
-  `AUTH_ALLOWED_EMAILS` allowlist. The login UI does not expose email/password signup.
-- FR-5.5 **Shipped 2026-07-13** — Every successful Google authentication lands on
-  the root workspace chooser. The user explicitly
-  selects **Chatbox** or **Dashboard**; protected-route redirect parameters cannot
-  silently bypass this choice. The chooser also exposes a direct sign-out action.
+- FR-5.4 **Shipped; revised 2026-07-17** — Google OAuth via Supabase Auth protects
+  `/staff`, all internal tools, and protected APIs. The public exceptions are `/`,
+  `/privacy`, `/terms`, `/data-deletion`, `/login`, `/auth/*`, and the exact Meta
+  webhook endpoint. Preview/Production additionally require the Google identity's
+  normalized email to appear in the server-only `AUTH_ALLOWED_EMAILS` allowlist. The
+  login UI exposes neither password login nor signup.
+- FR-5.5 **Shipped; revised 2026-07-17** — Successful staff authentication defaults
+  to `/staff`, while a safe selected protected destination may be preserved through
+  Google OAuth. An already-approved user who reaches `/login` is redirected to
+  `/staff`. The staff hub exposes Chatbox, Payments dashboard, Admin console, a link
+  to the public site, the signed-in identity, and logout.
+- FR-5.6 **Shipped 2026-07-17** — The public landing never renders or links directly
+  to the three internal staff tools. Direct unauthenticated requests to those routes
+  redirect to Google login with a safe internal return path.
+- FR-5.7 **Active governance 2026-07-18** — Automated jobs read this catalogue,
+  `docs/ACTIVE-WORK.md`, and the named workstream requirement file before selecting
+  work. Retired dated briefs cannot override current requirements. A blocked slice
+  moves the job to the next safe Active validation item; it does not disable the job.
 
 ## Cross-cutting open questions
 

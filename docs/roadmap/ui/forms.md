@@ -1,6 +1,6 @@
 # Forms Enhancement Protocol
 
-Last updated: 2026-06-15
+Last updated: 2026-07-18
 
 A standard protocol for every form in the workspace. We do not have a consistent
 form pattern today (inputs are ad-hoc Tailwind markup with little validation), so
@@ -12,7 +12,7 @@ of the accessibility and state handling for free.
 
 | Form | Where | State today |
 |------|-------|-------------|
-| Login / sign-up | `src/app/login/login-form.tsx` | exists; has friendly error mapping |
+| Staff Google sign-in | `src/app/login/login-form.tsx` | exists; Google-only approved-email flow, no password or public sign-up |
 | Create/edit organization | workspace | basic |
 | Create/edit property | workspace | basic; needs new property-detail fields |
 | Create/edit **unit** | workspace | **new** — see [property details](../functionality/property-details.md) |
