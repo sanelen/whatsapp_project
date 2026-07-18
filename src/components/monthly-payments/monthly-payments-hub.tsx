@@ -75,12 +75,23 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
     });
   }
 
-  function monthBarHeight(month: MonthlyPaymentsDashboardSnapshot['recentMonths'][number]): string {
-    if (month.expectedAmount > 0) return progressWidth(month.coverageRate);
-    if (month.collectedAmount > 0 && maxMonthCollected > 0) {
-      return progressWidth(month.collectedAmount / maxMonthCollected);
+  function visibleBarHeight(rate: number, hasMoney: boolean): string {
+    if (!hasMoney) return '0%';
+    return `${Math.max(10, Math.min(100, Math.round(rate * 100)))}%`;
+  }
+
+  function importedBarHeight(month: MonthlyPaymentsDashboardSnapshot['recentMonths'][number]): string {
+    if (month.expectedAmount > 0) {
+      return visibleBarHeight(month.collectedAmount / month.expectedAmount, month.collectedAmount > 0);
     }
-    return '0%';
+    return visibleBarHeight(
+      maxMonthCollected > 0 ? month.collectedAmount / maxMonthCollected : 0,
+      month.collectedAmount > 0
+    );
+  }
+
+  function matchedBarHeight(month: MonthlyPaymentsDashboardSnapshot['recentMonths'][number]): string {
+    return visibleBarHeight(month.coverageRate, month.rollingTotal.matchedCollectedAmount > 0);
   }
 
   function moveSelectedMonth(direction: -1 | 1) {
@@ -158,16 +169,22 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               />
             ) : null}
 
-            <section className="mt-3 rounded-[14px] border border-[#e7e3d6] bg-white px-3 py-2.5">
+            <section className="mt-3 rounded-[14px] border border-[#cfe3ed] bg-gradient-to-br from-white to-[#f3f9fc] px-3 py-2.5 shadow-[0_10px_28px_rgba(29,78,101,0.06)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[10px] font-bold uppercase tracking-[0.07em] text-[#a39d8d]">
-                  Recent months
-                </p>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.07em] text-[#52758a]">
+                    Recent months
+                  </p>
+                  <div className="flex items-center gap-2 text-[9.5px] font-semibold text-[#52758a]" aria-label="Payment bar legend">
+                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#8fc4da]" />Imported</span>
+                    <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#0b78a8]" />Matched</span>
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={refreshFromDatabase}
                   disabled={isRefreshing}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#e7e3d6] bg-white px-3 text-[12px] font-bold text-[#57534e] disabled:cursor-wait disabled:text-[#a39d8d]"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#b9d8e7] bg-white/90 px-3 text-[12px] font-bold text-[#155e82] shadow-sm transition hover:border-[#79b4cf] hover:bg-[#edf8fc] disabled:cursor-wait disabled:text-[#8da8b7]"
                 >
                   <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : undefined} />
                   Refresh {selectedMonth?.label ?? 'month'}
@@ -176,31 +193,35 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {dashboard.recentMonths.map((month) => {
                   const active = month.key === selectedPeriod;
-                  const metric =
-                    month.expectedAmount > 0
-                      ? formatPercent(month.coverageRate)
-                      : month.collectedAmount > 0
-                        ? formatCompactCurrency(month.collectedAmount)
-                        : '0%';
+                  const importedMetric = formatCompactCurrency(month.collectedAmount);
+                  const matchedMetric = formatPercent(month.coverageRate);
                   return (
                     <button
                       key={month.key}
                       type="button"
                       onClick={() => setSelectedPeriod(month.key)}
-                      className={`min-w-[64px] flex-1 rounded-xl border p-2 text-left ${
-                        active ? 'border-[#1c1a17] bg-[#fbfaf6]' : 'border-[#e7e3d6] bg-white'
+                      aria-label={`${month.label} ${month.key.slice(0, 4)}: ${importedMetric} imported, ${matchedMetric} matched`}
+                      className={`min-w-[70px] flex-1 rounded-xl border p-2 text-left transition ${
+                        active
+                          ? 'border-[#2386b2] bg-[#eaf6fb] shadow-[0_5px_14px_rgba(11,120,168,0.12)]'
+                          : 'border-[#d5e7ef] bg-white/90 hover:border-[#9cc8db] hover:bg-[#f5fbfd]'
                       }`}
                     >
-                      <div className="flex h-5 items-end overflow-hidden rounded bg-[#f1efe9]">
+                      <div className="relative h-5 overflow-hidden rounded bg-[#e8f3f8]">
                         <div
-                          className={`w-full rounded-[3px] ${active ? 'bg-[#0369a1]' : 'bg-[#c7c2b4]'}`}
-                          style={{ height: monthBarHeight(month) }}
+                          className="absolute inset-x-0 bottom-0 rounded-[3px] bg-[#8fc4da]"
+                          style={{ height: importedBarHeight(month) }}
+                        />
+                        <div
+                          className={`absolute inset-x-0 bottom-0 rounded-[3px] ${active ? 'bg-[#075f8b]' : 'bg-[#0b78a8]'}`}
+                          style={{ height: matchedBarHeight(month) }}
                         />
                       </div>
-                      <p className={`mt-1.5 text-[12px] font-bold ${active ? 'text-[#1c1a17]' : 'text-[#8a8578]'}`}>
+                      <p className={`mt-1.5 text-[12px] font-bold ${active ? 'text-[#092f46]' : 'text-[#365b70]'}`}>
                         {month.label}
                       </p>
-                      <p className="mt-0.5 text-[9.5px] text-[#a39d8d]">{metric}</p>
+                      <p className="mt-0.5 text-[9.5px] font-semibold text-[#3e718b]">{importedMetric} in</p>
+                      <p className="mt-0.5 text-[9px] text-[#708f9f]">{matchedMetric} matched</p>
                     </button>
                   );
                 })}

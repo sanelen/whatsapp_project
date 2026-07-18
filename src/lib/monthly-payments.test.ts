@@ -125,12 +125,12 @@ test('buildMonthlyPaymentsDashboardSnapshot summarizes rolling totals and unmatc
   );
 
   assert.equal(snapshot.organizationLabel, 'Hamba Trading');
-  assert.equal(snapshot.monthLabel, 'June 2026');
-  assert.equal(snapshot.rollingTotal.collectedAmount, 4500);
+  assert.equal(snapshot.monthLabel, 'July 2026');
+  assert.equal(snapshot.rollingTotal.collectedAmount, 6700);
   assert.equal(snapshot.rollingTotal.expectedAmount, 6700);
   assert.equal(snapshot.rollingTotal.blockedCount, 1);
-  assert.equal(snapshot.rollingTotal.overdueCount, 1);
-  assert.equal(snapshot.unmatchedReferenceCount, 0);
+  assert.equal(snapshot.rollingTotal.overdueCount, 0);
+  assert.equal(snapshot.unmatchedReferenceCount, 1);
   assert.equal(snapshot.recentMonths.find((month) => month.key === '2026-06')?.collectedAmount, 4500);
   assert.equal(snapshot.locations[0].name, 'Query Heights');
   assert.equal(snapshot.locations[0].paidCount, 1);
@@ -138,10 +138,25 @@ test('buildMonthlyPaymentsDashboardSnapshot summarizes rolling totals and unmatc
   assert.equal(snapshot.recentMonths.find((month) => month.key === '2026-06')?.rollingTotal.paidCount, 1);
 });
 
+test('dashboard selects the next billing period after the 9th and keeps unmatched imports visible', () => {
+  const snapshot = buildMonthlyPaymentsDashboardSnapshot(
+    { organizations, properties, units, periods, references },
+    { currentDate: new Date('2026-06-09T12:00:00.000Z') }
+  );
+
+  const july = snapshot.recentMonths.find((month) => month.key === '2026-07');
+  assert.ok(july);
+  assert.equal(snapshot.monthLabel, 'July 2026');
+  assert.equal(july.isCurrent, true);
+  assert.equal(july.collectedAmount, 6700);
+  assert.equal(july.rollingTotal.matchedCollectedAmount, 4500);
+  assert.equal(july.rollingTotal.unmatchedCollectedAmount, 2200);
+});
+
 test('buildMonthlyPaymentsDashboardSnapshot marks missing properties as empty setup', () => {
   const snapshot = buildMonthlyPaymentsDashboardSnapshot(
     { organizations: [], properties: [], units: [], periods: [], references: [] },
-    { currentDate: new Date('2026-06-20T12:00:00.000Z') }
+    { currentDate: new Date('2026-06-08T12:00:00.000Z') }
   );
 
   assert.equal(snapshot.setupState, 'empty');
@@ -281,7 +296,7 @@ test('FR-2.1/NFR-2.3 [decision: chase list] due excludes pending — money that 
         reference.id === 'ref-3' ? { ...reference, signed_off: false } : reference
       ),
     },
-    { currentDate: new Date('2026-06-20T12:00:00.000Z') }
+    { currentDate: new Date('2026-06-08T12:00:00.000Z') }
   );
   const heights = snapshot.locations.find((location) => location.name === 'Query Heights');
   assert.ok(heights);

@@ -219,7 +219,8 @@ export function buildMonthlyPaymentsDashboardSnapshot(
   options?: { currentDate?: Date; setupState?: MonthlyPaymentsDashboardSnapshot['setupState'] }
 ): MonthlyPaymentsDashboardSnapshot {
   const currentDate = options?.currentDate ?? new Date();
-  const currentMonthStart = toMonthStart(currentDate);
+  const currentBillingPeriodKey = getBillingPeriodForDate(currentDate.toISOString().slice(0, 10));
+  const currentMonthStart = new Date(`${currentBillingPeriodKey}-01T00:00:00Z`);
   const currentMonthKey = formatMonthKey(currentMonthStart);
   const monthStarts = buildMonthStarts(currentMonthStart);
   const properties = input.properties;
@@ -521,7 +522,8 @@ export function buildMonthlyPaymentsDashboardSnapshot(
 
 export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDashboardSnapshot> {
   const admin = getSupabaseAdmin();
-  const currentMonthStart = toMonthStart(new Date());
+  const currentBillingPeriodKey = getBillingPeriodForDate(new Date().toISOString().slice(0, 10));
+  const currentMonthStart = new Date(`${currentBillingPeriodKey}-01T00:00:00Z`);
   await ensurePaymentPeriodsForPeriod({ periodKey: formatMonthKey(currentMonthStart) });
   const historyStart = addMonths(currentMonthStart, -5).toISOString().slice(0, 10);
 
