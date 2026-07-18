@@ -8,21 +8,23 @@ This folder is the planning and implementation strategy hub for the project.
 
 1. **[Active work](./ACTIVE-WORK.md)** — selects the current workstream and links
    its executable requirements.
-2. **[Requirements](./REQUIREMENTS.md)** — the current product contract and status.
-3. **[Chat/WhatsApp requirements](./requirements/CHAT-WHATSAPP.md)** — current
+2. **[Requirement tracker](./REQUIREMENT-TRACKER.md)** — validity, delivery evidence,
+   Linear mapping, and nightly eligibility.
+3. **[Requirements](./REQUIREMENTS.md)** — the current product contract and status.
+4. **[Chat/WhatsApp requirements](./requirements/CHAT-WHATSAPP.md)** — current
    requirements read by the active scheduled implementation job.
-4. **[Roadmap](./ROADMAP.md)** — longer-term phases and deferred ideas; not a job queue.
-5. **[Architecture](./ARCHITECTURE.md)** — the structural view: what runs where,
+5. **[Roadmap](./ROADMAP.md)** — longer-term phases and deferred ideas; not a job queue.
+6. **[Architecture](./ARCHITECTURE.md)** — the structural view: what runs where,
    data model, and pipelines per capability.
-6. **[Linear sync](./LINEAR-SYNC.md)** — how tickets map to roadmap phases and the
+7. **[Linear sync](./LINEAR-SYNC.md)** — how tickets map to roadmap phases and the
    process for keeping them in sync.
-7. **[Latest voice-note brief](./voice-notes/2026-06-14-la-lucia-mall-16.md)** — the
+8. **[Latest voice-note brief](./voice-notes/2026-06-14-la-lucia-mall-16.md)** — the
    current product vision in the owner's words.
-8. **[Latest session handover](./handovers/session-handover-2026-07-12.md)** —
+9. **[Latest session handover](./handovers/session-handover-2026-07-18-requirements-refresh.md)** —
    implementation, live data reconciliation, verification, and restart checklist.
-9. **Design handoff package** — `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
+10. **Design handoff package** — `/Users/macdaddy/Documents/DEV/design_handoff_hamba_roadmap/`
    contains the reviewed wireframe canvas and screen exports for the Phase 7 work.
-10. Then dive into the themed sections below.
+11. Then dive into the themed sections below.
 
 ## Tenant operations (current vision)
 

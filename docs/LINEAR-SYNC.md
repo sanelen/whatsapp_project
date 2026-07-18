@@ -2,9 +2,10 @@ Last updated: 2026-07-18
 
 # Linear Sync
 
-**Status note:** values below are a local snapshot and must be checked against live
-Linear by the scheduled job before it updates an issue. The active implementation
-order comes from `requirements/CHAT-WHATSAPP.md`, not from an old ticket description.
+**Live audit completed 2026-07-18.** Requirement validity and nightly eligibility
+are tracked in [`REQUIREMENT-TRACKER.md`](./REQUIREMENT-TRACKER.md). Linear remains
+the work-management view, but its workflow status does not override the product
+requirement register.
 
 Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 
@@ -12,14 +13,21 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 
 | Ticket | Status (last known) | Maps to | Notes |
 |---|---|---|---|
-| AUT-9 | In Review | [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-known-architectural-debt) | Schema unification (`schema.sql` vs `workspace-schema.sql`) + migration not applied. |
+| AUT-9 | In Review | [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-known-architectural-debt) | Current flattened root schemas still need one clean source of truth; legacy nested-platform claims are not evidence. |
 | AUT-11 | Todo | Phase 2/3 (KB) | Seed knowledge base; structure-agnostic, can run anytime. |
 | AUT-13 | Done | — | Record of the 2026-05-30 deploy fix + env + DeepSeek/Node config session. |
-| AUT-14 | Implemented locally; live ticket sync pending | Phase 6 / [REQUIREMENTS.md FR-5.1](./REQUIREMENTS.md#5-platform--production-readiness) | Vercel Preview/Production variables configured and verified for Supabase, LLM providers, auth allowlist, Gmail OAuth, and Drive Bank Uploads on 2026-07-13. |
-| AUT-15 | Re-scope against live ticket | Phase 7 / [REQUIREMENTS.md §3](./REQUIREMENTS.md#3-whatsapp-tenant-assistant-active-foundation) | Direction is confirmed: build provider-neutral foundations in current `src/`; do not revive the removed nested platform as production architecture. |
+| AUT-14 | Done | Phase 6 / [REQUIREMENTS.md FR-5.1](./REQUIREMENTS.md#5-platform--production-readiness) | Preview and Production runtime configuration and the production flow were verified. |
+| AUT-15 | In Progress | Phase 7 / [REQUIREMENTS.md §3](./REQUIREMENTS.md#3-whatsapp-tenant-assistant-active-foundation) | Provider-neutral events, idempotency, delivery states, and sandbox verification remain. |
 | AUT-16 | Done | [REQUIREMENTS.md FR-5.4/5.5](./REQUIREMENTS.md#5-platform--production-readiness) | Supabase Auth is Google-only with an approved-email allowlist; public legal/landing routes remain open and staff enter through `/staff`. |
-| AUT-17 | In progress | Phase 2–4 (vector retrieval) | Document upload → 768-dim vector retrieval → grounded chat; implementation started 2026-06-04. |
-| AUT-5, 7, 8, 12, 29, 30 | Revalidate live | [Chat/WhatsApp requirements](./requirements/CHAT-WHATSAPP.md) | Use the current requirement IDs and source paths. Any description pointing at removed `SAWhatsApp/platform` paths is stale and must be re-scoped before implementation. |
+| AUT-17 | Backlog | Phase 2–4 (vector retrieval) | The 768-dim upload/retrieval core is shipped; remaining breadth and race-hardening must be re-scoped. |
+| AUT-7, AUT-10, AUT-12 | Backlog | [Chat/WhatsApp requirements](./requirements/CHAT-WHATSAPP.md) | Valid but dependency-gated or deferred; removed nested-platform paths are not current evidence. |
+| AUT-8, AUT-29 | In Progress | [Chat/WhatsApp requirements](./requirements/CHAT-WHATSAPP.md) | Durable inbox state first, then audited takeover/manual reply/resume. |
+| AUT-30 | Todo | [Chat/WhatsApp requirements](./requirements/CHAT-WHATSAPP.md) | Read-only provider/account ownership and rollback audit; no unattended cutover. |
+| AUT-18 | Canceled | — | Unspecified Equal Experts reconnection request is unrelated to the approved Hamba access model. |
+| AUT-20 | Done | [REQUIREMENTS.md §2](./REQUIREMENTS.md#2-monthly-payments-operations) | Payments operator loop is shipped; the umbrella ticket is closed. |
+| AUT-21, AUT-22 | Backlog | Future work | Offboarding and selective HeroUI adoption remain valid but are not general nightly queues. |
+| AUT-32 | In Progress | [Requirement tracker](./REQUIREMENT-TRACKER.md) | Owns the two-day requirements reconciliation and tracker hygiene. |
+| AUT-33 | In Progress | [REQUIREMENTS.md §2](./REQUIREMENTS.md#2-monthly-payments-operations) | Refresh the recent-month strip and surface imported-but-unmatched payments. |
 
 ## Gaps not yet ticketed
 
@@ -45,7 +53,7 @@ These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ti
   reconciliation. Create a Linear ticket to own future policy changes and regression
   fixtures; do not bury account decisions only in implementation notes.
 
-- Combined-payment allocation — **open, no known ticket**. One verified mixed-account
+- Combined-payment allocation — **open, no dedicated ticket**. One verified mixed-account
   R4,400 reference names two rooms and correctly remains unmatched. Define and build
   an explicit split workflow instead of guessing a unit.
 

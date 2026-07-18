@@ -89,7 +89,8 @@ job. The July 2 monthly-payments brief is historical and must not override them.
 
 Before an unattended or scheduled job changes this repository:
 
-1. Read `docs/ACTIVE-WORK.md`, then `docs/REQUIREMENTS.md`.
+1. Read `docs/ACTIVE-WORK.md`, `docs/REQUIREMENT-TRACKER.md`, then
+   `docs/REQUIREMENTS.md`.
 2. For Chat/WhatsApp work, read `docs/requirements/CHAT-WHATSAPP.md` and its linked
    plan, tests, and validation ledger before looking at handovers.
 3. Select only an item marked **Active**. `Planned`, `Deferred`, `Candidate`, and
@@ -104,4 +105,8 @@ Before an unattended or scheduled job changes this repository:
 When an Active implementation item is blocked, continue with the next safe Active
 validation or documentation item and leave a concise handover. Do not disable the
 job or invent work from stale material.
+
+Before finishing, update the matching tracker row and Linear issue with current
+evidence and the exact remaining acceptance criterion. A separate two-day review job
+reconciles the full register; implementation jobs still own their per-run updates.
 <!-- END:codex-job-requirements -->

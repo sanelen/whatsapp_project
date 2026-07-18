@@ -7,6 +7,10 @@ Last confirmed by owner conversation: 2026-07-18
 The scheduled jobs remain active. This file defines which current requirements they
 may select; it does not disable or pause them.
 
+All job selection and completion must reconcile against
+[`REQUIREMENT-TRACKER.md`](./REQUIREMENT-TRACKER.md). A Linear status or old handover
+alone is not proof that a requirement is active or complete.
+
 The active implementation workstream is the Chat/WhatsApp assistant. Its detailed
 requirements and exact order are in
 [`requirements/CHAT-WHATSAPP.md`](./requirements/CHAT-WHATSAPP.md). The job should
