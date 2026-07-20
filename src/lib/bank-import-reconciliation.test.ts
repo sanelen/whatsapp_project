@@ -14,17 +14,17 @@ test('reconciliation scans the current and previous two rent periods', () => {
 
 test('mailbox coverage compares stable file hashes instead of Gmail message ids', () => {
   const summary = summarizeMailboxCoverage({
-    sourceMailbox: 'sanele.main@gmail.com',
+    sourceMailbox: 'sanele.ngcobo@gmail.com',
     destinationMailbox: 'info.hambatrading@gmail.com',
     occurrences: [
-      { mailboxEmail: 'sanele.main@gmail.com', fileSha256: 'a' },
-      { mailboxEmail: 'sanele.main@gmail.com', fileSha256: 'b' },
+      { mailboxEmail: 'sanele.ngcobo@gmail.com', fileSha256: 'a' },
+      { mailboxEmail: 'sanele.ngcobo@gmail.com', fileSha256: 'b' },
       { mailboxEmail: 'info.hambatrading@gmail.com', fileSha256: 'b' },
       { mailboxEmail: 'info.hambatrading@gmail.com', fileSha256: 'c' },
     ],
   });
   assert.deepEqual(summary, {
-    sourceMailbox: 'sanele.main@gmail.com',
+    sourceMailbox: 'sanele.ngcobo@gmail.com',
     destinationMailbox: 'info.hambatrading@gmail.com',
     sourceFiles: 2,
     destinationFiles: 2,
