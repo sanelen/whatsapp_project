@@ -41,12 +41,15 @@ export default function HomePage() {
         <section className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
           <div className="max-w-3xl">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-sky-800">
-              Hamba Customer Service · Hamba Trading
+              Hamba Trading · Property management
             </p>
             <h1 className="mt-4 max-w-2xl text-4xl font-semibold leading-[1.05] text-slate-950 sm:text-6xl">
-              Property help starts here.
+              Hamba Customer Service
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-slate-700 sm:text-lg">
+            <p className="mt-5 text-xl font-semibold text-slate-900 sm:text-2xl">
+              Property help starts here.
+            </p>
+            <p className="mt-3 max-w-2xl text-base leading-7 text-slate-700 sm:text-lg">
               Ask about properties, availability, applications, payments, or tenant support on
               WhatsApp. Hamba Customer Service also helps approved staff reconcile tenant payments
               from authorised Gmail and Google Drive records. Internal operations remain available
