@@ -139,13 +139,15 @@ export async function readImportAuditView(input?: {
 
   const entries = entriesResult.data ?? [];
   const entryFileIds = new Set(entries.map((entry) => entry.file_id as string));
+  const entryIds = entries.map((entry) => entry.id as string);
+  const entryIdSet = new Set(entryIds);
   const files = (filesResult.data ?? []).filter((file) => {
     const metadata = file.raw_metadata as Record<string, unknown> | null;
     if (metadata?.exclusionReason === 'internal_non_rent_account') return false;
-    return entryFileIds.has(file.id as string);
+    const canonicalEntryId = typeof metadata?.canonicalEntryId === 'string' ? metadata.canonicalEntryId : null;
+    return entryFileIds.has(file.id as string) || Boolean(canonicalEntryId && entryIdSet.has(canonicalEntryId));
   });
   const messageIds = files.map((file) => file.message_id as string).filter(Boolean);
-  const entryIds = entries.map((entry) => entry.id as string);
   const propertyIds = Array.from(new Set(entries.map((entry) => entry.property_id as string | null).filter(Boolean))) as string[];
 
   const [messagesResult, referencesResult, propertiesResult] = await Promise.all([
@@ -188,6 +190,15 @@ export async function readImportAuditView(input?: {
     const fileEntries = entriesByFile.get(entry.file_id as string) ?? [];
     fileEntries.push(entry);
     entriesByFile.set(entry.file_id as string, fileEntries);
+  }
+  const entryById = new Map(entries.map((entry) => [entry.id as string, entry]));
+  for (const file of files) {
+    const metadata = file.raw_metadata as Record<string, unknown> | null;
+    const canonicalEntryId = typeof metadata?.canonicalEntryId === 'string' ? metadata.canonicalEntryId : null;
+    const canonicalEntry = canonicalEntryId ? entryById.get(canonicalEntryId) : null;
+    if (canonicalEntry && !entriesByFile.has(file.id as string)) {
+      entriesByFile.set(file.id as string, [canonicalEntry]);
+    }
   }
 
   const auditFiles: ImportAuditFile[] = files.map((file) => {
@@ -252,7 +263,9 @@ export async function readImportAuditView(input?: {
   });
 
   const filteredFiles = sourceFilter === 'all' ? auditFiles : auditFiles.filter((file) => file.source === sourceFilter);
-  const transactions = filteredFiles.flatMap((file) => file.transactions);
+  const transactions = Array.from(
+    new Map(filteredFiles.flatMap((file) => file.transactions).map((transaction) => [transaction.id, transaction])).values()
+  );
   return {
     periodKey,
     periodLabel: formatPeriodLabel(periodKey),
