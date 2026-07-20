@@ -193,15 +193,16 @@ async function finalizeReconciliation(
     const since = new Date();
     since.setUTCDate(since.getUTCDate() - 120);
     const [occurrencesResult, problemFilesResult, entriesResult] = await Promise.all([
-      admin.from('bank_import_file_occurrences').select('mailbox_id,file_sha256').in('mailbox_id', mailboxIds).gte('last_seen_at', since.toISOString()),
+      admin.from('bank_import_file_occurrences').select('mailbox_id,file_id,file_sha256').in('mailbox_id', mailboxIds).gte('last_seen_at', since.toISOString()),
       admin.from('bank_import_files').select('id', { count: 'exact', head: true }).in('parser_status', ['pending', 'failed']),
-      admin.from('bank_import_entries').select('id').eq('organization_id', preparation.organizationId),
+      admin.from('bank_import_entries').select('id,file_id').eq('organization_id', preparation.organizationId).ilike('transaction_type', 'incoming funds'),
     ]);
     if (occurrencesResult.error) throw new Error(`Failed to compare mailbox files: ${occurrencesResult.error.message}`);
     if (problemFilesResult.error) throw new Error(`Failed to count problem import files: ${problemFilesResult.error.message}`);
     if (entriesResult.error) throw new Error(`Failed to load imported entries: ${entriesResult.error.message}`);
 
     const entryIds = (entriesResult.data ?? []).map((entry) => entry.id as string);
+    const relevantFileIds = new Set((entriesResult.data ?? []).map((entry) => entry.file_id as string));
     const referencesResult = entryIds.length
       ? await admin.from('payment_references').select('bank_import_entry_id').in('bank_import_entry_id', entryIds)
       : { data: [], error: null };
@@ -214,7 +215,7 @@ async function finalizeReconciliation(
     const coverage = summarizeMailboxCoverage({
       sourceMailbox,
       destinationMailbox,
-      occurrences: (occurrencesResult.data ?? []).map((row) => ({
+      occurrences: (occurrencesResult.data ?? []).filter((row) => relevantFileIds.has(row.file_id as string)).map((row) => ({
         mailboxEmail: mailboxEmailById.get(row.mailbox_id as string) ?? '',
         fileSha256: row.file_sha256 as string,
       })),

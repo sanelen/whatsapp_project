@@ -202,6 +202,11 @@ test('buildGmailSearchQuery combines attachment, subject, label, and after filte
   assert.match(query, /after:2026\/06\/29/);
 });
 
+test('buildGmailSearchQuery defaults blank payment mailboxes to Capitec subjects', () => {
+  const query = buildGmailSearchQuery({ subject_filter: '', label_filter: '', last_synced_at: null });
+  assert.equal(query, 'has:attachment subject:Capitec');
+});
+
 test('getBillingWindowForPeriod maps a month to the 9th-through-8th working window', () => {
   const window = getBillingWindowForPeriod('2026-06');
 
