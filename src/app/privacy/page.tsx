@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | Hamba Trading",
-  description: "How Hamba Trading handles information in its tenant and property communication tools.",
+  title: "Privacy Policy | Hamba Customer Service",
+  description: "How Hamba Customer Service handles information in Hamba Trading's tenant, payment, and property tools.",
 };
 
-const updated = "16 July 2026";
+const updated = "20 July 2026";
 
 export default function PrivacyPolicyPage() {
   return (
@@ -30,6 +30,12 @@ export default function PrivacyPolicyPage() {
           <PolicySection title="Where information comes from">
             <p>
               We usually collect information directly from you through WhatsApp, our website, application forms, lease documents, payment communications and conversations with authorised staff. We may also receive information from a person you authorise, a payment provider or bank record used to reconcile a payment, a service provider acting for us, or a lawful public or verification source. If information comes from another source, we use it only where reasonably necessary and lawful.
+            </p>
+          </PolicySection>
+
+          <PolicySection title="Google account data">
+            <p>
+              When an authorised Hamba account owner connects Google, Hamba Customer Service uses read-only Gmail and Google Drive access to locate Capitec payment notifications and supporting payment files, compare the two authorised mailboxes, detect missing or duplicate imports, and reconcile payments with tenant records. We do not send email, alter Gmail messages, or use Google account data for advertising. Google account data is available only to approved Hamba staff and service providers needed to operate this reconciliation workflow, is retained only for the operational and legal purposes described here, and may be disconnected by revoking the app&apos;s Google access. Our use and transfer of information received from Google APIs complies with the Google API Services User Data Policy, including its Limited Use requirements.
             </p>
           </PolicySection>
 

@@ -180,6 +180,15 @@ Approved product boundary after the 2026-07-17 production review:
   internal account `7467`, debits, transfers, merchant reservations, and interest
   received create no payment entry or reference. Ambiguous combined-room payments
   remain unmatched for operator review.
+- FR-2.16 **Built 2026-07-20; production activation pending** — A durable payment
+  reconciliation runs every 72 hours, scans the current and previous two billing
+  periods, retries the normal idempotent Gmail import, and records mailbox-level
+  success/failure plus source-to-destination file coverage. Comparison uses PDF
+  SHA-256 identity because forwarding changes Gmail message IDs. The Import Audit
+  page exposes the latest run and its blocker. Recovery may create unmatched
+  payment references but never signs off or guesses a tenant/unit. Activation
+  requires a separate OAuth refresh token for `Sanele.ngcobo@gmail.com`, an active
+  mailbox row, the additive reconciliation migration, and production deployment.
 
 ### Non-functional
 

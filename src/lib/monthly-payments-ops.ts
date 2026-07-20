@@ -492,6 +492,10 @@ export async function autoMatchUnmatchedReferences(input: {
   let ambiguous = 0;
   let unmatchedCount = 0;
   let failed = 0;
+  const matchesByUnit = new Map<
+    string,
+    Array<{ propertyId: string; unitId: string; paymentReferenceId: string }>
+  >();
 
   for (const reference of references) {
     const resolution = resolveAutoMatch(
@@ -524,19 +528,34 @@ export async function autoMatchUnmatchedReferences(input: {
       continue;
     }
 
-    try {
-      await matchReferenceToUnit({
-        propertyId: targetPropertyId,
-        unitId: resolution.unitId,
-        paymentReferenceId: reference.id as string,
-        actor: input.actor,
-        matchMethod: 'auto_reference',
-      });
-      matched += 1;
-    } catch {
-      // e.g. blocked unit / missing period — leave for manual review.
-      failed += 1;
-    }
+    const unitKey = `${targetPropertyId}:${resolution.unitId}`;
+    const unitMatches = matchesByUnit.get(unitKey) ?? [];
+    unitMatches.push({
+      propertyId: targetPropertyId,
+      unitId: resolution.unitId,
+      paymentReferenceId: reference.id as string,
+    });
+    matchesByUnit.set(unitKey, unitMatches);
+  }
+
+  const unitGroups = Array.from(matchesByUnit.values());
+  const groupBatchSize = 6;
+  for (let offset = 0; offset < unitGroups.length; offset += groupBatchSize) {
+    await Promise.all(unitGroups.slice(offset, offset + groupBatchSize).map(async (unitMatches) => {
+      for (const unitMatch of unitMatches) {
+        try {
+          await matchReferenceToUnit({
+            ...unitMatch,
+            actor: input.actor,
+            matchMethod: 'auto_reference',
+          });
+          matched += 1;
+        } catch {
+          // e.g. blocked unit / missing period — leave for manual review.
+          failed += 1;
+        }
+      }
+    }));
   }
 
   return { scanned: references.length, matched, ambiguous, unmatched: unmatchedCount, failed };

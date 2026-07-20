@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
 
 const nextConfig: NextConfig = {
   turbopack: {
@@ -18,7 +19,19 @@ const nextConfig: NextConfig = {
   },
   // Keep document parsers out of the server bundle. `pdf-parse`/`pdfjs-dist`
   // break when bundled and must be required at runtime from node_modules.
-  serverExternalPackages: ['pdf-parse', 'pdfjs-dist', 'mammoth', 'xlsx'],
+  serverExternalPackages: [
+    'pdf-parse',
+    'pdfjs-dist',
+    'mammoth',
+    'xlsx',
+    'workflow',
+    '@workflow/core',
+    '@workflow/world-vercel',
+    '@vercel/queue',
+    '@vercel/oidc',
+    '@vercel/cli-config',
+    'xdg-app-paths',
+  ],
 };
 
-export default nextConfig;
+export default withWorkflow(nextConfig);

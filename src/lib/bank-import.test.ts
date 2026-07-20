@@ -202,6 +202,11 @@ test('buildGmailSearchQuery combines attachment, subject, label, and after filte
   assert.match(query, /after:2026\/06\/29/);
 });
 
+test('buildGmailSearchQuery defaults blank payment mailboxes to Capitec subjects', () => {
+  const query = buildGmailSearchQuery({ subject_filter: '', label_filter: '', last_synced_at: null });
+  assert.equal(query, 'has:attachment subject:Capitec');
+});
+
 test('getBillingWindowForPeriod maps a month to the 9th-through-8th working window', () => {
   const window = getBillingWindowForPeriod('2026-06');
 
@@ -261,6 +266,7 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
         buildGmailOAuthConsentUrl({
           redirectUri: 'http://localhost:3001/api/monthly-payments/import/google-cloud',
           state: 'monthly-payments-bank-import',
+          loginHint: 'info.hambatrading@gmail.com',
         })
       );
 
@@ -272,7 +278,8 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
         'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly'
       );
       assert.equal(url.searchParams.get('access_type'), 'offline');
-      assert.equal(url.searchParams.get('prompt'), 'consent');
+      assert.equal(url.searchParams.get('prompt'), 'consent select_account');
+      assert.equal(url.searchParams.get('login_hint'), 'info.hambatrading@gmail.com');
       assert.equal(url.searchParams.get('state'), 'monthly-payments-bank-import');
     }
   );

@@ -22,6 +22,18 @@ export function isPublicPath(pathname: string): boolean {
   );
 }
 
+export function isCronAuthorizedPath(
+  pathname: string,
+  authorizationHeader: string | null,
+  expectedSecret = process.env.BANK_IMPORT_CRON_SECRET?.trim() || process.env.CRON_SECRET?.trim()
+): boolean {
+  return Boolean(
+    pathname === '/api/monthly-payments/import/reconcile' &&
+    expectedSecret &&
+    authorizationHeader === `Bearer ${expectedSecret}`
+  );
+}
+
 export async function proxy(request: NextRequest) {
   if (isLocalAuthBypassEnabled()) {
     if (request.nextUrl.pathname === '/login') {
@@ -30,8 +42,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const { user, response } = await getProxySession(request);
   const { pathname } = request.nextUrl;
+  if (isCronAuthorizedPath(pathname, request.headers.get('authorization'))) {
+    return NextResponse.next();
+  }
+
+  const { user, response } = await getProxySession(request);
   const isAllowed = Boolean(user && isAuthUserAllowed(user));
 
   if (!isAllowed && !isPublicPath(pathname)) {

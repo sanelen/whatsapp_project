@@ -1,5 +1,6 @@
 import { getBillingWindowForPeriod } from './bank-import';
 import { getSupabaseAdmin } from './supabase';
+import { readLatestReconciliationRun, type ReconciliationRunView } from './bank-import-reconciliation';
 
 export type ImportAuditSource = 'gmail' | 'drive-bank' | 'drive' | 'unknown';
 
@@ -27,6 +28,8 @@ export type ImportAuditFile = {
   parserStatus: string;
   importStatus: string;
   driveStatus: 'in-drive' | 'archived' | 'not-archived';
+  databaseStatus: 'stored' | 'missing';
+  matchStatus: 'matched' | 'unmatched' | 'incomplete' | 'not-applicable';
   driveFolderPath: string | null;
   hashShort: string;
   transactions: ImportAuditTransaction[];
@@ -49,6 +52,7 @@ export type ImportAuditView = {
     unmatched: number;
     incomplete: number;
   };
+  reconciliation: ReconciliationRunView | null;
 };
 
 function monthKey(value: Date) {
@@ -115,13 +119,11 @@ export async function readImportAuditView(input?: {
   const sourceFilter = validSources.has(input?.source ?? '')
     ? (input?.source as ImportAuditView['sourceFilter'])
     : 'all';
-  const monthEnd = new Date(`${periodKey}-01T00:00:00Z`);
-  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
-
-  const [entriesResult, filesResult] = await Promise.all([
+  const [entriesResult, filesResult, reconciliation] = await Promise.all([
     admin
       .from('bank_import_entries')
       .select('id,file_id,transaction_date,reference,amount,destination_account_suffix,property_id')
+      .ilike('transaction_type', 'incoming funds')
       .gte('transaction_date', billingWindow.startDate)
       .lte('transaction_date', billingWindow.endDate)
       .order('transaction_date', { ascending: false }),
@@ -130,19 +132,22 @@ export async function readImportAuditView(input?: {
       .select('id,message_id,file_name,mime_type,file_sha256,parser_status,drive_file_id,drive_folder_path,drive_archived_at,raw_metadata,created_at')
       .order('created_at', { ascending: false })
       .limit(300),
+    readLatestReconciliationRun(),
   ]);
   if (entriesResult.error) throw new Error(`Failed to load import audit entries: ${entriesResult.error.message}`);
   if (filesResult.error) throw new Error(`Failed to load import audit files: ${filesResult.error.message}`);
 
   const entries = entriesResult.data ?? [];
   const entryFileIds = new Set(entries.map((entry) => entry.file_id as string));
+  const entryIds = entries.map((entry) => entry.id as string);
+  const entryIdSet = new Set(entryIds);
   const files = (filesResult.data ?? []).filter((file) => {
     const metadata = file.raw_metadata as Record<string, unknown> | null;
     if (metadata?.exclusionReason === 'internal_non_rent_account') return false;
-    return entryFileIds.has(file.id as string) || ((file.created_at as string) >= `${periodKey}-01` && (file.created_at as string) < monthEnd.toISOString());
+    const canonicalEntryId = typeof metadata?.canonicalEntryId === 'string' ? metadata.canonicalEntryId : null;
+    return entryFileIds.has(file.id as string) || Boolean(canonicalEntryId && entryIdSet.has(canonicalEntryId));
   });
   const messageIds = files.map((file) => file.message_id as string).filter(Boolean);
-  const entryIds = entries.map((entry) => entry.id as string);
   const propertyIds = Array.from(new Set(entries.map((entry) => entry.property_id as string | null).filter(Boolean))) as string[];
 
   const [messagesResult, referencesResult, propertiesResult] = await Promise.all([
@@ -186,6 +191,15 @@ export async function readImportAuditView(input?: {
     fileEntries.push(entry);
     entriesByFile.set(entry.file_id as string, fileEntries);
   }
+  const entryById = new Map(entries.map((entry) => [entry.id as string, entry]));
+  for (const file of files) {
+    const metadata = file.raw_metadata as Record<string, unknown> | null;
+    const canonicalEntryId = typeof metadata?.canonicalEntryId === 'string' ? metadata.canonicalEntryId : null;
+    const canonicalEntry = canonicalEntryId ? entryById.get(canonicalEntryId) : null;
+    if (canonicalEntry && !entriesByFile.has(file.id as string)) {
+      entriesByFile.set(file.id as string, [canonicalEntry]);
+    }
+  }
 
   const auditFiles: ImportAuditFile[] = files.map((file) => {
     const message = messagesById.get(file.message_id as string);
@@ -215,11 +229,19 @@ export async function readImportAuditView(input?: {
         amount: toMoney(entry.amount as number | string),
         accountSuffix: (entry.destination_account_suffix as string) || null,
         propertyName: entry.property_id ? propertyNameById.get(entry.property_id as string) ?? null : null,
-        databaseStatus: reference ? 'stored' : 'missing',
+        databaseStatus: 'stored',
         matchStatus,
         unitLabel: unitId ? unitLabelById.get(unitId) ?? null : null,
       };
     });
+    const databaseStatus: ImportAuditFile['databaseStatus'] = transactions.length > 0 ? 'stored' : 'missing';
+    const matchStatus: ImportAuditFile['matchStatus'] = transactions.length === 0
+      ? 'not-applicable'
+      : transactions.some((transaction) => transaction.matchStatus === 'incomplete')
+        ? 'incomplete'
+        : transactions.some((transaction) => transaction.matchStatus === 'unmatched')
+          ? 'unmatched'
+          : 'matched';
     return {
       id: file.id as string,
       fileName: file.file_name as string,
@@ -232,6 +254,8 @@ export async function readImportAuditView(input?: {
       parserStatus: (file.parser_status as string) || 'pending',
       importStatus: (message?.import_status as string | undefined) ?? 'unknown',
       driveStatus: source === 'drive-bank' ? 'in-drive' : file.drive_file_id ? 'archived' : 'not-archived',
+      databaseStatus,
+      matchStatus,
       driveFolderPath: (file.drive_folder_path as string | null) ?? null,
       hashShort: String(file.file_sha256 ?? '').slice(0, 10),
       transactions,
@@ -239,7 +263,9 @@ export async function readImportAuditView(input?: {
   });
 
   const filteredFiles = sourceFilter === 'all' ? auditFiles : auditFiles.filter((file) => file.source === sourceFilter);
-  const transactions = filteredFiles.flatMap((file) => file.transactions);
+  const transactions = Array.from(
+    new Map(filteredFiles.flatMap((file) => file.transactions).map((transaction) => [transaction.id, transaction])).values()
+  );
   return {
     periodKey,
     periodLabel: formatPeriodLabel(periodKey),
@@ -257,5 +283,6 @@ export async function readImportAuditView(input?: {
       unmatched: transactions.filter((transaction) => transaction.matchStatus === 'unmatched').length,
       incomplete: transactions.filter((transaction) => transaction.matchStatus === 'incomplete').length,
     },
+    reconciliation,
   };
 }

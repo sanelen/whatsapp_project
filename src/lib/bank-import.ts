@@ -629,6 +629,11 @@ export function buildGmailSearchQuery(
   const parts = ['has:attachment'];
   if (mailbox.subject_filter.trim()) {
     parts.push(`subject:"${mailbox.subject_filter.trim().replace(/"/g, '')}"`);
+  } else {
+    // These mailboxes are payment-import sources, not general-purpose inboxes.
+    // A blank database filter must fail narrow instead of importing every
+    // attachment in the account.
+    parts.push('subject:Capitec');
   }
   if (mailbox.label_filter.trim()) {
     const labelFilter = mailbox.label_filter.trim();
@@ -788,6 +793,8 @@ export function getGmailIntegrationStatus() {
   const oauthClientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
   const oauthClientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET?.trim();
   const oauthRefreshToken = process.env.GMAIL_OAUTH_REFRESH_TOKEN?.trim();
+  const sourceMailboxEmail = process.env.BANK_IMPORT_SOURCE_MAILBOX_EMAIL?.trim().toLowerCase();
+  const sourceOauthRefreshToken = process.env.GMAIL_SOURCE_OAUTH_REFRESH_TOKEN?.trim();
   const serviceAccountClientEmail = process.env.GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL?.trim();
   const serviceAccountPrivateKey = process.env.GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY?.trim();
 
@@ -800,6 +807,8 @@ export function getGmailIntegrationStatus() {
     preferredAuthMode: hasOAuthClient && hasOAuthRefreshToken ? 'oauth_refresh_token' : hasServiceAccount ? 'service_account' : null,
     hasOAuthClient,
     hasOAuthRefreshToken,
+    sourceMailboxEmail: sourceMailboxEmail || null,
+    hasSourceOAuthRefreshToken: Boolean(sourceOauthRefreshToken),
     hasServiceAccount,
     missing: {
       oauthClientId: !oauthClientId,
@@ -811,7 +820,7 @@ export function getGmailIntegrationStatus() {
   };
 }
 
-export function buildGmailOAuthConsentUrl(input: { redirectUri: string; state?: string }) {
+export function buildGmailOAuthConsentUrl(input: { redirectUri: string; state?: string; loginHint?: string }) {
   const clientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
   if (!clientId) {
     throw new Error('Missing GMAIL_OAUTH_CLIENT_ID.');
@@ -823,9 +832,12 @@ export function buildGmailOAuthConsentUrl(input: { redirectUri: string; state?: 
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', BANK_IMPORT_OAUTH_SCOPES);
   url.searchParams.set('access_type', 'offline');
-  url.searchParams.set('prompt', 'consent');
+  url.searchParams.set('prompt', 'consent select_account');
   if (input.state) {
     url.searchParams.set('state', input.state);
+  }
+  if (input.loginHint) {
+    url.searchParams.set('login_hint', input.loginHint);
   }
   return url.toString();
 }
@@ -862,10 +874,19 @@ export async function exchangeGmailOAuthCode(input: { code: string; redirectUri:
   };
 }
 
-async function getGoogleOAuthRefreshAccessToken(): Promise<GoogleAccessTokenResult | null> {
+function getOAuthRefreshTokenForMailbox(userEmail: string) {
+  const normalizedEmail = userEmail.trim().toLowerCase();
+  const sourceMailboxEmail = process.env.BANK_IMPORT_SOURCE_MAILBOX_EMAIL?.trim().toLowerCase();
+  if (sourceMailboxEmail && normalizedEmail === sourceMailboxEmail) {
+    return process.env.GMAIL_SOURCE_OAUTH_REFRESH_TOKEN?.trim() || null;
+  }
+  return process.env.GMAIL_OAUTH_REFRESH_TOKEN?.trim() || null;
+}
+
+async function getGoogleOAuthRefreshAccessToken(userEmail: string): Promise<GoogleAccessTokenResult | null> {
   const clientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
   const clientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET?.trim();
-  const refreshToken = process.env.GMAIL_OAUTH_REFRESH_TOKEN?.trim();
+  const refreshToken = getOAuthRefreshTokenForMailbox(userEmail);
   if (!clientId || !clientSecret || !refreshToken) {
     return null;
   }
@@ -945,7 +966,7 @@ async function getGoogleServiceAccountAccessToken(userEmail: string): Promise<Go
 async function getGoogleAccessToken(userEmail: string) {
   let oauthRefreshError: Error | null = null;
   try {
-    const oauthToken = await getGoogleOAuthRefreshAccessToken();
+    const oauthToken = await getGoogleOAuthRefreshAccessToken(userEmail);
     if (oauthToken) return oauthToken;
   } catch (error) {
     // Don't die yet — a configured service account can still serve the import.
@@ -1292,18 +1313,39 @@ function buildImportStoragePath(input: {
 }
 
 async function createBankImportFile(input: {
+  organizationId: string;
+  mailboxId: string;
   messageId: string;
+  source: 'gmail' | 'drive' | 'bank';
   attachment: ImportedAttachment;
   fileSha256: string;
   storagePath: string;
 }) {
   const admin = getSupabaseAdmin();
+  const recordOccurrence = async (fileId: string) => {
+    const { error } = await admin.from('bank_import_file_occurrences').upsert(
+      {
+        organization_id: input.organizationId,
+        mailbox_id: input.mailboxId,
+        message_id: input.messageId,
+        file_id: fileId,
+        file_sha256: input.fileSha256,
+        source: input.source,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'mailbox_id,message_id,file_sha256' }
+    );
+    if (error) throw new Error(`Failed to record bank import file occurrence: ${error.message}`);
+  };
   const { data: existingFile } = await admin
     .from('bank_import_files')
     .select('id')
     .eq('file_sha256', input.fileSha256)
     .maybeSingle<BankImportFileRow>();
-  if (existingFile) return { file: existingFile, duplicate: true };
+  if (existingFile) {
+    await recordOccurrence(existingFile.id);
+    return { file: existingFile, duplicate: true };
+  }
 
   const { data: existingAttachmentFile } = await admin
     .from('bank_import_files')
@@ -1311,7 +1353,10 @@ async function createBankImportFile(input: {
     .eq('message_id', input.messageId)
     .eq('gmail_attachment_id', input.attachment.sourceId)
     .maybeSingle<BankImportFileRow>();
-  if (existingAttachmentFile) return { file: existingAttachmentFile, duplicate: true };
+  if (existingAttachmentFile) {
+    await recordOccurrence(existingAttachmentFile.id);
+    return { file: existingAttachmentFile, duplicate: true };
+  }
 
   const { data, error } = await admin
     .from('bank_import_files')
@@ -1332,7 +1377,22 @@ async function createBankImportFile(input: {
     .select('id')
     .single<BankImportFileRow>();
 
-  if (error) throw new Error(`Failed to insert bank import file: ${error.message}`);
+  if (error) {
+    if (error.code === '23505' || /duplicate key/i.test(error.message)) {
+      const { data: racedFile, error: racedFileError } = await admin
+        .from('bank_import_files')
+        .select('id')
+        .eq('file_sha256', input.fileSha256)
+        .maybeSingle<BankImportFileRow>();
+      if (racedFileError) throw new Error(`Failed to load concurrently inserted bank import file: ${racedFileError.message}`);
+      if (racedFile) {
+        await recordOccurrence(racedFile.id);
+        return { file: racedFile, duplicate: true };
+      }
+    }
+    throw new Error(`Failed to insert bank import file: ${error.message}`);
+  }
+  await recordOccurrence(data.id);
   return { file: data, duplicate: false };
 }
 
@@ -1354,28 +1414,24 @@ async function markBankImportFile(input: {
   if (error) throw new Error(`Failed to update bank import file ${input.fileId}: ${error.message}`);
 }
 
-async function markExcludedBankImportFile(fileId: string, accountSuffixValue: string) {
+async function linkBankImportFileToCanonicalEntry(fileId: string, canonicalEntryId: string) {
   const admin = getSupabaseAdmin();
   const { data: file, error: readError } = await admin
     .from('bank_import_files')
     .select('raw_metadata')
     .eq('id', fileId)
     .single();
-  if (readError) throw new Error(`Failed to load excluded bank import file ${fileId}: ${readError.message}`);
+  if (readError) throw new Error(`Failed to load alternate evidence file ${fileId}: ${readError.message}`);
   const { error } = await admin
     .from('bank_import_files')
     .update({
-      parser_status: 'unsupported',
-      storage_path: '',
-      parsed_at: new Date().toISOString(),
       raw_metadata: {
         ...((file?.raw_metadata as Record<string, unknown> | null) ?? {}),
-        excludedAccountSuffix: accountSuffixValue,
-        exclusionReason: 'internal_non_rent_account',
+        canonicalEntryId,
       },
     })
     .eq('id', fileId);
-  if (error) throw new Error(`Failed to exclude bank import file ${fileId}: ${error.message}`);
+  if (error) throw new Error(`Failed to link alternate evidence file ${fileId}: ${error.message}`);
 }
 
 async function upsertBankImportEntry(input: {
@@ -1400,7 +1456,10 @@ async function upsertBankImportEntry(input: {
       (candidate.transaction_time as string).slice(0, 5) === incomingMinute &&
       canonicalizeBankReference(candidate.reference as string) === incomingReference
     );
-    if (existingCrossSource) return existingCrossSource.id as string;
+    if (existingCrossSource) {
+      await linkBankImportFileToCanonicalEntry(input.fileId, existingCrossSource.id as string);
+      return existingCrossSource.id as string;
+    }
   }
   const fingerprint = buildEntryFingerprint({
     organizationId: input.organizationId,
@@ -1576,6 +1635,37 @@ async function processImportedAttachment(input: {
   propertyMappings: BankImportPropertyMappingRow[];
   unitMatchHints: BankImportUnitMatchHintRow[];
 }) {
+  const isPdf =
+    input.attachment.mimeType === 'application/pdf' || input.attachment.fileName.toLowerCase().endsWith('.pdf');
+  if (!isPdf) {
+    return {
+      duplicate: false,
+      fileStored: false,
+      entryCreated: false,
+      paymentReferenceCreated: false,
+      ignored: true,
+    };
+  }
+
+  const extractedText = await extractPdfText(input.attachment.data);
+  const parsedEntry = parseCapitecTransactionText(extractedText);
+  if (
+    !parsedEntry ||
+    !isIncomingFunds(parsedEntry) ||
+    isExcludedBankAccount(parsedEntry) ||
+    isExcludedNonRentCredit(parsedEntry) ||
+    !isEntryInsideBillingWindow(parsedEntry, input.billingWindow) ||
+    !isEntryOnOrBeforeToday(parsedEntry)
+  ) {
+    return {
+      duplicate: false,
+      fileStored: false,
+      entryCreated: false,
+      paymentReferenceCreated: false,
+      ignored: true,
+    };
+  }
+
   const fileSha256 = sha256(input.attachment.data);
   const storagePath = buildImportStoragePath({
     organizationId: input.organizationId,
@@ -1586,34 +1676,11 @@ async function processImportedAttachment(input: {
     fileName: input.attachment.fileName,
   });
 
-  const isPdf =
-    input.attachment.mimeType === 'application/pdf' || input.attachment.fileName.toLowerCase().endsWith('.pdf');
-  if (isPdf) {
-    const extractedText = await extractPdfText(input.attachment.data);
-    const movement = parseCapitecAccountMovementText(extractedText);
-    if (
-      movement?.direction === 'outgoing' &&
-      EXCLUDED_BANK_ACCOUNT_SUFFIXES.has(movement.accountSuffix)
-    ) {
-      const excludedFile = await createBankImportFile({
-        messageId: input.messageRowId,
-        attachment: input.attachment,
-        fileSha256,
-        storagePath,
-      });
-      await markExcludedBankImportFile(excludedFile.file.id, movement.accountSuffix);
-      return {
-        duplicate: excludedFile.duplicate,
-        fileStored: false,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-  }
-
   const { file, duplicate } = await createBankImportFile({
+    organizationId: input.organizationId,
+    mailboxId: input.mailbox.id,
     messageId: input.messageRowId,
+    source: input.sourceFolder,
     attachment: input.attachment,
     fileSha256,
     storagePath,
@@ -1621,46 +1688,29 @@ async function processImportedAttachment(input: {
 
   if (duplicate) {
     let paymentReferenceCreated = false;
+    const integrityError = validateParsedImportEntry(parsedEntry);
 
-    if (isPdf) {
-      const extractedText = await extractPdfText(input.attachment.data);
-      const parsedEntry = parseCapitecTransactionText(extractedText);
-      const integrityError = parsedEntry ? validateParsedImportEntry(parsedEntry) : 'Unsupported PDF payload';
+    if (!integrityError) {
+      const resolved = resolveImportContext({
+        entry: parsedEntry,
+        organizationId: input.organizationId,
+        propertyMappings: input.propertyMappings,
+        unitMatchHints: input.unitMatchHints,
+      });
+      const entryId = await syncEntryForExistingFile({
+        fileId: file.id,
+        organizationId: input.organizationId,
+        entry: parsedEntry,
+        resolved,
+      });
 
-      if (parsedEntry && (isExcludedBankAccount(parsedEntry) || isExcludedNonRentCredit(parsedEntry))) {
-        return {
-          duplicate: true,
-          fileStored: false,
-          entryCreated: false,
-          paymentReferenceCreated: false,
-          ignored: true,
-        };
-      }
-
-      if (parsedEntry && !integrityError && !isExcludedBankAccount(parsedEntry) && !isExcludedNonRentCredit(parsedEntry) && isEntryInsideBillingWindow(parsedEntry, input.billingWindow)) {
-        const resolved = resolveImportContext({
-          entry: parsedEntry,
-          organizationId: input.organizationId,
-          propertyMappings: input.propertyMappings,
-          unitMatchHints: input.unitMatchHints,
-        });
-        const entryId = await syncEntryForExistingFile({
-          fileId: file.id,
-          organizationId: input.organizationId,
-          entry: parsedEntry,
-          resolved,
-        });
-
-        if (isIncomingFunds(parsedEntry)) {
-          await upsertPaymentReferenceFromImport({
-            organizationId: input.organizationId,
-            propertyId: resolved.propertyId,
-            bankImportEntryId: entryId,
-            entry: parsedEntry,
-          });
-          paymentReferenceCreated = true;
-        }
-      }
+      await upsertPaymentReferenceFromImport({
+        organizationId: input.organizationId,
+        propertyId: resolved.propertyId,
+        bankImportEntryId: entryId,
+        entry: parsedEntry,
+      });
+      paymentReferenceCreated = true;
     }
 
     return {
@@ -1674,31 +1724,7 @@ async function processImportedAttachment(input: {
 
   await uploadImportFile(storagePath, input.attachment.data, input.attachment.mimeType);
 
-  if (!isPdf) {
-    await markBankImportFile({ fileId: file.id, parserStatus: 'unsupported' });
-    return {
-      duplicate: false,
-      fileStored: true,
-      entryCreated: false,
-      paymentReferenceCreated: false,
-      ignored: true,
-    };
-  }
-
   try {
-    const extractedText = await extractPdfText(input.attachment.data);
-    const parsedEntry = parseCapitecTransactionText(extractedText);
-    if (!parsedEntry) {
-      await markBankImportFile({ fileId: file.id, parserStatus: 'unsupported' });
-      return {
-        duplicate: false,
-        fileStored: true,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-
     const integrityError = validateParsedImportEntry(parsedEntry);
     if (integrityError) {
       await markBankImportFile({
@@ -1706,39 +1732,6 @@ async function processImportedAttachment(input: {
         parserStatus: 'failed',
         parserError: integrityError,
       });
-      return {
-        duplicate: false,
-        fileStored: true,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-
-    if (isExcludedBankAccount(parsedEntry)) {
-      await markBankImportFile({ fileId: file.id, parserStatus: 'unsupported' });
-      return {
-        duplicate: false,
-        fileStored: true,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-
-    if (isExcludedNonRentCredit(parsedEntry)) {
-      await markBankImportFile({ fileId: file.id, parserStatus: 'parsed' });
-      return {
-        duplicate: false,
-        fileStored: true,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-
-    if (!isEntryInsideBillingWindow(parsedEntry, input.billingWindow)) {
-      await markBankImportFile({ fileId: file.id, parserStatus: 'parsed' });
       return {
         duplicate: false,
         fileStored: true,
@@ -1894,7 +1887,10 @@ async function processBankStatementAttachment(input: {
     fileName: input.attachment.fileName,
   });
   const { file, duplicate } = await createBankImportFile({
+    organizationId: input.organizationId,
+    mailboxId: input.mailbox.id,
     messageId: input.messageRowId,
+    source: input.sourceFolder,
     attachment: input.attachment,
     fileSha256,
     storagePath,
@@ -2026,26 +2022,49 @@ export async function listActiveBankImportMailboxes() {
   return (data ?? []) as BankImportMailboxRow[];
 }
 
+export async function listBankImportGmailMessageIds(input: {
+  mailboxId: string;
+  billingPeriod: string;
+  maxMessages?: number;
+}) {
+  const mailboxes = await listActiveBankImportMailboxes();
+  const mailbox = mailboxes.find((candidate) => candidate.id === input.mailboxId);
+  if (!mailbox) throw new Error('No active bank import mailbox matched the request');
+
+  const googleAuth = await getGoogleAccessToken(mailbox.email_address);
+  const billingWindow = getBillingWindowForPeriod(input.billingPeriod);
+  const searchQuery = buildGmailSearchQuery(mailbox, billingWindow);
+  const listResponse = await gmailRequest<GmailListResponse>(
+    googleAuth.accessToken,
+    `users/${encodeURIComponent(mailbox.email_address)}/messages`,
+    { q: searchQuery, maxResults: input.maxMessages ?? 250 }
+  );
+  return (listResponse.messages ?? []).map((message) => message.id);
+}
+
 export async function importMailboxPayments(
   mailbox: BankImportMailboxRow,
-  options?: { maxMessages?: number; billingWindow?: BillingWindow }
+  options?: { maxMessages?: number; billingWindow?: BillingWindow; messageIds?: string[] }
 ): Promise<BankImportRunSummary> {
   if (!mailbox.organization_id) {
     throw new Error(`Mailbox ${mailbox.email_address} is missing organization_id`);
   }
+  const organizationId = mailbox.organization_id;
 
   const googleAuth = await getGoogleAccessToken(mailbox.email_address);
   const accessToken = googleAuth.accessToken;
   const searchQuery = buildGmailSearchQuery(mailbox, options?.billingWindow);
   const { propertyMappings, unitMatchHints } = await loadImportLookups(mailbox.organization_id);
-  const listResponse = await gmailRequest<GmailListResponse>(
-    accessToken,
-    `users/${encodeURIComponent(mailbox.email_address)}/messages`,
-    {
-      q: searchQuery,
-      maxResults: options?.maxMessages ?? 25,
-    }
-  );
+  const listedMessages = options?.messageIds
+    ? options.messageIds.map((id) => ({ id }))
+    : (await gmailRequest<GmailListResponse>(
+        accessToken,
+        `users/${encodeURIComponent(mailbox.email_address)}/messages`,
+        {
+          q: searchQuery,
+          maxResults: options?.maxMessages ?? 25,
+        }
+      )).messages ?? [];
 
   // Pre-load message IDs that are safe to skip. A message is only safe to skip
   // when it is marked "processed" AND its files have produced at least one entry.
@@ -2054,9 +2073,9 @@ export async function importMailboxPayments(
   const admin = getSupabaseAdmin();
   const { data: processedMessages } = await admin
     .from('bank_import_messages')
-    .select('id, gmail_message_id')
+    .select('id,gmail_message_id,import_status')
     .eq('mailbox_id', mailbox.id)
-    .eq('import_status', 'processed');
+    .in('import_status', ['processed', 'ignored']);
   const processedRows = processedMessages ?? [];
   const processedMessageIds = new Set<string>();
 
@@ -2085,7 +2104,7 @@ export async function importMailboxPayments(
       }
     }
     for (const row of processedRows) {
-      if (msgDbIdsWithEntries.has(row.id)) {
+      if (row.import_status === 'ignored' || msgDbIdsWithEntries.has(row.id)) {
         processedMessageIds.add(row.gmail_message_id);
       }
     }
@@ -2111,64 +2130,84 @@ export async function importMailboxPayments(
     importedPeriods: [],
   };
 
-  for (const listedMessage of listResponse.messages ?? []) {
-    summary.messagesScanned += 1;
+  const messageBatchSize = 12;
+  for (let offset = 0; offset < listedMessages.length; offset += messageBatchSize) {
+    await Promise.all(listedMessages.slice(offset, offset + messageBatchSize).map(async (listedMessage) => {
+      summary.messagesScanned += 1;
 
-    // Fix 1: Skip messages already fully processed — no Gmail API fetch needed
-    if (processedMessageIds.has(listedMessage.id)) {
-      summary.messagesSkipped += 1;
-      continue;
-    }
+      // Fix 1: Skip messages already fully processed — no Gmail API fetch needed
+      if (processedMessageIds.has(listedMessage.id)) {
+        summary.messagesSkipped += 1;
+        return;
+      }
 
-    try {
-      const message = await gmailRequest<GmailMessage>(
-        accessToken,
-        `users/${encodeURIComponent(mailbox.email_address)}/messages/${listedMessage.id}`,
-        { format: 'full' }
-      );
-      const headers = parseHeaders(message.payload?.headers);
-      const subject = headers.get('subject') ?? '';
-      const receivedAt = message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null;
-      const messageRow = await upsertBankImportMessage({
-        mailbox,
-        message,
-        messageFrom: headers.get('from') ?? '',
-        subject,
-        receivedAt,
-      });
-      summary.messagesImported += 1;
-
-      const attachments = await collectGmailAttachments(accessToken, mailbox.email_address, message);
-      for (const attachment of attachments) {
-        summary.attachmentsProcessed += 1;
-        const result = await processImportedAttachment({
+      let messageRowId: string | null = null;
+      try {
+        const message = await gmailRequest<GmailMessage>(
+          accessToken,
+          `users/${encodeURIComponent(mailbox.email_address)}/messages/${listedMessage.id}`,
+          { format: 'full' }
+        );
+        const headers = parseHeaders(message.payload?.headers);
+        const subject = headers.get('subject') ?? '';
+        const receivedAt = message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null;
+        const messageRow = await upsertBankImportMessage({
           mailbox,
-          messageRowId: messageRow.id,
-          messageSourceId: message.id,
-          sourceFolder: 'gmail',
-          attachment,
-          organizationId: mailbox.organization_id,
-          billingWindow: options?.billingWindow,
-          propertyMappings,
-          unitMatchHints,
+          message,
+          messageFrom: headers.get('from') ?? '',
+          subject,
+          receivedAt,
         });
+        messageRowId = messageRow.id;
+        summary.messagesImported += 1;
 
-        if (result.duplicate) summary.duplicateFiles += 1;
-        if (result.fileStored) summary.filesStored += 1;
-        if (result.entryCreated) summary.entriesCreated += 1;
-        if (result.paymentReferenceCreated) summary.paymentReferencesCreated += 1;
-        if (result.ignored) summary.ignoredEntries += 1;
-      }
+        const attachments = await collectGmailAttachments(accessToken, mailbox.email_address, message);
+        const attachmentErrors: string[] = [];
+        for (const attachment of attachments) {
+          summary.attachmentsProcessed += 1;
+          try {
+            const result = await processImportedAttachment({
+              mailbox,
+              messageRowId: messageRow.id,
+              messageSourceId: message.id,
+              sourceFolder: 'gmail',
+              attachment,
+              organizationId,
+              billingWindow: options?.billingWindow,
+              propertyMappings,
+              unitMatchHints,
+            });
 
-      await markBankImportMessageStatus(messageRow.id, 'processed');
-    } catch (error) {
-      summary.failedMessages += 1;
-      if (error instanceof Error) {
-        console.error(`Bank import failed for ${mailbox.email_address}:`, error.message);
-      } else {
-        console.error(`Bank import failed for ${mailbox.email_address}:`, error);
+            if (result.duplicate) summary.duplicateFiles += 1;
+            if (result.fileStored) summary.filesStored += 1;
+            if (result.entryCreated) summary.entriesCreated += 1;
+            if (result.paymentReferenceCreated) summary.paymentReferencesCreated += 1;
+            if (result.ignored) summary.ignoredEntries += 1;
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            attachmentErrors.push(errorMessage);
+            console.error(`Bank import attachment failed for ${mailbox.email_address}:`, errorMessage);
+          }
+        }
+
+        if (attachmentErrors.length > 0) summary.failedMessages += 1;
+        const allAttachmentsFailed = attachments.length > 0 && attachmentErrors.length === attachments.length;
+        await markBankImportMessageStatus(
+          messageRow.id,
+          allAttachmentsFailed ? 'ignored' : 'processed',
+          attachmentErrors.join(' | ')
+        );
+      } catch (error) {
+        summary.failedMessages += 1;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (messageRowId) await markBankImportMessageStatus(messageRowId, 'failed', errorMessage);
+        if (error instanceof Error) {
+          console.error(`Bank import failed for ${mailbox.email_address}:`, error.message);
+        } else {
+          console.error(`Bank import failed for ${mailbox.email_address}:`, error);
+        }
       }
-    }
+    }));
   }
 
   await updateMailboxSyncState(mailbox.id);
@@ -2471,6 +2510,7 @@ export async function archiveStoredFilesToDrive(options?: {
   const { data: files, error } = await admin
     .from('bank_import_files')
     .select('id,file_name,mime_type,storage_path,parser_status,raw_metadata')
+    .eq('parser_status', 'parsed')
     .is('drive_file_id', null);
   if (error) throw new Error(`Failed to load files for Drive archive: ${error.message}`);
 
@@ -2607,6 +2647,7 @@ export async function runBankImport(input?: {
   mailboxEmail?: string;
   mailboxId?: string;
   maxMessages?: number;
+  gmailMessageIds?: string[];
   billingPeriod?: string;
   pullAll?: boolean;
   source?: BankImportSource;
@@ -2628,7 +2669,11 @@ export async function runBankImport(input?: {
   const results: BankImportRunSummary[] = [];
   if (source === 'gmail' || source === 'both') {
     for (const mailbox of targetMailboxes) {
-      results.push(await importMailboxPayments(mailbox, { maxMessages: input?.maxMessages, billingWindow }));
+      results.push(await importMailboxPayments(mailbox, {
+        maxMessages: input?.maxMessages,
+        billingWindow,
+        messageIds: input?.gmailMessageIds,
+      }));
     }
   }
 
