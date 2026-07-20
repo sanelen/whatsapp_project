@@ -25,8 +25,10 @@ function formatTimestamp(value: string) {
   }).format(new Date(value));
 }
 
-function statusDot(ok: boolean) {
-  return ok ? 'bg-emerald-500' : 'bg-rose-500';
+function statusDot(status: 'good' | 'warning' | 'bad') {
+  if (status === 'good') return 'bg-emerald-500';
+  if (status === 'warning') return 'bg-amber-500';
+  return 'bg-rose-500';
 }
 
 function matchLabel(transaction: ImportAuditTransaction) {
@@ -39,6 +41,13 @@ function matchLabel(transaction: ImportAuditTransaction) {
 function fileSummary(file: ImportAuditFile) {
   const amount = file.transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
   return `${file.transactions.length} transactions · R ${formatRand(amount)}`;
+}
+
+function fileMatchLabel(file: ImportAuditFile) {
+  if (file.matchStatus === 'matched') return 'Matched';
+  if (file.matchStatus === 'unmatched') return 'Unmatched';
+  if (file.matchStatus === 'incomplete') return 'Incomplete match';
+  return 'No payment record';
 }
 
 export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
@@ -132,15 +141,24 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="truncate text-[13px] font-bold text-slate-950">{file.fileName}</span>
                       <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10.5px] font-bold text-sky-800">{file.sourceLabel}</span>
-                      <span className={`h-2 w-2 rounded-full ${statusDot(file.parserStatus === 'parsed')}`} title={`Parser: ${file.parserStatus}`} />
                     </div>
                     <p className="mt-1 text-[11px] text-slate-500">
                       Imported {formatTimestamp(file.importedAt)} · {fileSummary(file)} · hash {file.hashShort}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
-                    <span className={`h-2 w-2 rounded-full ${statusDot(file.driveStatus !== 'not-archived')}`} />
-                    {file.driveStatus === 'archived' ? 'Archived in Drive' : file.driveStatus === 'in-drive' ? 'Source in Drive' : 'Not archived'}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-600">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${statusDot(file.driveStatus !== 'not-archived' ? 'good' : 'bad')}`} />
+                      {file.driveStatus === 'archived' ? 'Archived' : file.driveStatus === 'in-drive' ? 'In Drive' : 'Not archived'}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${statusDot(file.databaseStatus === 'stored' ? 'good' : 'bad')}`} />
+                      {file.databaseStatus === 'stored' ? 'In database' : 'Not in database'}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${statusDot(file.matchStatus === 'matched' ? 'good' : file.matchStatus === 'unmatched' ? 'warning' : 'bad')}`} />
+                      {fileMatchLabel(file)}
+                    </span>
                   </div>
                 </summary>
 
@@ -176,7 +194,7 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
                               <td className="py-2 pr-3 whitespace-nowrap">R {formatRand(transaction.amount)}</td>
                               <td className="py-2 pr-3">{transaction.propertyName ?? 'Unassigned'}</td>
                               <td className="py-2 pr-3">
-                                <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${statusDot(transaction.databaseStatus === 'stored')}`} />{transaction.databaseStatus === 'stored' ? 'Stored' : 'Missing'}</span>
+                                <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${statusDot(transaction.databaseStatus === 'stored' ? 'good' : 'bad')}`} />{transaction.databaseStatus === 'stored' ? 'Stored' : 'Missing'}</span>
                               </td>
                               <td className="py-2">
                                 <span className={`inline-flex items-center gap-1.5 ${transaction.matchStatus === 'unmatched' ? 'text-amber-700' : transaction.matchStatus === 'incomplete' ? 'text-rose-700' : 'text-emerald-700'}`}>

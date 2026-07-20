@@ -629,6 +629,11 @@ export function buildGmailSearchQuery(
   const parts = ['has:attachment'];
   if (mailbox.subject_filter.trim()) {
     parts.push(`subject:"${mailbox.subject_filter.trim().replace(/"/g, '')}"`);
+  } else {
+    // These mailboxes are payment-import sources, not general-purpose inboxes.
+    // A blank database filter must fail narrow instead of importing every
+    // attachment in the account.
+    parts.push('subject:Capitec');
   }
   if (mailbox.label_filter.trim()) {
     const labelFilter = mailbox.label_filter.trim();
@@ -1409,30 +1414,6 @@ async function markBankImportFile(input: {
   if (error) throw new Error(`Failed to update bank import file ${input.fileId}: ${error.message}`);
 }
 
-async function markExcludedBankImportFile(fileId: string, accountSuffixValue: string) {
-  const admin = getSupabaseAdmin();
-  const { data: file, error: readError } = await admin
-    .from('bank_import_files')
-    .select('raw_metadata')
-    .eq('id', fileId)
-    .single();
-  if (readError) throw new Error(`Failed to load excluded bank import file ${fileId}: ${readError.message}`);
-  const { error } = await admin
-    .from('bank_import_files')
-    .update({
-      parser_status: 'unsupported',
-      storage_path: '',
-      parsed_at: new Date().toISOString(),
-      raw_metadata: {
-        ...((file?.raw_metadata as Record<string, unknown> | null) ?? {}),
-        excludedAccountSuffix: accountSuffixValue,
-        exclusionReason: 'internal_non_rent_account',
-      },
-    })
-    .eq('id', fileId);
-  if (error) throw new Error(`Failed to exclude bank import file ${fileId}: ${error.message}`);
-}
-
 async function upsertBankImportEntry(input: {
   fileId: string;
   organizationId: string;
@@ -1631,6 +1612,37 @@ async function processImportedAttachment(input: {
   propertyMappings: BankImportPropertyMappingRow[];
   unitMatchHints: BankImportUnitMatchHintRow[];
 }) {
+  const isPdf =
+    input.attachment.mimeType === 'application/pdf' || input.attachment.fileName.toLowerCase().endsWith('.pdf');
+  if (!isPdf) {
+    return {
+      duplicate: false,
+      fileStored: false,
+      entryCreated: false,
+      paymentReferenceCreated: false,
+      ignored: true,
+    };
+  }
+
+  const extractedText = await extractPdfText(input.attachment.data);
+  const parsedEntry = parseCapitecTransactionText(extractedText);
+  if (
+    !parsedEntry ||
+    !isIncomingFunds(parsedEntry) ||
+    isExcludedBankAccount(parsedEntry) ||
+    isExcludedNonRentCredit(parsedEntry) ||
+    !isEntryInsideBillingWindow(parsedEntry, input.billingWindow) ||
+    !isEntryOnOrBeforeToday(parsedEntry)
+  ) {
+    return {
+      duplicate: false,
+      fileStored: false,
+      entryCreated: false,
+      paymentReferenceCreated: false,
+      ignored: true,
+    };
+  }
+
   const fileSha256 = sha256(input.attachment.data);
   const storagePath = buildImportStoragePath({
     organizationId: input.organizationId,
@@ -1640,35 +1652,6 @@ async function processImportedAttachment(input: {
     fileSha256,
     fileName: input.attachment.fileName,
   });
-
-  const isPdf =
-    input.attachment.mimeType === 'application/pdf' || input.attachment.fileName.toLowerCase().endsWith('.pdf');
-  if (isPdf) {
-    const extractedText = await extractPdfText(input.attachment.data);
-    const movement = parseCapitecAccountMovementText(extractedText);
-    if (
-      movement?.direction === 'outgoing' &&
-      EXCLUDED_BANK_ACCOUNT_SUFFIXES.has(movement.accountSuffix)
-    ) {
-      const excludedFile = await createBankImportFile({
-        organizationId: input.organizationId,
-        mailboxId: input.mailbox.id,
-        messageId: input.messageRowId,
-        source: input.sourceFolder,
-        attachment: input.attachment,
-        fileSha256,
-        storagePath,
-      });
-      await markExcludedBankImportFile(excludedFile.file.id, movement.accountSuffix);
-      return {
-        duplicate: excludedFile.duplicate,
-        fileStored: false,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-  }
 
   const { file, duplicate } = await createBankImportFile({
     organizationId: input.organizationId,
@@ -1682,46 +1665,29 @@ async function processImportedAttachment(input: {
 
   if (duplicate) {
     let paymentReferenceCreated = false;
+    const integrityError = validateParsedImportEntry(parsedEntry);
 
-    if (isPdf) {
-      const extractedText = await extractPdfText(input.attachment.data);
-      const parsedEntry = parseCapitecTransactionText(extractedText);
-      const integrityError = parsedEntry ? validateParsedImportEntry(parsedEntry) : 'Unsupported PDF payload';
+    if (!integrityError) {
+      const resolved = resolveImportContext({
+        entry: parsedEntry,
+        organizationId: input.organizationId,
+        propertyMappings: input.propertyMappings,
+        unitMatchHints: input.unitMatchHints,
+      });
+      const entryId = await syncEntryForExistingFile({
+        fileId: file.id,
+        organizationId: input.organizationId,
+        entry: parsedEntry,
+        resolved,
+      });
 
-      if (parsedEntry && (isExcludedBankAccount(parsedEntry) || isExcludedNonRentCredit(parsedEntry))) {
-        return {
-          duplicate: true,
-          fileStored: false,
-          entryCreated: false,
-          paymentReferenceCreated: false,
-          ignored: true,
-        };
-      }
-
-      if (parsedEntry && !integrityError && !isExcludedBankAccount(parsedEntry) && !isExcludedNonRentCredit(parsedEntry) && isEntryInsideBillingWindow(parsedEntry, input.billingWindow)) {
-        const resolved = resolveImportContext({
-          entry: parsedEntry,
-          organizationId: input.organizationId,
-          propertyMappings: input.propertyMappings,
-          unitMatchHints: input.unitMatchHints,
-        });
-        const entryId = await syncEntryForExistingFile({
-          fileId: file.id,
-          organizationId: input.organizationId,
-          entry: parsedEntry,
-          resolved,
-        });
-
-        if (isIncomingFunds(parsedEntry)) {
-          await upsertPaymentReferenceFromImport({
-            organizationId: input.organizationId,
-            propertyId: resolved.propertyId,
-            bankImportEntryId: entryId,
-            entry: parsedEntry,
-          });
-          paymentReferenceCreated = true;
-        }
-      }
+      await upsertPaymentReferenceFromImport({
+        organizationId: input.organizationId,
+        propertyId: resolved.propertyId,
+        bankImportEntryId: entryId,
+        entry: parsedEntry,
+      });
+      paymentReferenceCreated = true;
     }
 
     return {
@@ -1735,31 +1701,7 @@ async function processImportedAttachment(input: {
 
   await uploadImportFile(storagePath, input.attachment.data, input.attachment.mimeType);
 
-  if (!isPdf) {
-    await markBankImportFile({ fileId: file.id, parserStatus: 'unsupported' });
-    return {
-      duplicate: false,
-      fileStored: true,
-      entryCreated: false,
-      paymentReferenceCreated: false,
-      ignored: true,
-    };
-  }
-
   try {
-    const extractedText = await extractPdfText(input.attachment.data);
-    const parsedEntry = parseCapitecTransactionText(extractedText);
-    if (!parsedEntry) {
-      await markBankImportFile({ fileId: file.id, parserStatus: 'unsupported' });
-      return {
-        duplicate: false,
-        fileStored: true,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-
     const integrityError = validateParsedImportEntry(parsedEntry);
     if (integrityError) {
       await markBankImportFile({
@@ -1767,39 +1709,6 @@ async function processImportedAttachment(input: {
         parserStatus: 'failed',
         parserError: integrityError,
       });
-      return {
-        duplicate: false,
-        fileStored: true,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-
-    if (isExcludedBankAccount(parsedEntry)) {
-      await markBankImportFile({ fileId: file.id, parserStatus: 'unsupported' });
-      return {
-        duplicate: false,
-        fileStored: true,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-
-    if (isExcludedNonRentCredit(parsedEntry)) {
-      await markBankImportFile({ fileId: file.id, parserStatus: 'parsed' });
-      return {
-        duplicate: false,
-        fileStored: true,
-        entryCreated: false,
-        paymentReferenceCreated: false,
-        ignored: true,
-      };
-    }
-
-    if (!isEntryInsideBillingWindow(parsedEntry, input.billingWindow)) {
-      await markBankImportFile({ fileId: file.id, parserStatus: 'parsed' });
       return {
         duplicate: false,
         fileStored: true,
@@ -2575,9 +2484,21 @@ export async function archiveStoredFilesToDrive(options?: {
   }
 
   const admin = getSupabaseAdmin();
+  const { data: incomingEntries, error: incomingEntriesError } = await admin
+    .from('bank_import_entries')
+    .select('file_id')
+    .eq('organization_id', mailbox.organization_id)
+    .ilike('transaction_type', 'incoming funds');
+  if (incomingEntriesError) throw new Error(`Failed to load incoming files for Drive archive: ${incomingEntriesError.message}`);
+  const incomingFileIds = Array.from(new Set((incomingEntries ?? []).map((entry) => entry.file_id as string)));
+  if (incomingFileIds.length === 0) {
+    return { filesArchived: 0, filesSkipped: 0, foldersTouched: [] };
+  }
   const { data: files, error } = await admin
     .from('bank_import_files')
     .select('id,file_name,mime_type,storage_path,parser_status,raw_metadata')
+    .in('id', incomingFileIds)
+    .eq('parser_status', 'parsed')
     .is('drive_file_id', null);
   if (error) throw new Error(`Failed to load files for Drive archive: ${error.message}`);
 

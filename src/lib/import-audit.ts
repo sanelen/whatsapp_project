@@ -28,6 +28,8 @@ export type ImportAuditFile = {
   parserStatus: string;
   importStatus: string;
   driveStatus: 'in-drive' | 'archived' | 'not-archived';
+  databaseStatus: 'stored' | 'missing';
+  matchStatus: 'matched' | 'unmatched' | 'incomplete' | 'not-applicable';
   driveFolderPath: string | null;
   hashShort: string;
   transactions: ImportAuditTransaction[];
@@ -117,13 +119,11 @@ export async function readImportAuditView(input?: {
   const sourceFilter = validSources.has(input?.source ?? '')
     ? (input?.source as ImportAuditView['sourceFilter'])
     : 'all';
-  const monthEnd = new Date(`${periodKey}-01T00:00:00Z`);
-  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
-
   const [entriesResult, filesResult, reconciliation] = await Promise.all([
     admin
       .from('bank_import_entries')
       .select('id,file_id,transaction_date,reference,amount,destination_account_suffix,property_id')
+      .ilike('transaction_type', 'incoming funds')
       .gte('transaction_date', billingWindow.startDate)
       .lte('transaction_date', billingWindow.endDate)
       .order('transaction_date', { ascending: false }),
@@ -142,7 +142,7 @@ export async function readImportAuditView(input?: {
   const files = (filesResult.data ?? []).filter((file) => {
     const metadata = file.raw_metadata as Record<string, unknown> | null;
     if (metadata?.exclusionReason === 'internal_non_rent_account') return false;
-    return entryFileIds.has(file.id as string) || ((file.created_at as string) >= `${periodKey}-01` && (file.created_at as string) < monthEnd.toISOString());
+    return entryFileIds.has(file.id as string);
   });
   const messageIds = files.map((file) => file.message_id as string).filter(Boolean);
   const entryIds = entries.map((entry) => entry.id as string);
@@ -218,11 +218,19 @@ export async function readImportAuditView(input?: {
         amount: toMoney(entry.amount as number | string),
         accountSuffix: (entry.destination_account_suffix as string) || null,
         propertyName: entry.property_id ? propertyNameById.get(entry.property_id as string) ?? null : null,
-        databaseStatus: reference ? 'stored' : 'missing',
+        databaseStatus: 'stored',
         matchStatus,
         unitLabel: unitId ? unitLabelById.get(unitId) ?? null : null,
       };
     });
+    const databaseStatus: ImportAuditFile['databaseStatus'] = transactions.length > 0 ? 'stored' : 'missing';
+    const matchStatus: ImportAuditFile['matchStatus'] = transactions.length === 0
+      ? 'not-applicable'
+      : transactions.some((transaction) => transaction.matchStatus === 'incomplete')
+        ? 'incomplete'
+        : transactions.some((transaction) => transaction.matchStatus === 'unmatched')
+          ? 'unmatched'
+          : 'matched';
     return {
       id: file.id as string,
       fileName: file.file_name as string,
@@ -235,6 +243,8 @@ export async function readImportAuditView(input?: {
       parserStatus: (file.parser_status as string) || 'pending',
       importStatus: (message?.import_status as string | undefined) ?? 'unknown',
       driveStatus: source === 'drive-bank' ? 'in-drive' : file.drive_file_id ? 'archived' : 'not-archived',
+      databaseStatus,
+      matchStatus,
       driveFolderPath: (file.drive_folder_path as string | null) ?? null,
       hashShort: String(file.file_sha256 ?? '').slice(0, 10),
       transactions,
