@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   const requestedSlot = request.nextUrl.searchParams.get('slot') === 'source' ? 'source' : 'destination';
   const callbackSlot = state.endsWith(':source') ? 'source' : 'destination';
   const slot = code ? callbackSlot : requestedSlot;
-  const sourceMailboxEmail = process.env.BANK_IMPORT_SOURCE_MAILBOX_EMAIL?.trim() || 'Sanele.main@gmail.com';
+  const sourceMailboxEmail = process.env.BANK_IMPORT_SOURCE_MAILBOX_EMAIL?.trim() || 'Sanele.ngcobo@gmail.com';
   const destinationMailboxEmail = process.env.BANK_IMPORT_DESTINATION_MAILBOX_EMAIL?.trim() || 'info.hambatrading@gmail.com';
   const tokenEnvName = slot === 'source' ? 'GMAIL_SOURCE_OAUTH_REFRESH_TOKEN' : 'GMAIL_OAUTH_REFRESH_TOKEN';
   const status = getGmailIntegrationStatus();

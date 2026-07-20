@@ -187,7 +187,7 @@ Approved product boundary after the 2026-07-17 production review:
   SHA-256 identity because forwarding changes Gmail message IDs. The Import Audit
   page exposes the latest run and its blocker. Recovery may create unmatched
   payment references but never signs off or guesses a tenant/unit. Activation
-  requires a separate OAuth refresh token for `Sanele.main@gmail.com`, an active
+  requires a separate OAuth refresh token for `Sanele.ngcobo@gmail.com`, an active
   mailbox row, the additive reconciliation migration, and production deployment.
 
 ### Non-functional

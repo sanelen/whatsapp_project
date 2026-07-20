@@ -242,7 +242,7 @@ inbox:
 
 Two-mailbox reconciliation additionally requires:
 
-- `BANK_IMPORT_SOURCE_MAILBOX_EMAIL=Sanele.main@gmail.com`
+- `BANK_IMPORT_SOURCE_MAILBOX_EMAIL=Sanele.ngcobo@gmail.com`
 - `GMAIL_SOURCE_OAUTH_REFRESH_TOKEN` — a separate offline OAuth grant created
   while signed into the source Gmail account
 - `BANK_IMPORT_DESTINATION_MAILBOX_EMAIL=info.hambatrading@gmail.com`
