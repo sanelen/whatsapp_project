@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hamba Operations",
-  description: "Property operations, payment reconciliation, and tenant assistance.",
+  title: "Hamba Customer Service",
+  description: "Hamba Trading's tenant support, WhatsApp assistance, and payment-reconciliation service.",
 };
 
 export default function RootLayout({

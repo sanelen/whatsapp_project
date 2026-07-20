@@ -23,7 +23,7 @@ export default function HomePage() {
               <span className="block text-xs font-black uppercase tracking-[0.18em] text-slate-950">
                 Hamba Trading
               </span>
-              <span className="mt-0.5 block text-xs text-slate-600">Property management</span>
+              <span className="mt-0.5 block text-xs text-slate-600">Hamba Customer Service</span>
             </span>
           </Link>
 
@@ -41,14 +41,16 @@ export default function HomePage() {
         <section className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
           <div className="max-w-3xl">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-sky-800">
-              Hamba Trading
+              Hamba Customer Service · Hamba Trading
             </p>
             <h1 className="mt-4 max-w-2xl text-4xl font-semibold leading-[1.05] text-slate-950 sm:text-6xl">
               Property help starts here.
             </h1>
             <p className="mt-5 max-w-2xl text-base leading-7 text-slate-700 sm:text-lg">
               Ask about properties, availability, applications, payments, or tenant support on
-              WhatsApp. Internal operations remain available only to approved Hamba staff.
+              WhatsApp. Hamba Customer Service also helps approved staff reconcile tenant payments
+              from authorised Gmail and Google Drive records. Internal operations remain available
+              only to approved Hamba staff.
             </p>
           </div>
 
@@ -72,6 +74,21 @@ export default function HomePage() {
               Start a conversation with Hamba Trading using our official WhatsApp number.
             </p>
           </a>
+        </section>
+
+        <section className="mt-10 rounded-[24px] border border-sky-900/15 bg-white/70 p-6 shadow-[0_16px_40px_rgba(15,23,42,0.06)] sm:p-7">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-800">
+            About this application
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-950">What Hamba Customer Service does</h2>
+          <p className="mt-3 max-w-4xl text-sm leading-7 text-slate-700 sm:text-base">
+            Hamba Customer Service is Hamba Trading&apos;s property-support application. It connects
+            tenant conversations, staff workflows, and payment reconciliation in one service. With
+            an account owner&apos;s permission, approved staff can read relevant Capitec payment
+            notifications in Gmail and supporting files in Google Drive to identify missing imports,
+            prevent duplicates, and keep tenant payment records accurate. The service never sends
+            email or changes Gmail messages.
+          </p>
         </section>
 
         <section className="mt-14" aria-labelledby="public-information-heading">
