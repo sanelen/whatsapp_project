@@ -1414,6 +1414,26 @@ async function markBankImportFile(input: {
   if (error) throw new Error(`Failed to update bank import file ${input.fileId}: ${error.message}`);
 }
 
+async function linkBankImportFileToCanonicalEntry(fileId: string, canonicalEntryId: string) {
+  const admin = getSupabaseAdmin();
+  const { data: file, error: readError } = await admin
+    .from('bank_import_files')
+    .select('raw_metadata')
+    .eq('id', fileId)
+    .single();
+  if (readError) throw new Error(`Failed to load alternate evidence file ${fileId}: ${readError.message}`);
+  const { error } = await admin
+    .from('bank_import_files')
+    .update({
+      raw_metadata: {
+        ...((file?.raw_metadata as Record<string, unknown> | null) ?? {}),
+        canonicalEntryId,
+      },
+    })
+    .eq('id', fileId);
+  if (error) throw new Error(`Failed to link alternate evidence file ${fileId}: ${error.message}`);
+}
+
 async function upsertBankImportEntry(input: {
   fileId: string;
   organizationId: string;
@@ -1436,7 +1456,10 @@ async function upsertBankImportEntry(input: {
       (candidate.transaction_time as string).slice(0, 5) === incomingMinute &&
       canonicalizeBankReference(candidate.reference as string) === incomingReference
     );
-    if (existingCrossSource) return existingCrossSource.id as string;
+    if (existingCrossSource) {
+      await linkBankImportFileToCanonicalEntry(input.fileId, existingCrossSource.id as string);
+      return existingCrossSource.id as string;
+    }
   }
   const fingerprint = buildEntryFingerprint({
     organizationId: input.organizationId,
@@ -2484,20 +2507,9 @@ export async function archiveStoredFilesToDrive(options?: {
   }
 
   const admin = getSupabaseAdmin();
-  const { data: incomingEntries, error: incomingEntriesError } = await admin
-    .from('bank_import_entries')
-    .select('file_id')
-    .eq('organization_id', mailbox.organization_id)
-    .ilike('transaction_type', 'incoming funds');
-  if (incomingEntriesError) throw new Error(`Failed to load incoming files for Drive archive: ${incomingEntriesError.message}`);
-  const incomingFileIds = Array.from(new Set((incomingEntries ?? []).map((entry) => entry.file_id as string)));
-  if (incomingFileIds.length === 0) {
-    return { filesArchived: 0, filesSkipped: 0, foldersTouched: [] };
-  }
   const { data: files, error } = await admin
     .from('bank_import_files')
     .select('id,file_name,mime_type,storage_path,parser_status,raw_metadata')
-    .in('id', incomingFileIds)
     .eq('parser_status', 'parsed')
     .is('drive_file_id', null);
   if (error) throw new Error(`Failed to load files for Drive archive: ${error.message}`);
