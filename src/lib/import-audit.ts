@@ -1,5 +1,6 @@
 import { getBillingWindowForPeriod } from './bank-import';
 import { getSupabaseAdmin } from './supabase';
+import { readLatestReconciliationRun, type ReconciliationRunView } from './bank-import-reconciliation';
 
 export type ImportAuditSource = 'gmail' | 'drive-bank' | 'drive' | 'unknown';
 
@@ -49,6 +50,7 @@ export type ImportAuditView = {
     unmatched: number;
     incomplete: number;
   };
+  reconciliation: ReconciliationRunView | null;
 };
 
 function monthKey(value: Date) {
@@ -118,7 +120,7 @@ export async function readImportAuditView(input?: {
   const monthEnd = new Date(`${periodKey}-01T00:00:00Z`);
   monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
 
-  const [entriesResult, filesResult] = await Promise.all([
+  const [entriesResult, filesResult, reconciliation] = await Promise.all([
     admin
       .from('bank_import_entries')
       .select('id,file_id,transaction_date,reference,amount,destination_account_suffix,property_id')
@@ -130,6 +132,7 @@ export async function readImportAuditView(input?: {
       .select('id,message_id,file_name,mime_type,file_sha256,parser_status,drive_file_id,drive_folder_path,drive_archived_at,raw_metadata,created_at')
       .order('created_at', { ascending: false })
       .limit(300),
+    readLatestReconciliationRun(),
   ]);
   if (entriesResult.error) throw new Error(`Failed to load import audit entries: ${entriesResult.error.message}`);
   if (filesResult.error) throw new Error(`Failed to load import audit files: ${filesResult.error.message}`);
@@ -257,5 +260,6 @@ export async function readImportAuditView(input?: {
       unmatched: transactions.filter((transaction) => transaction.matchStatus === 'unmatched').length,
       incomplete: transactions.filter((transaction) => transaction.matchStatus === 'incomplete').length,
     },
+    reconciliation,
   };
 }

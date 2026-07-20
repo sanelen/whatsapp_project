@@ -261,6 +261,7 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
         buildGmailOAuthConsentUrl({
           redirectUri: 'http://localhost:3001/api/monthly-payments/import/google-cloud',
           state: 'monthly-payments-bank-import',
+          loginHint: 'info.hambatrading@gmail.com',
         })
       );
 
@@ -272,7 +273,8 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
         'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly'
       );
       assert.equal(url.searchParams.get('access_type'), 'offline');
-      assert.equal(url.searchParams.get('prompt'), 'consent');
+      assert.equal(url.searchParams.get('prompt'), 'consent select_account');
+      assert.equal(url.searchParams.get('login_hint'), 'info.hambatrading@gmail.com');
       assert.equal(url.searchParams.get('state'), 'monthly-payments-bank-import');
     }
   );

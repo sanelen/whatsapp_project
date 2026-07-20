@@ -11,7 +11,8 @@ All job selection and completion must reconcile against
 [`REQUIREMENT-TRACKER.md`](./REQUIREMENT-TRACKER.md). A Linear status or old handover
 alone is not proof that a requirement is active or complete.
 
-The active implementation workstream is the Chat/WhatsApp assistant. Its detailed
+The active implementation workstreams are the Chat/WhatsApp assistant and the
+owner-promoted Capitec payment reconciliation. Chat's detailed
 requirements and exact order are in
 [`requirements/CHAT-WHATSAPP.md`](./requirements/CHAT-WHATSAPP.md). The job should
 take one highest-priority unblocked **Active** requirement per run, verify existing
@@ -50,7 +51,9 @@ is active only as an owner-present operation and must never be performed unatten
 - Tenant offboarding.
 - Property photo galleries and public image storage.
 - `summary_memory` or resumable/TUS uploads.
-- Combined-payment allocation, import-run history, or other open payments follow-ups.
+- Combined-payment allocation or other open payments follow-ups. The Capitec
+  reconciliation/run history was
+  explicitly promoted by the owner on 2026-07-20 and is therefore active.
 - A wholesale visual redesign.
 
 These items may remain documented as Planned/Partial. That status is not permission
