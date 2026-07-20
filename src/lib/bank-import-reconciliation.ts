@@ -121,20 +121,20 @@ export async function runBankImportReconciliation(input?: { force?: boolean; tri
   }
 
   const periodsChecked = reconciliationPeriods();
-  const mailboxResults: ReconciliationRunView['mailboxResults'] = [];
+  let mailboxResults: ReconciliationRunView['mailboxResults'] = [];
   try {
-    for (const mailbox of mailboxes) {
+    mailboxResults = await Promise.all(mailboxes.map(async (mailbox) => {
       try {
-        const summaries: BankImportRunSummary[] = [];
-        for (const period of periodsChecked) {
-          summaries.push(...(await runBankImport({ mailboxId: mailbox.id, billingPeriod: period, source: 'gmail', maxMessages: 250 })));
+        const summariesByPeriod = await Promise.all(periodsChecked.map(async (period) => {
+          const summaries = await runBankImport({ mailboxId: mailbox.id, billingPeriod: period, source: 'gmail', maxMessages: 250 });
           await ensurePaymentPeriodsForPeriod({ periodKey: period });
-        }
-        mailboxResults.push({ mailboxEmail: mailbox.email_address, ok: true, summaries });
+          return summaries;
+        }));
+        return { mailboxEmail: mailbox.email_address, ok: true, summaries: summariesByPeriod.flat() };
       } catch (error) {
-        mailboxResults.push({ mailboxEmail: mailbox.email_address, ok: false, error: error instanceof Error ? error.message : String(error) });
+        return { mailboxEmail: mailbox.email_address, ok: false, error: error instanceof Error ? error.message : String(error) };
       }
-    }
+    }));
 
     const mailboxIds = mailboxes.map((mailbox) => mailbox.id);
     const since = new Date();
