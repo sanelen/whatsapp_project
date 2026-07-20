@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { listActiveBankImportMailboxes, runBankImport, type BankImportRunSummary } from '@/lib/bank-import';
-import { autoMatchUnmatchedReferences, ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
+import { ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
 
 export const RECONCILIATION_CADENCE_HOURS = 72;
 
@@ -121,20 +121,23 @@ export async function runBankImportReconciliation(input?: { force?: boolean; tri
   }
 
   const periodsChecked = reconciliationPeriods();
+  const ensurePeriodsPromise = Promise.all(
+    periodsChecked.map((periodKey) => ensurePaymentPeriodsForPeriod({ periodKey }))
+  );
   let mailboxResults: ReconciliationRunView['mailboxResults'] = [];
   try {
     mailboxResults = await Promise.all(mailboxes.map(async (mailbox) => {
       try {
-        const summariesByPeriod = await Promise.all(periodsChecked.map(async (period) => {
-          const summaries = await runBankImport({ mailboxId: mailbox.id, billingPeriod: period, source: 'gmail', maxMessages: 250 });
-          await ensurePaymentPeriodsForPeriod({ periodKey: period });
-          return summaries;
-        }));
-        return { mailboxEmail: mailbox.email_address, ok: true, summaries: summariesByPeriod.flat() };
+        const summaries: BankImportRunSummary[] = [];
+        for (const period of periodsChecked) {
+          summaries.push(...(await runBankImport({ mailboxId: mailbox.id, billingPeriod: period, source: 'gmail', maxMessages: 250 })));
+        }
+        return { mailboxEmail: mailbox.email_address, ok: true, summaries };
       } catch (error) {
         return { mailboxEmail: mailbox.email_address, ok: false, error: error instanceof Error ? error.message : String(error) };
       }
     }));
+    await ensurePeriodsPromise;
 
     const mailboxIds = mailboxes.map((mailbox) => mailbox.id);
     const since = new Date();
@@ -165,8 +168,6 @@ export async function runBankImportReconciliation(input?: { force?: boolean; tri
         fileSha256: row.file_sha256 as string,
       })),
     });
-    await autoMatchUnmatchedReferences({ actor: 'auto-match (bank reconciliation)' });
-
     const summary: ReconciliationRunView['summary'] = {
       ...coverage,
       failedOrPendingFiles: problemFilesResult.count ?? 0,

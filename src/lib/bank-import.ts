@@ -1372,7 +1372,21 @@ async function createBankImportFile(input: {
     .select('id')
     .single<BankImportFileRow>();
 
-  if (error) throw new Error(`Failed to insert bank import file: ${error.message}`);
+  if (error) {
+    if (error.code === '23505' || /duplicate key/i.test(error.message)) {
+      const { data: racedFile, error: racedFileError } = await admin
+        .from('bank_import_files')
+        .select('id')
+        .eq('file_sha256', input.fileSha256)
+        .maybeSingle<BankImportFileRow>();
+      if (racedFileError) throw new Error(`Failed to load concurrently inserted bank import file: ${racedFileError.message}`);
+      if (racedFile) {
+        await recordOccurrence(racedFile.id);
+        return { file: racedFile, duplicate: true };
+      }
+    }
+    throw new Error(`Failed to insert bank import file: ${error.message}`);
+  }
   await recordOccurrence(data.id);
   return { file: data, duplicate: false };
 }
@@ -2076,26 +2090,49 @@ export async function listActiveBankImportMailboxes() {
   return (data ?? []) as BankImportMailboxRow[];
 }
 
+export async function listBankImportGmailMessageIds(input: {
+  mailboxId: string;
+  billingPeriod: string;
+  maxMessages?: number;
+}) {
+  const mailboxes = await listActiveBankImportMailboxes();
+  const mailbox = mailboxes.find((candidate) => candidate.id === input.mailboxId);
+  if (!mailbox) throw new Error('No active bank import mailbox matched the request');
+
+  const googleAuth = await getGoogleAccessToken(mailbox.email_address);
+  const billingWindow = getBillingWindowForPeriod(input.billingPeriod);
+  const searchQuery = buildGmailSearchQuery(mailbox, billingWindow);
+  const listResponse = await gmailRequest<GmailListResponse>(
+    googleAuth.accessToken,
+    `users/${encodeURIComponent(mailbox.email_address)}/messages`,
+    { q: searchQuery, maxResults: input.maxMessages ?? 250 }
+  );
+  return (listResponse.messages ?? []).map((message) => message.id);
+}
+
 export async function importMailboxPayments(
   mailbox: BankImportMailboxRow,
-  options?: { maxMessages?: number; billingWindow?: BillingWindow }
+  options?: { maxMessages?: number; billingWindow?: BillingWindow; messageIds?: string[] }
 ): Promise<BankImportRunSummary> {
   if (!mailbox.organization_id) {
     throw new Error(`Mailbox ${mailbox.email_address} is missing organization_id`);
   }
+  const organizationId = mailbox.organization_id;
 
   const googleAuth = await getGoogleAccessToken(mailbox.email_address);
   const accessToken = googleAuth.accessToken;
   const searchQuery = buildGmailSearchQuery(mailbox, options?.billingWindow);
   const { propertyMappings, unitMatchHints } = await loadImportLookups(mailbox.organization_id);
-  const listResponse = await gmailRequest<GmailListResponse>(
-    accessToken,
-    `users/${encodeURIComponent(mailbox.email_address)}/messages`,
-    {
-      q: searchQuery,
-      maxResults: options?.maxMessages ?? 25,
-    }
-  );
+  const listedMessages = options?.messageIds
+    ? options.messageIds.map((id) => ({ id }))
+    : (await gmailRequest<GmailListResponse>(
+        accessToken,
+        `users/${encodeURIComponent(mailbox.email_address)}/messages`,
+        {
+          q: searchQuery,
+          maxResults: options?.maxMessages ?? 25,
+        }
+      )).messages ?? [];
 
   // Pre-load message IDs that are safe to skip. A message is only safe to skip
   // when it is marked "processed" AND its files have produced at least one entry.
@@ -2104,9 +2141,9 @@ export async function importMailboxPayments(
   const admin = getSupabaseAdmin();
   const { data: processedMessages } = await admin
     .from('bank_import_messages')
-    .select('id, gmail_message_id')
+    .select('id,gmail_message_id,import_status')
     .eq('mailbox_id', mailbox.id)
-    .eq('import_status', 'processed');
+    .in('import_status', ['processed', 'ignored']);
   const processedRows = processedMessages ?? [];
   const processedMessageIds = new Set<string>();
 
@@ -2135,7 +2172,7 @@ export async function importMailboxPayments(
       }
     }
     for (const row of processedRows) {
-      if (msgDbIdsWithEntries.has(row.id)) {
+      if (row.import_status === 'ignored' || msgDbIdsWithEntries.has(row.id)) {
         processedMessageIds.add(row.gmail_message_id);
       }
     }
@@ -2161,64 +2198,84 @@ export async function importMailboxPayments(
     importedPeriods: [],
   };
 
-  for (const listedMessage of listResponse.messages ?? []) {
-    summary.messagesScanned += 1;
+  const messageBatchSize = 12;
+  for (let offset = 0; offset < listedMessages.length; offset += messageBatchSize) {
+    await Promise.all(listedMessages.slice(offset, offset + messageBatchSize).map(async (listedMessage) => {
+      summary.messagesScanned += 1;
 
-    // Fix 1: Skip messages already fully processed — no Gmail API fetch needed
-    if (processedMessageIds.has(listedMessage.id)) {
-      summary.messagesSkipped += 1;
-      continue;
-    }
+      // Fix 1: Skip messages already fully processed — no Gmail API fetch needed
+      if (processedMessageIds.has(listedMessage.id)) {
+        summary.messagesSkipped += 1;
+        return;
+      }
 
-    try {
-      const message = await gmailRequest<GmailMessage>(
-        accessToken,
-        `users/${encodeURIComponent(mailbox.email_address)}/messages/${listedMessage.id}`,
-        { format: 'full' }
-      );
-      const headers = parseHeaders(message.payload?.headers);
-      const subject = headers.get('subject') ?? '';
-      const receivedAt = message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null;
-      const messageRow = await upsertBankImportMessage({
-        mailbox,
-        message,
-        messageFrom: headers.get('from') ?? '',
-        subject,
-        receivedAt,
-      });
-      summary.messagesImported += 1;
-
-      const attachments = await collectGmailAttachments(accessToken, mailbox.email_address, message);
-      for (const attachment of attachments) {
-        summary.attachmentsProcessed += 1;
-        const result = await processImportedAttachment({
+      let messageRowId: string | null = null;
+      try {
+        const message = await gmailRequest<GmailMessage>(
+          accessToken,
+          `users/${encodeURIComponent(mailbox.email_address)}/messages/${listedMessage.id}`,
+          { format: 'full' }
+        );
+        const headers = parseHeaders(message.payload?.headers);
+        const subject = headers.get('subject') ?? '';
+        const receivedAt = message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null;
+        const messageRow = await upsertBankImportMessage({
           mailbox,
-          messageRowId: messageRow.id,
-          messageSourceId: message.id,
-          sourceFolder: 'gmail',
-          attachment,
-          organizationId: mailbox.organization_id,
-          billingWindow: options?.billingWindow,
-          propertyMappings,
-          unitMatchHints,
+          message,
+          messageFrom: headers.get('from') ?? '',
+          subject,
+          receivedAt,
         });
+        messageRowId = messageRow.id;
+        summary.messagesImported += 1;
 
-        if (result.duplicate) summary.duplicateFiles += 1;
-        if (result.fileStored) summary.filesStored += 1;
-        if (result.entryCreated) summary.entriesCreated += 1;
-        if (result.paymentReferenceCreated) summary.paymentReferencesCreated += 1;
-        if (result.ignored) summary.ignoredEntries += 1;
-      }
+        const attachments = await collectGmailAttachments(accessToken, mailbox.email_address, message);
+        const attachmentErrors: string[] = [];
+        for (const attachment of attachments) {
+          summary.attachmentsProcessed += 1;
+          try {
+            const result = await processImportedAttachment({
+              mailbox,
+              messageRowId: messageRow.id,
+              messageSourceId: message.id,
+              sourceFolder: 'gmail',
+              attachment,
+              organizationId,
+              billingWindow: options?.billingWindow,
+              propertyMappings,
+              unitMatchHints,
+            });
 
-      await markBankImportMessageStatus(messageRow.id, 'processed');
-    } catch (error) {
-      summary.failedMessages += 1;
-      if (error instanceof Error) {
-        console.error(`Bank import failed for ${mailbox.email_address}:`, error.message);
-      } else {
-        console.error(`Bank import failed for ${mailbox.email_address}:`, error);
+            if (result.duplicate) summary.duplicateFiles += 1;
+            if (result.fileStored) summary.filesStored += 1;
+            if (result.entryCreated) summary.entriesCreated += 1;
+            if (result.paymentReferenceCreated) summary.paymentReferencesCreated += 1;
+            if (result.ignored) summary.ignoredEntries += 1;
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            attachmentErrors.push(errorMessage);
+            console.error(`Bank import attachment failed for ${mailbox.email_address}:`, errorMessage);
+          }
+        }
+
+        if (attachmentErrors.length > 0) summary.failedMessages += 1;
+        const allAttachmentsFailed = attachments.length > 0 && attachmentErrors.length === attachments.length;
+        await markBankImportMessageStatus(
+          messageRow.id,
+          allAttachmentsFailed ? 'ignored' : 'processed',
+          attachmentErrors.join(' | ')
+        );
+      } catch (error) {
+        summary.failedMessages += 1;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (messageRowId) await markBankImportMessageStatus(messageRowId, 'failed', errorMessage);
+        if (error instanceof Error) {
+          console.error(`Bank import failed for ${mailbox.email_address}:`, error.message);
+        } else {
+          console.error(`Bank import failed for ${mailbox.email_address}:`, error);
+        }
       }
-    }
+    }));
   }
 
   await updateMailboxSyncState(mailbox.id);
@@ -2657,6 +2714,7 @@ export async function runBankImport(input?: {
   mailboxEmail?: string;
   mailboxId?: string;
   maxMessages?: number;
+  gmailMessageIds?: string[];
   billingPeriod?: string;
   pullAll?: boolean;
   source?: BankImportSource;
@@ -2678,7 +2736,11 @@ export async function runBankImport(input?: {
   const results: BankImportRunSummary[] = [];
   if (source === 'gmail' || source === 'both') {
     for (const mailbox of targetMailboxes) {
-      results.push(await importMailboxPayments(mailbox, { maxMessages: input?.maxMessages, billingWindow }));
+      results.push(await importMailboxPayments(mailbox, {
+        maxMessages: input?.maxMessages,
+        billingWindow,
+        messageIds: input?.gmailMessageIds,
+      }));
     }
   }
 
