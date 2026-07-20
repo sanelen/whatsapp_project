@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Check, ChevronLeft, ChevronRight, CircleAlert, Database, ExternalLink, FileCheck2 } from 'lucide-react';
 import type { ImportAuditFile, ImportAuditTransaction, ImportAuditView } from '@/lib/import-audit';
 import { MonthlyPaymentsShell } from './monthly-payments-shell';
+import { ReconciliationControl } from './reconciliation-control';
 
 function shiftPeriod(periodKey: string, offset: number) {
   const date = new Date(`${periodKey}-01T00:00:00Z`);
@@ -79,6 +80,8 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
         </div>
 
         <p className="mt-2 text-[11.5px] text-slate-500">Rent window: {view.billingWindowLabel}</p>
+
+        <ReconciliationControl initialRun={view.reconciliation} />
 
         <div className="mt-4 grid gap-px overflow-hidden rounded-[12px] border border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-5">
           {[

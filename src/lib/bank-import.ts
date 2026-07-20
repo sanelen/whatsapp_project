@@ -788,6 +788,8 @@ export function getGmailIntegrationStatus() {
   const oauthClientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
   const oauthClientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET?.trim();
   const oauthRefreshToken = process.env.GMAIL_OAUTH_REFRESH_TOKEN?.trim();
+  const sourceMailboxEmail = process.env.BANK_IMPORT_SOURCE_MAILBOX_EMAIL?.trim().toLowerCase();
+  const sourceOauthRefreshToken = process.env.GMAIL_SOURCE_OAUTH_REFRESH_TOKEN?.trim();
   const serviceAccountClientEmail = process.env.GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL?.trim();
   const serviceAccountPrivateKey = process.env.GMAIL_SERVICE_ACCOUNT_PRIVATE_KEY?.trim();
 
@@ -800,6 +802,8 @@ export function getGmailIntegrationStatus() {
     preferredAuthMode: hasOAuthClient && hasOAuthRefreshToken ? 'oauth_refresh_token' : hasServiceAccount ? 'service_account' : null,
     hasOAuthClient,
     hasOAuthRefreshToken,
+    sourceMailboxEmail: sourceMailboxEmail || null,
+    hasSourceOAuthRefreshToken: Boolean(sourceOauthRefreshToken),
     hasServiceAccount,
     missing: {
       oauthClientId: !oauthClientId,
@@ -811,7 +815,7 @@ export function getGmailIntegrationStatus() {
   };
 }
 
-export function buildGmailOAuthConsentUrl(input: { redirectUri: string; state?: string }) {
+export function buildGmailOAuthConsentUrl(input: { redirectUri: string; state?: string; loginHint?: string }) {
   const clientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
   if (!clientId) {
     throw new Error('Missing GMAIL_OAUTH_CLIENT_ID.');
@@ -823,9 +827,12 @@ export function buildGmailOAuthConsentUrl(input: { redirectUri: string; state?: 
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', BANK_IMPORT_OAUTH_SCOPES);
   url.searchParams.set('access_type', 'offline');
-  url.searchParams.set('prompt', 'consent');
+  url.searchParams.set('prompt', 'consent select_account');
   if (input.state) {
     url.searchParams.set('state', input.state);
+  }
+  if (input.loginHint) {
+    url.searchParams.set('login_hint', input.loginHint);
   }
   return url.toString();
 }
@@ -862,10 +869,19 @@ export async function exchangeGmailOAuthCode(input: { code: string; redirectUri:
   };
 }
 
-async function getGoogleOAuthRefreshAccessToken(): Promise<GoogleAccessTokenResult | null> {
+function getOAuthRefreshTokenForMailbox(userEmail: string) {
+  const normalizedEmail = userEmail.trim().toLowerCase();
+  const sourceMailboxEmail = process.env.BANK_IMPORT_SOURCE_MAILBOX_EMAIL?.trim().toLowerCase();
+  if (sourceMailboxEmail && normalizedEmail === sourceMailboxEmail) {
+    return process.env.GMAIL_SOURCE_OAUTH_REFRESH_TOKEN?.trim() || null;
+  }
+  return process.env.GMAIL_OAUTH_REFRESH_TOKEN?.trim() || null;
+}
+
+async function getGoogleOAuthRefreshAccessToken(userEmail: string): Promise<GoogleAccessTokenResult | null> {
   const clientId = process.env.GMAIL_OAUTH_CLIENT_ID?.trim();
   const clientSecret = process.env.GMAIL_OAUTH_CLIENT_SECRET?.trim();
-  const refreshToken = process.env.GMAIL_OAUTH_REFRESH_TOKEN?.trim();
+  const refreshToken = getOAuthRefreshTokenForMailbox(userEmail);
   if (!clientId || !clientSecret || !refreshToken) {
     return null;
   }
@@ -945,7 +961,7 @@ async function getGoogleServiceAccountAccessToken(userEmail: string): Promise<Go
 async function getGoogleAccessToken(userEmail: string) {
   let oauthRefreshError: Error | null = null;
   try {
-    const oauthToken = await getGoogleOAuthRefreshAccessToken();
+    const oauthToken = await getGoogleOAuthRefreshAccessToken(userEmail);
     if (oauthToken) return oauthToken;
   } catch (error) {
     // Don't die yet — a configured service account can still serve the import.
@@ -1292,18 +1308,39 @@ function buildImportStoragePath(input: {
 }
 
 async function createBankImportFile(input: {
+  organizationId: string;
+  mailboxId: string;
   messageId: string;
+  source: 'gmail' | 'drive' | 'bank';
   attachment: ImportedAttachment;
   fileSha256: string;
   storagePath: string;
 }) {
   const admin = getSupabaseAdmin();
+  const recordOccurrence = async (fileId: string) => {
+    const { error } = await admin.from('bank_import_file_occurrences').upsert(
+      {
+        organization_id: input.organizationId,
+        mailbox_id: input.mailboxId,
+        message_id: input.messageId,
+        file_id: fileId,
+        file_sha256: input.fileSha256,
+        source: input.source,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'mailbox_id,message_id,file_sha256' }
+    );
+    if (error) throw new Error(`Failed to record bank import file occurrence: ${error.message}`);
+  };
   const { data: existingFile } = await admin
     .from('bank_import_files')
     .select('id')
     .eq('file_sha256', input.fileSha256)
     .maybeSingle<BankImportFileRow>();
-  if (existingFile) return { file: existingFile, duplicate: true };
+  if (existingFile) {
+    await recordOccurrence(existingFile.id);
+    return { file: existingFile, duplicate: true };
+  }
 
   const { data: existingAttachmentFile } = await admin
     .from('bank_import_files')
@@ -1311,7 +1348,10 @@ async function createBankImportFile(input: {
     .eq('message_id', input.messageId)
     .eq('gmail_attachment_id', input.attachment.sourceId)
     .maybeSingle<BankImportFileRow>();
-  if (existingAttachmentFile) return { file: existingAttachmentFile, duplicate: true };
+  if (existingAttachmentFile) {
+    await recordOccurrence(existingAttachmentFile.id);
+    return { file: existingAttachmentFile, duplicate: true };
+  }
 
   const { data, error } = await admin
     .from('bank_import_files')
@@ -1333,6 +1373,7 @@ async function createBankImportFile(input: {
     .single<BankImportFileRow>();
 
   if (error) throw new Error(`Failed to insert bank import file: ${error.message}`);
+  await recordOccurrence(data.id);
   return { file: data, duplicate: false };
 }
 
@@ -1596,7 +1637,10 @@ async function processImportedAttachment(input: {
       EXCLUDED_BANK_ACCOUNT_SUFFIXES.has(movement.accountSuffix)
     ) {
       const excludedFile = await createBankImportFile({
+        organizationId: input.organizationId,
+        mailboxId: input.mailbox.id,
         messageId: input.messageRowId,
+        source: input.sourceFolder,
         attachment: input.attachment,
         fileSha256,
         storagePath,
@@ -1613,7 +1657,10 @@ async function processImportedAttachment(input: {
   }
 
   const { file, duplicate } = await createBankImportFile({
+    organizationId: input.organizationId,
+    mailboxId: input.mailbox.id,
     messageId: input.messageRowId,
+    source: input.sourceFolder,
     attachment: input.attachment,
     fileSha256,
     storagePath,
@@ -1894,7 +1941,10 @@ async function processBankStatementAttachment(input: {
     fileName: input.attachment.fileName,
   });
   const { file, duplicate } = await createBankImportFile({
+    organizationId: input.organizationId,
+    mailboxId: input.mailbox.id,
     messageId: input.messageRowId,
+    source: input.sourceFolder,
     attachment: input.attachment,
     fileSha256,
     storagePath,
