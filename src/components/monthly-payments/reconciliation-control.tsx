@@ -20,9 +20,27 @@ export function ReconciliationControl({ initialRun }: { initialRun: Reconciliati
     setError('');
     try {
       const response = await fetch('/api/monthly-payments/import/reconcile', { method: 'POST' });
-      const payload = (await response.json()) as { success?: boolean; run?: ReconciliationRunView; error?: string };
-      if (!response.ok || !payload.success || !payload.run) throw new Error(payload.error || 'Reconciliation failed');
-      setRun(payload.run);
+      const payload = (await response.json()) as { success?: boolean; queued?: boolean; run?: ReconciliationRunView; error?: string };
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Reconciliation failed');
+      if (payload.run) {
+        setRun(payload.run);
+        return;
+      }
+      if (!payload.queued) throw new Error('Reconciliation did not start');
+
+      const previousRunId = run?.id ?? null;
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+        const statusResponse = await fetch('/api/monthly-payments/import/reconcile?status=true', { cache: 'no-store' });
+        const statusPayload = (await statusResponse.json()) as { success?: boolean; data?: ReconciliationRunView; error?: string };
+        if (!statusResponse.ok || !statusPayload.success) {
+          throw new Error(statusPayload.error || 'Failed to read reconciliation status');
+        }
+        if (!statusPayload.data || statusPayload.data.id === previousRunId) continue;
+        setRun(statusPayload.data);
+        if (statusPayload.data.status !== 'running') return;
+      }
+      throw new Error('Reconciliation is still running. Refresh this page to check its latest status.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Reconciliation failed');
     } finally {

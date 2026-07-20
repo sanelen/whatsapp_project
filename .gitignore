@@ -38,3 +38,4 @@ e2e/results.json
 blob-report/
 .vercel
 .env*
+/.swc
