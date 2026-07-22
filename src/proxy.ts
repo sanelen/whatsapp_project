@@ -17,6 +17,7 @@ export function isPublicPath(pathname: string): boolean {
     pathname === '/terms' ||
     pathname === '/data-deletion' ||
     pathname === '/login' ||
+    pathname.startsWith('/marketing/') ||
     pathname.startsWith('/auth/') ||
     pathname === '/api/whatsapp/webhook'
   );
