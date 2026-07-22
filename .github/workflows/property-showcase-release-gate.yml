@@ -32,7 +32,7 @@ jobs:
     if: >-
       github.event_name == 'deployment_status' &&
       github.event.deployment_status.state == 'success' &&
-      github.event.deployment_status.environment_url != ''
+      github.event.deployment.environment == 'Production'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,4 +47,4 @@ jobs:
       - run: npm run test:release:browser
         env:
           CI: 'true'
-          RELEASE_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+          RELEASE_BASE_URL: https://hambatrading.co.za
