@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Hamba Quarry Heights profile icon</title>
+  <desc id="desc">Black and warm gold profile icon with an arch, the number 28, and Quarry Heights lettering.</desc>
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2d39a"/>
+      <stop offset="0.52" stop-color="#c98d46"/>
+      <stop offset="1" stop-color="#8e552f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#2a2119"/>
+      <stop offset="1" stop-color="#090807"/>
+    </radialGradient>
+  </defs>
+  <rect width="1080" height="1080" rx="220" fill="url(#glow)"/>
+  <path d="M262 716V475c0-154 124-278 278-278s278 124 278 278v241" fill="none" stroke="url(#gold)" stroke-width="30"/>
+  <path d="M230 742h620" stroke="url(#gold)" stroke-width="16" stroke-linecap="round"/>
+  <text x="540" y="178" text-anchor="middle" fill="#ead2a4" font-family="Georgia, serif" font-size="82" font-weight="700" letter-spacing="18">QH</text>
+  <text x="540" y="600" text-anchor="middle" fill="#f4e1bc" font-family="Georgia, serif" font-size="320" font-weight="700">28</text>
+  <text x="540" y="850" text-anchor="middle" fill="#e6bd79" font-family="Arial, sans-serif" font-size="86" font-weight="700" letter-spacing="12">QUARRY</text>
+  <text x="540" y="925" text-anchor="middle" fill="#c58e52" font-family="Arial, sans-serif" font-size="38" font-weight="700" letter-spacing="10">NEWLANDS EAST</text>
+</svg>
