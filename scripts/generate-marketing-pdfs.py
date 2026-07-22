@@ -38,7 +38,7 @@ PROPERTIES = [
             "Private kitchenette options shown in the portfolio",
             "Parking is very limited and allocated in writing",
         ],
-        "fit": "Staff confirms price, deposit, lease term, household fit and availability before payment.",
+        "fit": "Tell us the occupants and ages of any children. Staff confirms the room, deposit, lease term and household fit before payment.",
         "property_facts": [
             "Free Wi-Fi is included.",
             "Private bathroom, kitchen area, hot water and secure access are recorded features.",
@@ -46,10 +46,10 @@ PROPERTIES = [
             "Parking is very limited and only available when management allocates a bay in writing.",
         ],
         "confirm_before_viewing": [
-            "The current available room, final rent and matching deposit.",
-            "The exact room layout, kitchenette and utility arrangement.",
-            "The number of occupants allowed in the selected room.",
-            "Children rules and whether a parking bay is available for that room.",
+            "Deposit: the exact amount is confirmed for the selected room before any payment.",
+            "Children: disclose the ages of all occupants; staff confirms whether the household fits the selected room.",
+            "Lease: the applicable term is confirmed in writing. Subletting is not permitted.",
+            "Viewing: confirm availability, room layout, utilities, occupants and any allocated parking bay.",
         ],
         "household_note": "Prices, occupancy and some rules vary by room. Staff must confirm the selected room before a viewing or payment.",
     },
@@ -73,7 +73,7 @@ PROPERTIES = [
             "No tenant or guest parking",
             "Private en-suite examples shown in the portfolio",
         ],
-        "fit": "Current lease rules do not allow children under 12. Ask staff about ages 12-15 before viewing.",
+        "fit": "R2,200 refundable deposit baseline. Children under 12 are not permitted; ages 12-15 require staff confirmation.",
         "property_facts": [
             "Free Wi-Fi is included and units have private en-suite facilities.",
             "The current documented baseline is R2,200 rent and a R2,200 refundable deposit.",
@@ -81,10 +81,10 @@ PROPERTIES = [
             "No parking is available for tenants or guests, and there is no shared kitchen.",
         ],
         "confirm_before_viewing": [
-            "The current available unit and intended move-in date.",
-            "The full household: adults plus the ages of any children.",
-            "Children under 12 are not permitted; ages 12-15 require staff confirmation.",
-            "Any unit-specific utility, layout or washing-area details.",
+            "Deposit: current documented baseline is R2,200, refundable subject to the lease and inspection deductions.",
+            "Children: under 12 are not permitted; ages 12-15 require staff confirmation before viewing.",
+            "Occupancy: maximum two people. Provide every occupant's name and the ages of children.",
+            "Viewing: confirm the unit, move-in date, utilities and layout. No tenant or guest parking is available.",
         ],
         "household_note": "Quarry Heights is managed as a peaceful environment. Current operational guidance does not allow parties.",
     },
@@ -108,7 +108,7 @@ PROPERTIES = [
             "Private en-suite examples shown in the portfolio",
             "Parking is very limited and never guaranteed",
         ],
-        "fit": "Confirm the selected room's price, deposit, occupancy and household fit with staff before viewing or payment.",
+        "fit": "Recorded deposit baseline R1,400. Disclose all occupants and children's ages; staff confirms the room-specific terms.",
         "property_facts": [
             "Rent is documented from R1,900; the recorded deposit baseline is R1,400.",
             "Rooms accommodate one or two occupants, depending on the room.",
@@ -116,10 +116,10 @@ PROPERTIES = [
             "Parking is very limited, never guaranteed, and there is no shared kitchen.",
         ],
         "confirm_before_viewing": [
-            "The available room, final rent and deposit for that room.",
-            "Whether the room is approved for one or two occupants.",
-            "The exact water, electricity, kitchenette and en-suite arrangement.",
-            "Household fit, children rules and whether any parking can be allocated.",
+            "Deposit: recorded baseline is R1,400; the exact amount is confirmed for the selected room.",
+            "Children: disclose their ages; no blanket Westrich child rule is currently confirmed.",
+            "Occupancy: staff confirms whether the room is approved for one or two people.",
+            "Viewing: confirm rent, utilities, layout and whether limited parking can be allocated in writing.",
         ],
         "household_note": "Wi-Fi and a blanket children rule are not confirmed for Westrich, so staff must check these rather than promise them.",
     },
@@ -245,7 +245,7 @@ def draw_detail_page(c: canvas.Canvas, data: dict[str, object]) -> None:
     right_x = 34 + card_w + gap
     c.setFillColor(accent)
     c.setFont("Helvetica-Bold", 10)
-    c.drawString(right_x + 16, card_y + card_h - 24, "CONFIRM BEFORE VIEWING")
+    c.drawString(right_x + 16, card_y + card_h - 24, "HOUSEHOLD, DEPOSIT & VIEWING")
     draw_bullets(
         c,
         list(data["confirm_before_viewing"]),
