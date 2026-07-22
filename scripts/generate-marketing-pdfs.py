@@ -116,6 +116,7 @@ PROPERTIES = [
         "room": "quarry-heights-studio.jpg",
         "detail": "quarry-heights-bathroom.jpg",
         "photos": "https://photos.app.goo.gl/56RH6eEDm8tBMWxo8",
+        "map": "https://maps.app.goo.gl/i89MQThp1StcQssK7",
         "accent": "#c88743",
         "highlights": [
             "Free Wi-Fi included",
@@ -142,7 +143,8 @@ PROPERTIES = [
                 "title": "RENT & DEPOSIT",
                 "items": [
                     "The current documented baseline is R2,200 monthly rent and a R2,200 refundable deposit.",
-                    "Any deposit split requires staff approval before payment.",
+                    "The deposit is refundable subject to the lease, final inspection and lawful deductions for amounts owed or documented damage.",
+                    "Any deposit split requires staff approval before payment; do not assume an instalment arrangement.",
                     "Availability and the exact unit must be confirmed in writing.",
                 ],
             },
@@ -155,19 +157,21 @@ PROPERTIES = [
                 ],
             },
             {
-                "title": "UTILITIES & FACILITIES",
+                "title": "STUDIO, EN-SUITE & FACILITIES",
                 "items": [
+                    "Quarry Heights offers bachelor-style studio units; the current portfolio shows private en-suite bathrooms and private in-unit kitchenette examples.",
                     "Free shared Wi-Fi is included, subject to service availability.",
-                    "Private en-suite facilities are shown in the current portfolio.",
-                    "Hot water, tiled units, cameras, a locked gate, washing basins and a washing line are recorded features.",
+                    "Tiled units, hot-water facilities, washing basins and a washing line are recorded features; exact room layouts vary.",
+                    "The property is gated and cameras are recorded in common areas; confirm current operation and coverage.",
                 ],
             },
             {
-                "title": "PARKING & UNIT SETUP",
+                "title": "LOCATION, UTILITIES & PARKING",
                 "items": [
+                    "The current public name is Quarry Heights at 28 Nkunzana Grove, Newlands East, 4037; older material may use the name Ekukhanyeni.",
                     "No parking is available for tenants or guests.",
-                    "There is no shared kitchen.",
-                    "Confirm the selected unit's electricity, water, washing-area and exact layout details before viewing.",
+                    "The source flyer records prepaid electricity and water included. Staff must confirm the current arrangement for the selected unit.",
+                    "There is no shared kitchen; confirm the private kitchenette, washing area and exact layout before viewing.",
                 ],
             },
             {
@@ -181,8 +185,8 @@ PROPERTIES = [
             {
                 "title": "APPLICATION & VIEWING",
                 "items": [
-                    "Provide ID or passport, three months bank statements, contact details, move-in date and all occupant names and ages.",
-                    "Proof of income may be requested during review.",
+                    "Provide the applicant's full name and surname, ID or passport, three months bank statements, contact details and intended move-in date.",
+                    "List every proposed occupant and the ages of children. Proof of income or a current payslip may be requested during review.",
                     "Documents do not guarantee approval or reserve a unit; wait for viewing and payment confirmation.",
                 ],
             },
@@ -598,10 +602,17 @@ def draw_terms_page(c: canvas.Canvas, data: dict[str, object]) -> None:
     c.drawRightString(PAGE_W - 34, 50, "hambatrading.co.za")
     c.setFillColor(muted)
     c.setFont("Helvetica", 7)
-    c.drawRightString(PAGE_W - 34, 36, "View photos, ask questions, or request a confirmed viewing.")
+    if data.get("map"):
+        c.drawRightString(PAGE_W - 34, 36, "VIEW MAP  |  VIEW PHOTOS  |  Request a confirmed viewing")
+    else:
+        c.drawRightString(PAGE_W - 34, 36, "View photos, ask questions, or request a confirmed viewing.")
 
     c.linkURL("https://hambatrading.co.za", (PAGE_W - 190, 33, PAGE_W - 30, 61), relative=0)
-    c.linkURL(str(data["photos"]), (PAGE_W - 260, 20, PAGE_W - 30, 38), relative=0)
+    if data.get("map"):
+        c.linkURL(str(data["map"]), (PAGE_W - 285, 20, PAGE_W - 225, 38), relative=0)
+        c.linkURL(str(data["photos"]), (PAGE_W - 220, 20, PAGE_W - 145, 38), relative=0)
+    else:
+        c.linkURL(str(data["photos"]), (PAGE_W - 260, 20, PAGE_W - 30, 38), relative=0)
     c.linkURL("https://wa.me/27812674647", (30, 31, 180, 62), relative=0)
 
 
