@@ -1,0 +1,4 @@
+/release-tests/ @sanelen
+/.github/workflows/property-showcase-release-gate.yml @sanelen
+/scripts/vercel-production-guard.mjs @sanelen
+/scripts/vercel-production-guard.test.mjs @sanelen

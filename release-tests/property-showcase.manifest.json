@@ -1,0 +1,33 @@
+{
+  "homepageHeading": "Find the place that fits.",
+  "properties": [
+    {
+      "id": "essex",
+      "name": "33 Essex",
+      "pagePath": "/marketing/33-essex",
+      "address": "33 Essex Road, Bulwer, Berea, Durban, 4083",
+      "portfolioUrl": "https://photos.app.goo.gl/kMR2VEfBo4EXLZJQA",
+      "pdfPath": "/marketing/hamba-essex-advert.pdf",
+      "pdfPages": 3
+    },
+    {
+      "id": "quarry",
+      "name": "Quarry Heights",
+      "pagePath": "/marketing/quarry-heights",
+      "address": "28 Nkunzana Grove, Newlands East, 4037",
+      "portfolioUrl": "https://photos.app.goo.gl/56RH6eEDm8tBMWxo8",
+      "pdfPath": "/marketing/hamba-quarry-heights-advert.pdf",
+      "pdfPages": 3
+    },
+    {
+      "id": "westridge",
+      "name": "Westrich",
+      "pagePath": "/marketing/westrich",
+      "address": "House No. 10, 109585 St, Earlsfield, Newlands West, 4037",
+      "portfolioUrl": "https://photos.app.goo.gl/xwUqocDcoAvnMpmW8",
+      "pdfPath": "/marketing/hamba-westrich-advert.pdf",
+      "pdfPages": 3,
+      "carouselSlides": 6
+    }
+  ]
+}

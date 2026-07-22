@@ -1,0 +1,50 @@
+name: Property showcase release gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  deployment_status:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: property-showcase-${{ github.event_name }}-${{ github.ref || github.event.deployment.id }}
+  cancel-in-progress: true
+
+jobs:
+  contract-and-build:
+    if: github.event_name != 'deployment_status'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:release:contract
+      - run: npm run build
+
+  deployed-browser-smoke:
+    if: >-
+      github.event_name == 'deployment_status' &&
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment_status.environment_url != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:release:browser
+        env:
+          CI: 'true'
+          RELEASE_BASE_URL: ${{ github.event.deployment_status.environment_url }}
