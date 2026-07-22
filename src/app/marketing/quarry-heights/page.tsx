@@ -66,8 +66,18 @@ export default function QuarryHeightsAdvertPreviewPage() {
             download
             className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#c88743]/40 px-3 text-xs font-black uppercase tracking-[0.12em] text-[#e6b976] transition hover:bg-[#c88743]/10"
           >
-            <Download aria-hidden size={15} /> PDF
+            <Download aria-hidden size={15} /> Full pamphlet PDF
           </a>
+        </div>
+      </div>
+
+      <div className="mx-auto mb-5 flex w-full max-w-6xl items-start gap-3 rounded-2xl border border-[#c88743]/40 bg-[#c88743]/10 px-4 py-3 text-[#f7efe3] print:hidden">
+        <FileCheck2 aria-hidden className="mt-0.5 shrink-0 text-[#e6b976]" size={20} />
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.08em] text-[#e6b976]">Complete 3-page property pamphlet</p>
+          <p className="mt-1 text-xs leading-5 text-white/65">
+            The PDF contains the property details, household guidance, application steps, viewing process and payment safety information.
+          </p>
         </div>
       </div>
 
