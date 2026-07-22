@@ -6,7 +6,7 @@ The release gate has three layers:
 
 1. `contracts/` verifies the expected three-property manifest, public routes, source assets, pamphlet links and carousel definitions before a build.
 2. `artifacts/` runs automatically after every `npm run build` and inspects the emitted Next.js HTML plus the actual PDF page counts.
-3. `browser/` runs against a deployed URL and proves the homepage carousel, locations, photo links, pamphlet downloads, six-slide Westrich carousel and mobile layout are usable.
+3. `browser/` runs against the public custom domain after every successful Production deployment and proves the homepage carousel, locations, photo links, pamphlet downloads, six-slide Westrich carousel and mobile layout are usable. Protected preview URLs rely on the contract and artifact gates instead of mistaking Vercel's login page for the application.
 
 Commands:
 
