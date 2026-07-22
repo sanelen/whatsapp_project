@@ -26,6 +26,9 @@ coverage/
 logs/
 *.log
 supabase/.temp/
+tmp/
+**/__pycache__/
+*.pyc
 
 # TypeScript / Next generated files
 *.tsbuildinfo
