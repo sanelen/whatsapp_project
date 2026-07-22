@@ -66,8 +66,18 @@ export default function EssexAdvertPreviewPage() {
             download
             className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#d4aa64]/35 px-3 text-xs font-black uppercase tracking-[0.12em] text-[#e7c27d] transition hover:bg-[#d4aa64]/10"
           >
-            <Download aria-hidden size={15} /> PDF
+            <Download aria-hidden size={15} /> Full pamphlet PDF
           </a>
+        </div>
+      </div>
+
+      <div className="mx-auto mb-5 flex w-full max-w-6xl items-start gap-3 rounded-2xl border border-[#d4aa64]/35 bg-[#d4aa64]/10 px-4 py-3 text-[#f6efe2] print:hidden">
+        <FileCheck2 aria-hidden className="mt-0.5 shrink-0 text-[#e7c27d]" size={20} />
+        <div>
+          <p className="text-sm font-black uppercase tracking-[0.08em] text-[#e7c27d]">Complete 3-page property pamphlet</p>
+          <p className="mt-1 text-xs leading-5 text-white/65">
+            The PDF contains the property details, household guidance, application steps, viewing process and payment safety information.
+          </p>
         </div>
       </div>
 
