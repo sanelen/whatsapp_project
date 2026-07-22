@@ -1,5 +1,13 @@
+import type { Metadata } from 'next';
 import { ArrowRight, FileText, LockKeyhole, MessageCircle, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
+
+import { PropertyShowcase } from '@/components/public/property-showcase';
+
+export const metadata: Metadata = {
+  title: 'Hamba Trading | Durban studio rentals',
+  description: 'Browse Hamba Trading studio and en-suite rentals in Berea, Newlands West, and Newlands East.',
+};
 
 const whatsappUrl =
   'https://wa.me/27812674647?text=Hello%20Hamba%20Trading%2C%20I%20need%20help%20with%20a%20property.';
@@ -73,6 +81,8 @@ export default function HomePage() {
             </p>
           </a>
         </section>
+
+        <PropertyShowcase />
 
         <section className="mt-14" aria-labelledby="public-information-heading">
           <div className="flex flex-wrap items-end justify-between gap-3">

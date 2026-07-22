@@ -26,6 +26,29 @@ body {
   overflow-y: auto;
 }
 
+.property-media-rail {
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+}
+
+.property-media-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.property-showcase-rail {
+  scrollbar-width: none;
+}
+
+.property-showcase-rail::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .property-showcase-rail {
+    scroll-behavior: auto;
+  }
+}
+
 .hamba-display {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   font-weight: 600;
