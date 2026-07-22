@@ -1,3 +1,5 @@
+import { getVercelProductionGuardFailure } from "./vercel-production-guard.mjs";
+
 const requiredNodeMajor = 22;
 const requiredNpmMajor = 10;
 
@@ -25,5 +27,12 @@ if (npmMajor !== null && npmMajor < requiredNpmMajor) {
       "Use: npm install -g npm@latest",
     ].join("\n"),
   );
+  process.exit(1);
+}
+
+const productionGuardFailure = getVercelProductionGuardFailure(process.env);
+
+if (productionGuardFailure) {
+  console.error(productionGuardFailure);
   process.exit(1);
 }

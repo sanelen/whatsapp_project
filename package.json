@@ -18,7 +18,7 @@
     "prelint": "npm run check:runtime",
     "lint": "eslint",
     "typecheck": "tsc --noEmit --incremental false",
-    "test": "node --import tsx --test 'src/**/*.test.ts' 'src/**/*.test.tsx'",
+    "test": "node --import tsx --test 'src/**/*.test.ts' 'src/**/*.test.tsx' 'scripts/**/*.test.mjs'",
     "audit:vector-pipeline": "node scripts/audit-vector-pipeline.mjs",
     "transcribe": "node scripts/transcribe.mjs",
     "test:e2e": "npx playwright test --project=local",
