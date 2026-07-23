@@ -82,7 +82,7 @@ async function claimEvent(admin: SupabaseClient, event: NormalizedChannelEvent) 
     .eq('processing_status', 'received')
     .select('id');
   if (error) throw new Error(`Channel event claim failed: ${error.message}`);
-  if ((data ?? []).length === 1) return true;
+  if ((data ?? []).length === 1) return 'claimed' as const;
 
   const staleBefore = new Date(Date.now() - STALE_PROCESSING_MS).toISOString();
   const { data: failed, error: failError } = await admin
@@ -102,8 +102,18 @@ async function claimEvent(admin: SupabaseClient, event: NormalizedChannelEvent) 
   if (failError) throw new Error(`Stale channel event quarantine failed: ${failError.message}`);
   if ((failed ?? []).length === 1) {
     console.error('[whatsapp-dispatch] Stale processing event quarantined for operator review');
+    return 'terminal' as const;
   }
-  return false;
+
+  const { data: existing, error: existingError } = await admin
+    .from('channel_events')
+    .select('processing_status')
+    .eq('provider', event.provider)
+    .eq('channel', event.channel)
+    .eq('event_id', event.eventId)
+    .maybeSingle();
+  if (existingError) throw new Error(`Channel event status load failed: ${existingError.message}`);
+  return existing?.processing_status === 'processing' ? 'busy' as const : 'terminal' as const;
 }
 
 export function isFirstPendingConversationEvent(
@@ -311,7 +321,9 @@ export async function dispatchMetaInboundEvent(admin: SupabaseClient, event: Nor
     await updateEventStatus(admin, event, 'ignored');
     return { outcome: 'bot-paused' as const };
   }
-  if (!await claimEvent(admin, event)) return { outcome: 'duplicate' as const };
+  const claim = await claimEvent(admin, event);
+  if (claim === 'busy') throw new Error('This event is already processing; retry this webhook.');
+  if (claim === 'terminal') return { outcome: 'duplicate' as const };
 
   if (!await acquireConversationTurn(admin, event)) {
     await updateEventStatus(admin, event, 'received', 'Waiting for an earlier conversation message.');
