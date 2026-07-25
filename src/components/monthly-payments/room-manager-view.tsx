@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import type { RoomManagerRoomRow, RoomManagerRule, RoomManagerView } from '@/lib/monthly-payments';
 import { MonthlyPaymentsNavigation } from './monthly-payments-navigation';
 
@@ -35,6 +35,16 @@ type RoomDraft = {
   rules: EditableRule[];
 };
 
+type StayDraft = {
+  tenantDisplayName: string;
+  contactPrimary: string;
+  contactSecondary: string;
+  startsOn: string;
+  endsOn: string;
+  depositTargetAmount: string;
+  closeReason: string;
+};
+
 type EditorMode = 'edit' | 'create';
 type StatusFilter = 'all' | 'occupied' | 'vacant' | 'blocked';
 
@@ -48,6 +58,10 @@ function formatCurrency(amount: number) {
   })}`;
 }
 
+function combinedTenantName(stay: Pick<StayDraft, 'tenantDisplayName' | 'contactPrimary' | 'contactSecondary'>) {
+  return [stay.contactPrimary, stay.contactSecondary].map((part) => part.trim()).filter(Boolean).join(' ') || stay.tenantDisplayName;
+}
+
 function roomStatus(room: RoomManagerView['rooms'][number]) {
   if (room.isBlocked) {
     return {
@@ -57,7 +71,7 @@ function roomStatus(room: RoomManagerView['rooms'][number]) {
       barClass: 'bg-[#78716c]',
     };
   }
-  if (room.isAvailable || room.occupancy === 'vacant') {
+  if (room.isAvailable || room.occupancy === 'vacant' || (room.stayLifecycleMode === 'occupancy' && !room.currentStay)) {
     return {
       key: 'vacant' as const,
       label: 'on market',
@@ -127,7 +141,7 @@ function createNewDraft(view: RoomManagerView): RoomDraft {
 
 function createEmptyRule(): EditableRule {
   return {
-    matcherType: 'reference_contains',
+    matcherType: 'reference_equals',
     matcherValue: '',
     amountValue: '',
     isActive: true,
@@ -154,6 +168,31 @@ async function saveRoom(body: Record<string, unknown>) {
   }
 
   return payload as { success: true; unitId?: string };
+}
+
+function createCurrentStayDraft(room: RoomManagerRoomRow, draft: RoomDraft): StayDraft {
+  const stay = room.currentStay;
+  return {
+    tenantDisplayName: stay?.tenantDisplayName || [draft.contactPrimary, draft.contactSecondary].filter(Boolean).join(' '),
+    contactPrimary: stay?.contactPrimary || draft.contactPrimary,
+    contactSecondary: stay?.contactSecondary || draft.contactSecondary,
+    startsOn: stay?.startsOn ?? '',
+    endsOn: stay?.endsOn ?? '',
+    depositTargetAmount: String(stay?.depositTargetAmount ?? Number(draft.depositAmount || 0)),
+    closeReason: '',
+  };
+}
+
+function createPastStayDraft(draft: RoomDraft): StayDraft {
+  return {
+    tenantDisplayName: 'Previous tenant',
+    contactPrimary: '',
+    contactSecondary: '',
+    startsOn: '',
+    endsOn: '',
+    depositTargetAmount: draft.depositAmount,
+    closeReason: 'retrospective stay version',
+  };
 }
 
 export function RoomManagerPanel({
@@ -336,7 +375,7 @@ export function RoomManagerPanel({
                   {view.propertyName} room manager
                 </h1>
                 <p className="mt-1 max-w-[560px] text-[13px] leading-normal text-[#8a8578]">
-                  Room cards feed the payments unit table - names, rent and match rules all live here.
+                  Room cards feed the payments unit table - names, rent, primary reference and known references all live here.
                 </p>
                 <p className="mt-1.5 text-[13px] text-[#a39d8d]">Billing window {view.billingWindowLabel}</p>
               </div>
@@ -404,6 +443,8 @@ export function RoomManagerPanel({
               <section className="mt-3.5 overflow-hidden rounded-2xl border border-[#e7e3d6] bg-white">
                 <RoomEditor
                   draft={draft}
+                  room={undefined}
+                  propertyId={view.propertyId}
                   errorMessage={errorMessage}
                   advancedFieldsLocked={advancedFieldsLocked}
                   isSaving={isSaving}
@@ -480,6 +521,8 @@ export function RoomManagerPanel({
                     {isExpanded ? (
                       <RoomEditor
                         draft={draft}
+                        room={room}
+                        propertyId={view.propertyId}
                         errorMessage={errorMessage}
                         advancedFieldsLocked={advancedFieldsLocked}
                         isSaving={isSaving}
@@ -528,6 +571,8 @@ function StatCell({
 
 function RoomEditor({
   draft,
+  room,
+  propertyId,
   errorMessage,
   advancedFieldsLocked,
   isSaving,
@@ -540,6 +585,8 @@ function RoomEditor({
   closeEditor,
 }: {
   draft: RoomDraft;
+  room?: RoomManagerRoomRow;
+  propertyId: string;
   errorMessage: string | null;
   advancedFieldsLocked: boolean;
   isSaving: boolean;
@@ -551,6 +598,57 @@ function RoomEditor({
   handleSave: () => void;
   closeEditor: () => void;
 }) {
+  const router = useRouter();
+  const [stayNotice, setStayNotice] = useState<string | null>(null);
+  const [stayError, setStayError] = useState<string | null>(null);
+  const [isSavingStay, startSavingStay] = useTransition();
+  const [currentStayDraft, setCurrentStayDraft] = useState<StayDraft | null>(
+    room ? createCurrentStayDraft(room, draft) : null
+  );
+  const [pastStayDraft, setPastStayDraft] = useState<StayDraft>(createPastStayDraft(draft));
+  const [endStayDate, setEndStayDate] = useState(room?.currentStay?.endsOn ?? '');
+
+  function updateCurrentStay<K extends keyof StayDraft>(key: K, value: StayDraft[K]) {
+    setCurrentStayDraft((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  function updatePastStay<K extends keyof StayDraft>(key: K, value: StayDraft[K]) {
+    setPastStayDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function submitStayAction(action: 'save_current_stay' | 'add_past_stay' | 'end_current_stay', stay: StayDraft) {
+    if (!draft.unitId) return;
+    setStayError(null);
+    setStayNotice(null);
+    startSavingStay(async () => {
+      try {
+        await saveRoom({
+          action,
+          unitId: draft.unitId,
+          propertyId,
+          tenantDisplayName: action === 'add_past_stay' ? stay.tenantDisplayName : combinedTenantName(stay),
+          contactPrimary: stay.contactPrimary,
+          contactSecondary: stay.contactSecondary,
+          startsOn: stay.startsOn || undefined,
+          endsOn: stay.endsOn || undefined,
+          closeReason: stay.closeReason || undefined,
+          depositAmount: Number(stay.depositTargetAmount || draft.depositAmount || 0),
+        });
+      } catch (error) {
+        setStayError(error instanceof Error ? error.message : 'Failed to save tenant stay');
+        return;
+      }
+      setStayNotice(
+        action === 'add_past_stay'
+          ? 'Past stay added'
+          : action === 'end_current_stay'
+            ? 'Current stay ended'
+            : 'Current stay saved'
+      );
+      router.refresh();
+    });
+  }
+
   return (
     <div className="border-t border-[#f0ece0] bg-[#fbfaf6] px-4 pb-4 pt-3.5">
       {errorMessage ? <p className="mb-2.5 text-[13px] font-semibold text-rose-700">{errorMessage}</p> : null}
@@ -626,15 +724,201 @@ function RoomEditor({
         </FieldLabel>
       </div>
 
+      {room && currentStayDraft ? (
+        <div className="mt-3.5 border-t border-[#f0ece0] pt-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[13px] font-bold text-[#1c1a17]">Stay history</p>
+              <p className="mt-0.5 text-[11.5px] text-[#8a8578]">
+                {room.stayLifecycleMode === 'occupancy'
+                  ? 'Tenant versions for deposits and payment history. Use Billing from for the month the stay should own money.'
+                  : 'Tenant stay migration required.'}
+              </p>
+            </div>
+            {room.stayLifecycleMode === 'occupancy' ? (
+              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#0f7b53]">
+                {room.stays.length} stay{room.stays.length === 1 ? '' : 's'}
+              </span>
+            ) : null}
+          </div>
+
+          {stayError ? <p className="mt-2 text-[12px] font-semibold text-rose-700">{stayError}</p> : null}
+          {stayNotice ? <p className="mt-2 text-[12px] font-semibold text-emerald-700">{stayNotice}</p> : null}
+
+          <div className="mt-2 grid gap-3 lg:grid-cols-2">
+            <div className="rounded-xl border border-[#e7e3d6] bg-white p-3">
+              <p className="text-[12px] font-bold text-[#1c1a17]">Active tenant version</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <FieldLabel label="Tenant">
+                  <input
+                    value={combinedTenantName(currentStayDraft)}
+                    readOnly
+                    aria-readonly="true"
+                    className={`${inputClassName} bg-[#f8f6ef]`}
+                  />
+                </FieldLabel>
+                <FieldLabel label="Billing from">
+                  <input
+                    type="date"
+                    value={currentStayDraft.startsOn}
+                    onChange={(event) => updateCurrentStay('startsOn', event.target.value)}
+                    disabled={room.stayLifecycleMode !== 'occupancy'}
+                    className={inputClassName}
+                  />
+                </FieldLabel>
+                <FieldLabel label="Name">
+                  <input
+                    value={currentStayDraft.contactPrimary}
+                    onChange={(event) => updateCurrentStay('contactPrimary', event.target.value)}
+                    disabled={room.stayLifecycleMode !== 'occupancy'}
+                    className={inputClassName}
+                  />
+                </FieldLabel>
+                <FieldLabel label="Surname">
+                  <input
+                    value={currentStayDraft.contactSecondary}
+                    onChange={(event) => updateCurrentStay('contactSecondary', event.target.value)}
+                    disabled={room.stayLifecycleMode !== 'occupancy'}
+                    className={inputClassName}
+                  />
+                </FieldLabel>
+                <FieldLabel label="Deposit target">
+                  <input
+                    type="number"
+                    min="0"
+                    value={currentStayDraft.depositTargetAmount}
+                    onChange={(event) => updateCurrentStay('depositTargetAmount', event.target.value)}
+                    disabled={room.stayLifecycleMode !== 'occupancy'}
+                    className={inputClassName}
+                  />
+                </FieldLabel>
+                <FieldLabel label="Ends after">
+                  <input
+                    type="date"
+                    value={endStayDate}
+                    onChange={(event) => setEndStayDate(event.target.value)}
+                    disabled={room.stayLifecycleMode !== 'occupancy'}
+                    className={inputClassName}
+                  />
+                </FieldLabel>
+              </div>
+              <div className="mt-2 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isSavingStay || room.stayLifecycleMode !== 'occupancy'}
+                  onClick={() => submitStayAction('save_current_stay', currentStayDraft)}
+                  className="rounded-full border border-[#e7e3d6] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#292524] disabled:cursor-not-allowed disabled:text-[#a39d8d]"
+                >
+                  Save tenant version
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingStay || room.stayLifecycleMode !== 'occupancy' || !endStayDate}
+                  onClick={() =>
+                    submitStayAction('end_current_stay', {
+                      ...currentStayDraft,
+                      endsOn: endStayDate,
+                      closeReason: currentStayDraft.closeReason || 'tenant moved out',
+                    })
+                  }
+                  className="rounded-full border border-[#e7e3d6] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#7c2d12] disabled:cursor-not-allowed disabled:text-[#a39d8d]"
+                >
+                  End tenant version
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[#e7e3d6] bg-white p-3">
+              <p className="text-[12px] font-bold text-[#1c1a17]">Add past stay</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <FieldLabel label="Tenant">
+                  <input
+                    value={pastStayDraft.tenantDisplayName}
+                    onChange={(event) => updatePastStay('tenantDisplayName', event.target.value)}
+                    disabled={room.stayLifecycleMode !== 'occupancy'}
+                    className={inputClassName}
+                  />
+                </FieldLabel>
+                <FieldLabel label="Ended on">
+                  <input
+                    type="date"
+                    value={pastStayDraft.endsOn}
+                    onChange={(event) => updatePastStay('endsOn', event.target.value)}
+                    disabled={room.stayLifecycleMode !== 'occupancy'}
+                    className={inputClassName}
+                  />
+                </FieldLabel>
+                <FieldLabel label="Billing from">
+                  <input
+                    type="date"
+                    value={pastStayDraft.startsOn}
+                    onChange={(event) => updatePastStay('startsOn', event.target.value)}
+                    disabled={room.stayLifecycleMode !== 'occupancy'}
+                    className={inputClassName}
+                  />
+                </FieldLabel>
+                <FieldLabel label="Deposit target">
+                  <input
+                    type="number"
+                    min="0"
+                    value={pastStayDraft.depositTargetAmount}
+                    onChange={(event) => updatePastStay('depositTargetAmount', event.target.value)}
+                    disabled={room.stayLifecycleMode !== 'occupancy'}
+                    className={inputClassName}
+                  />
+                </FieldLabel>
+              </div>
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  disabled={isSavingStay || room.stayLifecycleMode !== 'occupancy' || !pastStayDraft.endsOn}
+                  onClick={() => submitStayAction('add_past_stay', pastStayDraft)}
+                  className="rounded-full border border-[#e7e3d6] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#292524] disabled:cursor-not-allowed disabled:text-[#a39d8d]"
+                >
+                  Add past stay
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {room.stays.length > 0 ? (
+            <div className="mt-2 divide-y divide-[#f0ece0] rounded-xl border border-[#e7e3d6] bg-white px-3">
+              {room.stays.map((stay) => (
+                <div key={stay.id} className="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[12px] font-bold text-[#292524]">
+                      {stay.tenantDisplayName || 'Unnamed stay'} · {stay.status}
+                    </p>
+                    <p className="text-[11.5px] text-[#8a8578]">
+                      {[stay.startsOn ? `Billing from ${stay.startsOn}` : null, stay.endsOn ? `ended ${stay.endsOn}` : null, stay.closedAt ? 'closed' : null]
+                        .filter(Boolean)
+                        .join(' · ') || 'Dates not captured'}
+                    </p>
+                  </div>
+                  <span className="self-start rounded-full bg-[#e8f6ee] px-2.5 py-1 text-[11px] font-bold text-[#0f7b53]">
+                    Deposit paid {formatCurrency(stay.depositBalance)} / {formatCurrency(stay.depositTargetAmount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="mt-3.5 border-t border-[#f0ece0] pt-3">
         <div className="flex items-center justify-between">
-          <p className="text-[13px] font-bold text-[#1c1a17]">Match rules</p>
+          <div>
+            <p className="text-[13px] font-bold text-[#1c1a17]">Known references</p>
+            <p className="mt-0.5 text-[11.5px] text-[#8a8578]">
+              Primary reference stays above. Add tenant-used variants here; remove a bad one with X.
+            </p>
+          </div>
           <button
             type="button"
             onClick={addRule}
             className="rounded-full border border-[#e7e3d6] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#292524]"
           >
-            + Add rule
+            + Add known ref
           </button>
         </div>
         <div className="mt-2 flex flex-col gap-1.5">
@@ -650,8 +934,8 @@ function RoomEditor({
                 }
                 className="rounded-lg border border-[#e7e3d6] px-2 py-1 text-[12px]"
               >
-                <option value="reference_contains">Ref contains</option>
-                <option value="reference_equals">Ref equals</option>
+                <option value="reference_equals">Exact reference</option>
+                <option value="reference_contains">Contains text</option>
                 <option value="reference_regex">Ref regex</option>
                 <option value="payer_name_contains">Payer contains</option>
                 <option value="amount_equals">Amount equals</option>
@@ -673,9 +957,9 @@ function RoomEditor({
                 type="button"
                 onClick={() => removeRule(index)}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#a39d8d]"
-                aria-label="Remove rule"
+                aria-label="Delete known reference"
               >
-                <Trash2 size={14} />
+                <X size={14} />
               </button>
             </div>
           ))}

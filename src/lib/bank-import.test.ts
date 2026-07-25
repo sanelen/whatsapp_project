@@ -9,6 +9,7 @@ import {
   getBillingPeriodForDate,
   getBillingWindowForPeriod,
   getGmailIntegrationStatus,
+  gmailUserIdForRequest,
   isExcludedBankAccount,
   isExcludedNonRentCredit,
   parseBankStatementCsv,
@@ -202,6 +203,25 @@ test('buildGmailSearchQuery combines attachment, subject, label, and after filte
   assert.match(query, /after:2026\/06\/29/);
 });
 
+test('buildGmailSearchQuery defaults blank payment mailboxes to Capitec subjects', () => {
+  const query = buildGmailSearchQuery({ subject_filter: '', label_filter: '', last_synced_at: null });
+  assert.equal(query, 'has:attachment subject:Capitec');
+});
+
+test('Gmail OAuth imports address the granted mailbox as users/me', () => {
+  assert.equal(
+    gmailUserIdForRequest({ authMode: 'oauth_refresh_token' }, 'Sanele.ngcobo@gmail.com'),
+    'me'
+  );
+});
+
+test('Gmail service-account imports address the delegated mailbox explicitly', () => {
+  assert.equal(
+    gmailUserIdForRequest({ authMode: 'service_account' }, 'info.hambatrading@gmail.com'),
+    'info.hambatrading%40gmail.com'
+  );
+});
+
 test('getBillingWindowForPeriod maps a month to the 9th-through-8th working window', () => {
   const window = getBillingWindowForPeriod('2026-06');
 
@@ -261,6 +281,7 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
         buildGmailOAuthConsentUrl({
           redirectUri: 'http://localhost:3001/api/monthly-payments/import/google-cloud',
           state: 'monthly-payments-bank-import',
+          loginHint: 'info.hambatrading@gmail.com',
         })
       );
 
@@ -272,7 +293,8 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
         'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly'
       );
       assert.equal(url.searchParams.get('access_type'), 'offline');
-      assert.equal(url.searchParams.get('prompt'), 'consent');
+      assert.equal(url.searchParams.get('prompt'), 'consent select_account');
+      assert.equal(url.searchParams.get('login_hint'), 'info.hambatrading@gmail.com');
       assert.equal(url.searchParams.get('state'), 'monthly-payments-bank-import');
     }
   );
@@ -576,6 +598,35 @@ test('a property-locked old account ignores generic hints from other properties'
   });
   assert.equal(resolved.propertyId, 'west-rich');
   assert.deepEqual(resolved.unitHints.map((hint) => hint.unitId), ['wr-room-11']);
+});
+
+test('Quarry Heights 6088 account ignores generic Room 6 hints from other properties', () => {
+  const entry = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 18/07/2026 15:56:51
+    Transaction ID : quarry-room-6
+    Account Paid To : ****6088
+    Amount Received : R 1,100.00
+    Reference : QHROOM6 BLOSE
+  `);
+  assert.ok(entry);
+
+  const resolved = resolveImportContext({
+    entry,
+    organizationId: 'org-1',
+    propertyMappings: [{
+      id: 'qh-current', organization_id: 'org-1', property_id: 'quarry',
+      account_number_suffix: '6088', property_name: 'Quarry Heights', is_active: true,
+    }],
+    unitMatchHints: [
+      { id: 'qh-room-6', property_id: 'quarry', unit_id: 'qh-room-6', matcher_type: 'reference_contains', matcher_value: 'Room6,QHROOM6 ,06 QH06', amount_value: null, priority: 10, is_active: true },
+      { id: 'wr-room-6', property_id: 'west-rich', unit_id: 'wr-room-6', matcher_type: 'reference_contains', matcher_value: 'Room6,WRROOM6 ,06 WR06', amount_value: null, priority: 10, is_active: true },
+    ],
+  });
+
+  assert.equal(resolved.propertyId, 'quarry');
+  assert.equal(resolved.matchedBy, 'account_suffix:6088');
+  assert.deepEqual(resolved.unitHints.map((hint) => hint.unitId), ['qh-room-6']);
 });
 
 test('mixed legacy account uses an account-scoped amount rule to resolve generic room conflicts', () => {

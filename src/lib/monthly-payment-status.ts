@@ -48,6 +48,8 @@ export function computeUnitStatus(input: {
   expectedAmount: number;
   depositAmount?: number;
   depositContributedAmount?: number;
+  /** Overpayment moved out of this month's rent into held/allocated unit credit. */
+  creditFromMatchedReferencesAmount?: number;
   /** Non-reversed credit allocations applied to this period (FR-2.8 rulings 2026-07-03) — counts toward the received side like operator-approved money. */
   creditAppliedAmount?: number;
   matchedReferences: Array<{
@@ -82,8 +84,9 @@ export function computeUnitStatus(input: {
       ? 0
       : null;
   const contributed = input.depositContributedAmount ?? 0;
+  const creditedAway = input.creditFromMatchedReferencesAmount ?? 0;
   const effectiveReceived =
-    receivedAmount === null ? null : roundMoney(receivedAmount - contributed + creditApplied);
+    receivedAmount === null ? null : roundMoney(receivedAmount - contributed - creditedAway + creditApplied);
   const signedOffAmount = input.matchedReferences
     .filter((reference) => reference.signed_off)
     .reduce((sum, reference) => sum + toMoney(reference.amount), 0);

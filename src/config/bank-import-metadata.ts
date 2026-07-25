@@ -69,6 +69,6 @@ export const EXCLUDED_BANK_ACCOUNT_SUFFIXES = new Set(['7467']);
 
 // Dedicated property accounts use their account mapping as the property
 // boundary. Match hints may choose a unit only inside that mapped property.
-export const PROPERTY_LOCKED_BANK_ACCOUNT_SUFFIXES = new Set(['7904', '9613']);
+export const PROPERTY_LOCKED_BANK_ACCOUNT_SUFFIXES = new Set(['6088', '7904', '9613']);
 
 export const MIXED_LEGACY_BANK_ACCOUNT_SUFFIXES = new Set(['6570']);

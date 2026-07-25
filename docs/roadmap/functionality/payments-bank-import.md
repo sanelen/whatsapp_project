@@ -1,11 +1,12 @@
 # Payments Bank Import Notes
 
-Last updated: 2026-07-12
+Last updated: 2026-07-20
 
 > Evidence began with the 2026-06-29 Record and Replay session and was extended with
 > live Gmail, Drive, PDF, and CSV reconciliation on 2026-07-12.
 > Status: **Gmail and controlled Drive imports are live. Import audit,
-> configuration, layered dedupe, account policies, and property routing are shipped.**
+> configuration, layered dedupe, account policies, and property routing are shipped.
+> A three-day two-mailbox reconciliation is built and awaits production activation.**
 
 ## Why this note exists
 
@@ -239,6 +240,17 @@ inbox:
 - `GMAIL_OAUTH_CLIENT_SECRET`
 - `GMAIL_OAUTH_REFRESH_TOKEN`
 
+Two-mailbox reconciliation additionally requires:
+
+- `BANK_IMPORT_SOURCE_MAILBOX_EMAIL=Sanele.ngcobo@gmail.com`
+- `GMAIL_SOURCE_OAUTH_REFRESH_TOKEN` — a separate offline OAuth grant created
+  while signed into the source Gmail account
+- `BANK_IMPORT_DESTINATION_MAILBOX_EMAIL=info.hambatrading@gmail.com`
+
+One refresh token does not grant access to both personal Gmail accounts. The
+source token is server-only and must never be stored in Supabase or returned to a
+browser status view.
+
 Alternative for Google Workspace domain-wide delegation:
 
 - `GMAIL_SERVICE_ACCOUNT_CLIENT_EMAIL`
@@ -250,6 +262,22 @@ Operational helpers:
   explicit **Bank** import source
 - production callback override: `GMAIL_OAUTH_REDIRECT_URI`
 - optional for cron protection: `BANK_IMPORT_CRON_SECRET`
+
+The reconciliation endpoint is
+`/api/monthly-payments/import/reconcile`. Vercel invokes it daily at 07:00 SAST;
+the durable database guard runs the import only when 72 hours have elapsed. This
+is used instead of a `*/3` day-of-month expression, which is not a consistent
+three-day interval at month boundaries. A manual authenticated `POST` bypasses
+the cadence guard. The job scans three billing periods, records partial failures,
+compares mailboxes by attachment SHA-256, and reuses the importer's layered
+dedupe and no-auto-sign-off safety rules.
+
+Local browser evidence from 2026-07-20 is stored at:
+
+- `docs/audits/screenshots/2026-07-20-payment-reconciliation-after.png` —
+  status card before the first run
+- `docs/audits/screenshots/2026-07-20-payment-reconciliation-expired-oauth.png` —
+  the first real run visibly reporting the expired destination OAuth token
 
 Vercel Preview and Production were configured on 2026-07-13 with the OAuth client,
 refresh token, production callback, and Bank Uploads folder as sensitive environment
@@ -274,6 +302,11 @@ The read-only import validation slice shipped on 2026-07-12:
 - Each file exposes parser status, Drive archive/source state, hash provenance,
   extracted incoming amounts, database presence, and current unit match or
   sign-off status.
+- Capitec PDFs have source parity with Gmail/CSV evidence: a file that cannot
+  safely produce or match a payment is retained and shown in **Unprocessed bank
+  items** with its parser/import reason and a link back to the source evidence.
+- Source format controls provenance only. It must not decide whether a payment
+  can be stored, matched, or made visible to the operator.
 - The page deliberately does not edit matches; operators continue matching in
   the reference pool or property table.
 - `/monthly-payments/import-configuration` documents the live Gmail mailbox,

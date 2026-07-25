@@ -70,13 +70,58 @@ export function computeOverpaymentAllocation(input: {
   };
 }
 
+export type PeriodPaymentReference = {
+  id: string;
+  amount: number;
+  /** ISO timestamp used to treat the earliest money as rent and later money as surplus. */
+  receivedAt: string;
+};
+
+export type PeriodReferenceCreditSource = PeriodPaymentReference & {
+  creditAmount: number;
+};
+
+/**
+ * Split a period-level surplus back across its contributing bank references.
+ * The earliest money covers rent first; only the later remainder becomes held
+ * credit. This supports two ordinary payments against one month without
+ * pretending either individual reference contained the combined total.
+ */
+export function computePeriodReferenceCreditSources(input: {
+  references: PeriodPaymentReference[];
+  expectedAmount: number;
+}): PeriodReferenceCreditSource[] {
+  const references = input.references
+    .filter((reference) => reference.amount > 0 && Number.isFinite(reference.amount))
+    .map((reference) => ({ ...reference, amount: roundMoney(reference.amount) }))
+    .sort((left, right) => {
+      if (left.receivedAt !== right.receivedAt) return left.receivedAt < right.receivedAt ? -1 : 1;
+      return left.id.localeCompare(right.id);
+    });
+
+  if (!(input.expectedAmount > 0)) {
+    return references.map((reference) => ({ ...reference, creditAmount: reference.amount }));
+  }
+
+  let rentRemaining = roundMoney(input.expectedAmount);
+  const sources: PeriodReferenceCreditSource[] = [];
+  for (const reference of references) {
+    const rentPortion = roundMoney(Math.min(reference.amount, Math.max(0, rentRemaining)));
+    rentRemaining = roundMoney(Math.max(0, rentRemaining - rentPortion));
+    const creditAmount = roundMoney(reference.amount - rentPortion);
+    if (creditAmount > 0.001) sources.push({ ...reference, creditAmount });
+  }
+  return sources;
+}
+
 /**
  * Surplus-credit allocation rules (owner rulings 2026-07-03):
  * credit held on the unit may be allocated — by an explicit operator action
- * only, never automatically — to one of THREE destinations:
- *   1. arrears: a short/unpaid period within the LAST 3 MONTHS,
- *   2. advance: the NEXT month's rent (exactly one month ahead),
- *   3. deposit: while remaining headroom > 0.
+ * only, never automatically — to one of FOUR destinations:
+ *   1. current: absorb the extra into the selected month's rent record,
+ *   2. arrears: a short/unpaid period within the LAST 3 MONTHS,
+ *   3. advance: the NEXT month's rent (exactly one month ahead),
+ *   4. deposit: while remaining headroom > 0.
  * Every option is capped by both the credit balance and the destination's
  * own capacity (outstanding / headroom).
  */
@@ -91,6 +136,8 @@ export type CreditArrearsOption = {
 
 export type CreditAllocationOptions = {
   creditBalance: number;
+  /** Keep the extra against the selected month, by explicit operator choice. */
+  current: { periodStart: string; maxAmount: number };
   arrears: CreditArrearsOption[];
   /** Next month (exactly one ahead of the selected period). */
   advance: { periodStart: string; maxAmount: number };
@@ -136,6 +183,7 @@ export function computeCreditAllocationOptions(input: {
   const headroom = roundMoney(Math.max(0, input.depositHeadroom));
   return {
     creditBalance: balance,
+    current: { periodStart: input.selectedPeriodStart, maxAmount: balance },
     arrears,
     advance: { periodStart: shiftPeriodStart(input.selectedPeriodStart, 1), maxAmount: balance },
     deposit: headroom > 0.001 ? { maxAmount: roundMoney(Math.min(headroom, balance)) } : null,

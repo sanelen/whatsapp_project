@@ -140,6 +140,9 @@ type MonthlyPaymentsSnapshotInput = {
   units: MonthlyPaymentsUnitRow[];
   periods: MonthlyPaymentsPeriodRow[];
   references: MonthlyPaymentsReferenceRow[];
+  depositContributedByReference?: Record<string, number>;
+  creditFromReference?: Record<string, number>;
+  creditAppliedByPeriod?: Record<string, number>;
 };
 
 export { computeUnitStatus, type ComputedUnitStatus, type UnitTableStatus } from '@/lib/monthly-payment-status';
@@ -211,7 +214,7 @@ function billingPeriodKeyForReferenceDate(value: string): string {
 }
 
 function buildMonthStarts(currentMonthStart: Date): Date[] {
-  return Array.from({ length: 5 }, (_, index) => addMonths(currentMonthStart, index - 2));
+  return Array.from({ length: 6 }, (_, index) => addMonths(currentMonthStart, index - 3));
 }
 
 export function buildMonthlyPaymentsDashboardSnapshot(
@@ -290,6 +293,15 @@ export function buildMonthlyPaymentsDashboardSnapshot(
 
       for (const unit of units) {
         const period = periodsByUnitAndMonth.get(`${unit.id}:${monthKey}`);
+        const matchedReferences = referencesByUnitAndMonth.get(`${unit.id}:${monthKey}`) ?? [];
+        const depositContributedAmount = matchedReferences.reduce(
+          (sum, reference) => sum + (input.depositContributedByReference?.[reference.id] ?? 0),
+          0
+        );
+        const creditFromMatchedReferencesAmount = matchedReferences.reduce(
+          (sum, reference) => sum + (input.creditFromReference?.[reference.id] ?? 0),
+          0
+        );
         const isBlocked = period?.is_blocked ?? unit.is_blocked;
         const expected = isBlocked
           ? 0
@@ -300,7 +312,10 @@ export function buildMonthlyPaymentsDashboardSnapshot(
           occupancyStatus: unit.occupancy_status,
           isBlocked,
           expectedAmount: expected,
-          matchedReferences: referencesByUnitAndMonth.get(`${unit.id}:${monthKey}`) ?? [],
+          depositContributedAmount,
+          creditFromMatchedReferencesAmount,
+          creditAppliedAmount: period ? (input.creditAppliedByPeriod?.[period.id] ?? 0) : 0,
+          matchedReferences,
           dueDate: getBillingWindowForPeriod(monthKey).endDate,
           now: currentDate,
         }).status;
@@ -579,6 +594,61 @@ export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDas
   }
 
   const references = (referencesResult.data ?? []) as MonthlyPaymentsReferenceRow[];
+  const referenceIds = references.map((reference) => reference.id);
+  const periodIds = (periodsResult.data ?? []).map((period) => period.id as string);
+  const [contributionsResult, creditsResult, allocationsResult] = await Promise.all([
+    referenceIds.length > 0
+      ? admin
+          .from('deposit_contributions')
+          .select('payment_reference_id,amount')
+          .in('payment_reference_id', referenceIds)
+          .is('reversed_at', null)
+      : Promise.resolve({ data: [], error: null }),
+    referenceIds.length > 0
+      ? admin
+          .from('unit_credits')
+          .select('payment_reference_id,amount')
+          .in('payment_reference_id', referenceIds)
+          .is('reversed_at', null)
+      : Promise.resolve({ data: [], error: null }),
+    periodIds.length > 0
+      ? admin
+          .from('unit_credit_allocations')
+          .select('target_period_id,amount,destination')
+          .in('target_period_id', periodIds)
+          .in('destination', ['arrears', 'advance'])
+          .is('reversed_at', null)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const ledgerErrors = [contributionsResult.error, creditsResult.error, allocationsResult.error]
+    .filter((error) => error && !isMissingRelation(error));
+  if (ledgerErrors.length > 0) {
+    throw new Error(`Failed to load payment allocation ledgers: ${ledgerErrors[0]?.message}`);
+  }
+  const depositContributedByReference: Record<string, number> = {};
+  for (const row of contributionsResult.data ?? []) {
+    const referenceId = row.payment_reference_id as string | null;
+    if (!referenceId) continue;
+    depositContributedByReference[referenceId] = roundMoney(
+      (depositContributedByReference[referenceId] ?? 0) + toMoney(row.amount as number | string)
+    );
+  }
+  const creditFromReference: Record<string, number> = {};
+  for (const row of creditsResult.data ?? []) {
+    const referenceId = row.payment_reference_id as string | null;
+    if (!referenceId) continue;
+    creditFromReference[referenceId] = roundMoney(
+      (creditFromReference[referenceId] ?? 0) + toMoney(row.amount as number | string)
+    );
+  }
+  const creditAppliedByPeriod: Record<string, number> = {};
+  for (const row of allocationsResult.data ?? []) {
+    const periodId = row.target_period_id as string | null;
+    if (!periodId) continue;
+    creditAppliedByPeriod[periodId] = roundMoney(
+      (creditAppliedByPeriod[periodId] ?? 0) + toMoney(row.amount as number | string)
+    );
+  }
   const unresolvedBankImportEntryIds = references
     .filter((reference) => !reference.property_id && reference.bank_import_entry_id)
     .map((reference) => reference.bank_import_entry_id as string);
@@ -608,6 +678,9 @@ export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDas
     properties: propertiesResult.data ?? [],
     units: unitsResult.data ?? [],
     periods: periodsResult.data ?? [],
+    depositContributedByReference,
+    creditFromReference,
+    creditAppliedByPeriod,
     references: references.map((reference) => ({
       ...reference,
       inferred_location_name:
@@ -634,7 +707,33 @@ export type UnitTableRow = {
   periodId: string | null;
   reference: string | null;
   referenceId: string | null;
+  referencePayerName: string | null;
+  referenceAccountSuffix: string | null;
   transactionDate: string | null;
+  /** Every bank reference contributing to this unit-month, shown individually. */
+  matchedReferences: Array<{
+    id: string;
+    reference: string;
+    payerName: string | null;
+    accountSuffix: string | null;
+    transactionDate: string | null;
+    amount: number;
+    signedOff: boolean;
+  }>;
+  /** Matched bank references for this room across the selected month and two prior billing months. */
+  recentPayments: Array<{
+    id: string;
+    periodStart: string | null;
+    reference: string;
+    payerName: string | null;
+    accountSuffix: string | null;
+    transactionDate: string | null;
+    amount: number;
+    rentAmount: number;
+    depositAmount: number;
+    creditAmount: number;
+    signedOff: boolean;
+  }>;
   receivedAmount: number | null;
   signedOff: boolean;
   locked: boolean;
@@ -649,17 +748,58 @@ export type UnitTableRow = {
   depositSplit: DepositSplitSuggestion | null;
   /** Held surplus credit (FR-2.8 rulings 2026-07-03): credits − allocations. */
   creditBalance: number;
+  /** Remaining held-credit source payments after active allocations are consumed. */
+  heldCreditSources: Array<{
+    referenceId: string | null;
+    reference: string;
+    transactionDate: string | null;
+    amount: number;
+    sourcePaymentAmount: number | null;
+  }>;
   /** Credit applied to THIS period via arrears/advance allocations. */
   creditAppliedAmount: number;
+  /** Amount from this period's matched references moved into the credit ledger. */
+  creditFromMatchedReferencesAmount: number;
+  /** Choices shown before an overpayment is signed off. */
+  overpaymentOptions: CreditAllocationOptions | null;
   /** Allocation destinations available right now (null when no credit held). */
   creditOptions: CreditAllocationOptions | null;
   /** Active (non-reversed) allocations for the reverse action. */
   creditAllocations: Array<{
     id: string;
     amount: number;
-    destination: 'arrears' | 'advance' | 'deposit';
+    destination: 'current' | 'arrears' | 'advance' | 'deposit';
     targetPeriodStart: string | null;
+    createdAt: string | null;
+    sourcePayments: Array<{
+      referenceId: string | null;
+      reference: string;
+      transactionDate: string | null;
+      amount: number;
+      sourcePaymentAmount: number | null;
+    }>;
   }>;
+  depositLifecycle: {
+    mode: 'occupancy' | 'legacy';
+    occupancyId: string | null;
+    status: 'holding' | 'active' | 'notice' | 'ended' | null;
+    startsOn: string | null;
+    endsOn: string | null;
+    closedAt: string | null;
+    tenantDisplayName: string | null;
+    depositTargetAmount: number;
+    depositBalance: number;
+    previousOccupancyCount: number;
+    previousOccupancies: Array<{
+      id: string;
+      status: 'holding' | 'active' | 'notice' | 'ended';
+      startsOn: string | null;
+      endsOn: string | null;
+      closedAt: string | null;
+      depositTargetAmount: number;
+      depositBalance: number;
+    }>;
+  };
 };
 
 export type ReferencePoolRow = {
@@ -791,6 +931,23 @@ export type RoomManagerRoomRow = {
   rules: RoomManagerRule[];
   photoCount: number;
   latestReference: string | null;
+  stayLifecycleMode: 'occupancy' | 'legacy';
+  currentStay: RoomManagerStay | null;
+  stays: RoomManagerStay[];
+};
+
+export type RoomManagerStay = {
+  id: string;
+  status: 'holding' | 'active' | 'notice' | 'ended';
+  tenantDisplayName: string;
+  contactPrimary: string;
+  contactSecondary: string;
+  startsOn: string | null;
+  endsOn: string | null;
+  closedAt: string | null;
+  depositTargetAmount: number;
+  depositBalance: number;
+  isCurrent: boolean;
 };
 
 export type RoomManagerView = {
@@ -824,6 +981,16 @@ function formatDateShort(value: string) {
 
 function cleanContacts(...values: Array<string | null | undefined>): string[] {
   return values.map((value) => (value ?? '').trim()).filter(Boolean);
+}
+
+function stayDisplayContacts(stay: {
+  tenant_display_name?: string | null;
+  contact_primary?: string | null;
+  contact_secondary?: string | null;
+}) {
+  const contacts = cleanContacts(stay.contact_primary, stay.contact_secondary);
+  if (contacts.length > 0) return contacts;
+  return cleanContacts(stay.tenant_display_name);
 }
 
 function diffDaysUtc(from: string, to: Date): number {
@@ -1113,6 +1280,72 @@ export async function readRoomManagerView(
   if (referencesResult.error && !isMissingRelation(referencesResult.error)) throw new Error(`Failed to load payment references: ${referencesResult.error.message}`);
   if (mediaResult.error && !isMissingRelation(mediaResult.error)) throw new Error(`Failed to load property media: ${mediaResult.error.message}`);
 
+  const unitIds = unitsPayload.rows.map((unit) => unit.id);
+  type RoomManagerOccupancyRow = {
+    id: string;
+    unit_id: string;
+    status: 'holding' | 'active' | 'notice' | 'ended';
+    tenant_display_name: string;
+    contact_primary: string;
+    contact_secondary: string;
+    starts_on: string | null;
+    ends_on: string | null;
+    closed_at: string | null;
+    deposit_target_amount: number | string;
+    created_at: string;
+  };
+  const staysByUnit = new Map<string, RoomManagerStay[]>();
+  let hasStayLifecycle = false;
+  if (unitIds.length > 0) {
+    const { data: stays, error: staysError } = await admin
+      .from('unit_occupancies')
+      .select('id,unit_id,status,tenant_display_name,contact_primary,contact_secondary,starts_on,ends_on,closed_at,deposit_target_amount,created_at')
+      .in('unit_id', unitIds)
+      .order('created_at', { ascending: false });
+    if (staysError && !isMissingRelation(staysError)) {
+      throw new Error(`Failed to load tenant stays: ${staysError.message}`);
+    }
+    if (!staysError) {
+      hasStayLifecycle = true;
+      const stayRows = (stays ?? []) as RoomManagerOccupancyRow[];
+      const stayIds = stayRows.map((stay) => stay.id);
+      const depositBalanceByStay = new Map<string, number>();
+      if (stayIds.length > 0) {
+        const { data: ledgerRows, error: ledgerError } = await admin
+          .from('deposit_ledger_entries')
+          .select('unit_occupancy_id,amount')
+          .in('unit_occupancy_id', stayIds)
+          .is('reversed_at', null);
+        if (ledgerError && !isMissingRelation(ledgerError)) {
+          throw new Error(`Failed to load stay deposit balances: ${ledgerError.message}`);
+        }
+        for (const row of ledgerRows ?? []) {
+          const stayId = row.unit_occupancy_id as string | null;
+          if (!stayId) continue;
+          depositBalanceByStay.set(stayId, roundMoney((depositBalanceByStay.get(stayId) ?? 0) + toMoney(row.amount as number | string)));
+        }
+      }
+      for (const stay of stayRows) {
+        const isCurrent = !stay.closed_at && stay.status !== 'ended';
+        const list = staysByUnit.get(stay.unit_id) ?? [];
+        list.push({
+          id: stay.id,
+          status: stay.status,
+          tenantDisplayName: stay.tenant_display_name || cleanContacts(stay.contact_primary, stay.contact_secondary).join(' '),
+          contactPrimary: stay.contact_primary ?? '',
+          contactSecondary: stay.contact_secondary ?? '',
+          startsOn: stay.starts_on ?? null,
+          endsOn: stay.ends_on ?? null,
+          closedAt: stay.closed_at ?? null,
+          depositTargetAmount: toMoney(stay.deposit_target_amount),
+          depositBalance: depositBalanceByStay.get(stay.id) ?? 0,
+          isCurrent,
+        });
+        staysByUnit.set(stay.unit_id, list);
+      }
+    }
+  }
+
   const rulesByUnit = new Map<string, RoomManagerRule[]>();
   for (const hint of hintsResult.data ?? []) {
     const key = hint.unit_id as string | null;
@@ -1153,8 +1386,12 @@ export async function readRoomManagerView(
   let blockedCount = 0;
 
   const rooms = unitsPayload.rows.map((unit) => {
-    if (unit.occupancy_status === 'occupied') occupiedCount += 1;
-    if (unit.occupancy_status === 'vacant') vacantCount += 1;
+    const stays = staysByUnit.get(unit.id) ?? [];
+    const currentStay = stays.find((stay) => stay.isCurrent) ?? null;
+    const roomIsOccupied = hasStayLifecycle ? Boolean(currentStay) : unit.occupancy_status === 'occupied';
+    const stayLifecycleMode: RoomManagerRoomRow['stayLifecycleMode'] = hasStayLifecycle ? 'occupancy' : 'legacy';
+    if (roomIsOccupied) occupiedCount += 1;
+    if (hasStayLifecycle ? !roomIsOccupied : unit.occupancy_status === 'vacant') vacantCount += 1;
     if (unit.is_blocked) blockedCount += 1;
 
     return {
@@ -1178,6 +1415,9 @@ export async function readRoomManagerView(
       rules: rulesByUnit.get(unit.id) ?? [],
       photoCount: photoCountsByUnit.get(unit.id) ?? 0,
       latestReference: latestReferenceByUnit.get(unit.id) ?? null,
+      stayLifecycleMode,
+      currentStay,
+      stays,
     };
   });
 
@@ -1314,6 +1554,8 @@ export async function readPropertyUnitsTable(
     transaction_at: string | null;
     signed_off: boolean;
   }>;
+  const recentPeriodStartById = new Map<string, string>();
+  let recentReferences: typeof references = [];
   const rulesByUnit = new Map<string, UnitTableMatchRule[]>();
   for (const hint of hintsResult.data ?? []) {
     const key = hint.unit_id as string | null;
@@ -1336,22 +1578,144 @@ export async function readPropertyUnitsTable(
   const unitIds = units.map((unit) => unit.id);
   const periodsByUnit = new Map<string, { id: string; expected_amount: number | string; status: string; is_blocked: boolean; due_date: string | null }>();
   if (unitIds.length > 0) {
-    const { data: periods, error: periodsError } = await admin
-      .from('unit_payment_periods')
-      .select('id,unit_id,expected_amount,status,is_blocked,due_date')
-      .in('unit_id', unitIds)
-      .gte('period_start', monthStartDate)
-      .lt('period_start', nextMonthDate);
+    const recentWindowStart = shiftPeriodStart(monthStartDate, -2);
+    const [periodsResult, recentPeriodsResult] = await Promise.all([
+      admin
+        .from('unit_payment_periods')
+        .select('id,unit_id,expected_amount,status,is_blocked,due_date')
+        .in('unit_id', unitIds)
+        .gte('period_start', monthStartDate)
+        .lt('period_start', nextMonthDate),
+      admin
+        .from('unit_payment_periods')
+        .select('id,unit_id,period_start')
+        .in('unit_id', unitIds)
+        .gte('period_start', recentWindowStart)
+        .lt('period_start', nextMonthDate),
+    ]);
+    const { data: periods, error: periodsError } = periodsResult;
     if (periodsError && periodsError.code !== '42P01') {
       throw new Error(`Failed to load unit payment periods: ${periodsError.message}`);
+    }
+    if (recentPeriodsResult.error && !isMissingRelation(recentPeriodsResult.error)) {
+      throw new Error(`Failed to load recent unit payment periods: ${recentPeriodsResult.error.message}`);
     }
     for (const period of periods ?? []) {
       periodsByUnit.set(period.unit_id as string, period as never);
     }
+    for (const period of recentPeriodsResult.data ?? []) {
+      recentPeriodStartById.set(period.id as string, period.period_start as string);
+    }
+    const recentPeriodIds = Array.from(recentPeriodStartById.keys());
+    if (recentPeriodIds.length > 0) {
+      const { data: recentRows, error: recentRowsError } = await admin
+        .from('payment_references')
+        .select('id,property_id,unit_id,unit_payment_period_id,bank_import_entry_id,reference,amount,received_at,transaction_at,signed_off')
+        .eq('property_id', propertyId)
+        .in('unit_payment_period_id', recentPeriodIds);
+      if (recentRowsError && !isMissingRelation(recentRowsError)) {
+        throw new Error(`Failed to load recent room payments: ${recentRowsError.message}`);
+      }
+      recentReferences = (recentRows ?? []) as typeof references;
+    }
   }
 
+  type UnitOccupancyRow = {
+    id: string;
+    unit_id: string;
+    status: 'holding' | 'active' | 'notice' | 'ended';
+    tenant_display_name: string;
+    contact_primary: string;
+    contact_secondary: string;
+    starts_on: string | null;
+    ends_on: string | null;
+    closed_at: string | null;
+    deposit_target_amount: number | string;
+    created_at: string;
+  };
+  const occupanciesByUnit = new Map<string, UnitOccupancyRow[]>();
+  const activeOccupancyByUnit = new Map<string, UnitOccupancyRow>();
+  const previousOccupanciesByUnit = new Map<string, UnitOccupancyRow[]>();
+  const previousOccupancyCountByUnit = new Map<string, number>();
+  const depositBalanceByOccupancy = new Map<string, number>();
+  let hasDepositLifecycle = false;
+  if (unitIds.length > 0) {
+    const { data: occupancies, error: occupanciesError } = await admin
+      .from('unit_occupancies')
+      .select('id,unit_id,status,tenant_display_name,contact_primary,contact_secondary,starts_on,ends_on,closed_at,deposit_target_amount,created_at')
+      .in('unit_id', unitIds)
+      .order('created_at', { ascending: false });
+
+    if (occupanciesError && !isMissingRelation(occupanciesError)) {
+      throw new Error(`Failed to load unit occupancies: ${occupanciesError.message}`);
+    }
+
+    if (!occupanciesError) {
+      hasDepositLifecycle = true;
+      for (const occupancy of (occupancies ?? []) as UnitOccupancyRow[]) {
+        const occupanciesForUnit = occupanciesByUnit.get(occupancy.unit_id) ?? [];
+        occupanciesForUnit.push(occupancy);
+        occupanciesByUnit.set(occupancy.unit_id, occupanciesForUnit);
+        const isCurrent = !occupancy.closed_at && occupancy.status !== 'ended';
+        if (isCurrent && !activeOccupancyByUnit.has(occupancy.unit_id)) {
+          activeOccupancyByUnit.set(occupancy.unit_id, occupancy);
+        } else {
+          const previous = previousOccupanciesByUnit.get(occupancy.unit_id) ?? [];
+          previous.push(occupancy);
+          previousOccupanciesByUnit.set(occupancy.unit_id, previous);
+          previousOccupancyCountByUnit.set(
+            occupancy.unit_id,
+            (previousOccupancyCountByUnit.get(occupancy.unit_id) ?? 0) + 1
+          );
+        }
+      }
+
+      const occupancyIds = ((occupancies ?? []) as UnitOccupancyRow[]).map((occupancy) => occupancy.id);
+      if (occupancyIds.length > 0) {
+        const { data: ledgerRows, error: ledgerError } = await admin
+          .from('deposit_ledger_entries')
+          .select('unit_occupancy_id,amount')
+          .in('unit_occupancy_id', occupancyIds)
+          .is('reversed_at', null);
+        if (ledgerError && !isMissingRelation(ledgerError)) {
+          throw new Error(`Failed to load deposit lifecycle ledger: ${ledgerError.message}`);
+        }
+        for (const row of ledgerRows ?? []) {
+          const occupancyId = row.unit_occupancy_id as string | null;
+          if (!occupancyId) continue;
+          depositBalanceByOccupancy.set(
+            occupancyId,
+            roundMoney((depositBalanceByOccupancy.get(occupancyId) ?? 0) + toMoney(row.amount as number | string))
+          );
+        }
+      }
+    }
+  }
+
+  const findStayForDate = (unitId: string, date: string): UnitOccupancyRow | null => {
+    const stays = occupanciesByUnit.get(unitId) ?? [];
+    const candidates = stays.filter((stay) => {
+      const startsOn = stay.starts_on ?? '0000-01-01';
+      const endsOn = stay.ends_on ?? (stay.closed_at ? stay.closed_at.slice(0, 10) : '9999-12-31');
+      return startsOn <= date && endsOn >= date;
+    });
+    candidates.sort((a, b) => {
+      const aStart = a.starts_on ?? '';
+      const bStart = b.starts_on ?? '';
+      if (aStart !== bStart) return bStart.localeCompare(aStart);
+      return (b.created_at ?? '').localeCompare(a.created_at ?? '');
+    });
+    return candidates[0] ?? null;
+  };
+
   // Bank-entry metadata (account suffix + payer) for the reference pool display.
-  const entryIds = references.map((reference) => reference.bank_import_entry_id).filter(Boolean) as string[];
+  const entryIds = Array.from(
+    new Set(
+      [...references, ...recentReferences]
+        .map((reference) => reference.bank_import_entry_id)
+        .filter(Boolean) as string[]
+    )
+  );
   const entryMeta = new Map<string, { accountSuffix: string | null; payerName: string | null }>();
   if (entryIds.length > 0) {
     const { data: entries } = await admin
@@ -1407,10 +1771,42 @@ export async function readPropertyUnitsTable(
   // credit applied per period, active allocations, and arrears candidates for
   // the allocate action. Missing tables degrade to zeros.
   const creditBalanceByUnit = new Map<string, number>();
+  const creditsByReference = new Map<string, number>();
   const creditAppliedByPeriod = new Map<string, number>();
   const creditAllocationsByUnit = new Map<
     string,
-    Array<{ id: string; amount: number; destination: 'arrears' | 'advance' | 'deposit'; targetPeriodId: string | null }>
+    Array<{ id: string; amount: number; destination: 'current' | 'arrears' | 'advance' | 'deposit'; targetPeriodId: string | null; createdAt: string | null }>
+  >();
+  const creditSourcesByUnit = new Map<
+    string,
+    Array<{
+      referenceId: string | null;
+      reference: string;
+      transactionDate: string | null;
+      createdAt: string | null;
+      amount: number;
+      sourcePaymentAmount: number | null;
+    }>
+  >();
+  const heldCreditSourcesByUnit = new Map<
+    string,
+    Array<{
+      referenceId: string | null;
+      reference: string;
+      transactionDate: string | null;
+      amount: number;
+      sourcePaymentAmount: number | null;
+    }>
+  >();
+  const allocationSourcesById = new Map<
+    string,
+    Array<{
+      referenceId: string | null;
+      reference: string;
+      transactionDate: string | null;
+      amount: number;
+      sourcePaymentAmount: number | null;
+    }>
   >();
   const arrearsCandidatesByUnit = new Map<
     string,
@@ -1420,10 +1816,14 @@ export async function readPropertyUnitsTable(
   if (unitIds.length > 0) {
     const windowStart = shiftPeriodStart(monthStartDate, -3);
     const [creditsResult, allocationsResult, pastPeriodsResult] = await Promise.all([
-      admin.from('unit_credits').select('unit_id,amount').in('unit_id', unitIds).is('reversed_at', null),
+      admin
+        .from('unit_credits')
+        .select('unit_id,payment_reference_id,reference_text,amount,created_at')
+        .in('unit_id', unitIds)
+        .is('reversed_at', null),
       admin
         .from('unit_credit_allocations')
-        .select('id,unit_id,amount,destination,target_period_id')
+        .select('id,unit_id,amount,destination,target_period_id,created_at')
         .in('unit_id', unitIds)
         .is('reversed_at', null),
       admin
@@ -1443,22 +1843,115 @@ export async function readPropertyUnitsTable(
       throw new Error(`Failed to load arrears candidates: ${pastPeriodsResult.error.message}`);
     }
 
+    const creditReferenceIds = Array.from(
+      new Set(
+        (creditsResult.data ?? [])
+          .map((credit) => credit.payment_reference_id as string | null)
+          .filter(Boolean) as string[]
+      )
+    );
+    const creditReferenceDetails = new Map<
+      string,
+      { reference: string; transactionDate: string | null; amount: number }
+    >();
+    if (creditReferenceIds.length > 0) {
+      const { data: creditRefs, error: creditRefsError } = await admin
+        .from('payment_references')
+        .select('id,reference,amount,received_at,transaction_at')
+        .in('id', creditReferenceIds);
+      if (creditRefsError && !isMissingRelation(creditRefsError)) {
+        throw new Error(`Failed to load credit source references: ${creditRefsError.message}`);
+      }
+      for (const reference of creditRefs ?? []) {
+        creditReferenceDetails.set(reference.id as string, {
+          reference: reference.reference as string,
+          transactionDate: transactionDateOnly(reference.transaction_at as string | null, reference.received_at as string | null),
+          amount: toMoney(reference.amount as number | string),
+        });
+      }
+    }
+
     for (const credit of creditsResult.data ?? []) {
       const unitId = credit.unit_id as string;
-      creditBalanceByUnit.set(unitId, roundMoney((creditBalanceByUnit.get(unitId) ?? 0) + toMoney(credit.amount as number | string)));
+      const amount = toMoney(credit.amount as number | string);
+      creditBalanceByUnit.set(unitId, roundMoney((creditBalanceByUnit.get(unitId) ?? 0) + amount));
+      const referenceId = credit.payment_reference_id as string | null;
+      if (referenceId) {
+        creditsByReference.set(referenceId, roundMoney((creditsByReference.get(referenceId) ?? 0) + amount));
+      }
+      const referenceDetails = referenceId ? creditReferenceDetails.get(referenceId) : undefined;
+      const sourceList = creditSourcesByUnit.get(unitId) ?? [];
+      sourceList.push({
+        referenceId,
+        reference: referenceDetails?.reference ?? (credit.reference_text as string | null) ?? 'Held credit',
+        transactionDate: referenceDetails?.transactionDate ?? null,
+        createdAt: (credit.created_at as string | null) ?? null,
+        amount,
+        sourcePaymentAmount: referenceDetails?.amount ?? null,
+      });
+      creditSourcesByUnit.set(unitId, sourceList);
     }
     for (const allocation of allocationsResult.data ?? []) {
       const unitId = allocation.unit_id as string;
       const amount = toMoney(allocation.amount as number | string);
       creditBalanceByUnit.set(unitId, roundMoney((creditBalanceByUnit.get(unitId) ?? 0) - amount));
-      const destination = allocation.destination as 'arrears' | 'advance' | 'deposit';
+      const destination = allocation.destination as 'current' | 'arrears' | 'advance' | 'deposit';
       const targetPeriodId = (allocation.target_period_id as string | null) ?? null;
-      if (targetPeriodId && destination !== 'deposit') {
+      if (targetPeriodId && destination !== 'deposit' && destination !== 'current') {
         creditAppliedByPeriod.set(targetPeriodId, roundMoney((creditAppliedByPeriod.get(targetPeriodId) ?? 0) + amount));
       }
       const list = creditAllocationsByUnit.get(unitId) ?? [];
-      list.push({ id: allocation.id as string, amount, destination, targetPeriodId });
+      list.push({ id: allocation.id as string, amount, destination, targetPeriodId, createdAt: (allocation.created_at as string | null) ?? null });
       creditAllocationsByUnit.set(unitId, list);
+    }
+
+    for (const sourceList of creditSourcesByUnit.values()) {
+      sourceList.sort((a, b) => {
+        const aDate = a.transactionDate ?? a.createdAt ?? '';
+        const bDate = b.transactionDate ?? b.createdAt ?? '';
+        return aDate.localeCompare(bDate);
+      });
+    }
+    for (const [unitId, allocations] of creditAllocationsByUnit.entries()) {
+      const remainingSources = (creditSourcesByUnit.get(unitId) ?? []).map((source) => ({ ...source }));
+      const sortedAllocations = allocations.slice().sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
+      for (const allocation of sortedAllocations) {
+        let remainingAllocation = allocation.amount;
+        const sources: Array<{
+          referenceId: string | null;
+          reference: string;
+          transactionDate: string | null;
+          amount: number;
+          sourcePaymentAmount: number | null;
+        }> = [];
+        for (const source of remainingSources) {
+          if (remainingAllocation <= 0.001) break;
+          if (source.amount <= 0.001) continue;
+          const consumed = roundMoney(Math.min(source.amount, remainingAllocation));
+          sources.push({
+            referenceId: source.referenceId,
+            reference: source.reference,
+            transactionDate: source.transactionDate,
+            amount: consumed,
+            sourcePaymentAmount: source.sourcePaymentAmount,
+          });
+          source.amount = roundMoney(source.amount - consumed);
+          remainingAllocation = roundMoney(remainingAllocation - consumed);
+        }
+        allocationSourcesById.set(allocation.id, sources);
+      }
+      heldCreditSourcesByUnit.set(
+        unitId,
+        remainingSources
+          .filter((source) => source.amount > 0.001)
+          .map((source) => ({
+            referenceId: source.referenceId,
+            reference: source.reference,
+            transactionDate: source.transactionDate,
+            amount: source.amount,
+            sourcePaymentAmount: source.sourcePaymentAmount,
+          }))
+      );
     }
 
     const pastPeriodIds = (pastPeriodsResult.data ?? []).map((row) => row.id as string);
@@ -1495,6 +1988,46 @@ export async function readPropertyUnitsTable(
     }
   }
 
+  const recentPaymentsByUnit = new Map<
+    string,
+    UnitTableRow['recentPayments']
+  >();
+  for (const reference of recentReferences) {
+    if (!reference.unit_id) continue;
+    const amount = toMoney(reference.amount);
+    const depositAmount = contributionsByReference.get(reference.id) ?? 0;
+    const creditAmount = creditsByReference.get(reference.id) ?? 0;
+    const rentAmount = roundMoney(Math.max(0, amount - depositAmount - creditAmount));
+    const meta = reference.bank_import_entry_id ? entryMeta.get(reference.bank_import_entry_id) : undefined;
+    const list = recentPaymentsByUnit.get(reference.unit_id) ?? [];
+    list.push({
+      id: reference.id,
+      periodStart: reference.unit_payment_period_id
+        ? recentPeriodStartById.get(reference.unit_payment_period_id) ?? null
+        : null,
+      reference: reference.reference,
+      payerName: meta?.payerName ?? null,
+      accountSuffix: meta?.accountSuffix ?? null,
+      transactionDate: transactionDateOnly(reference.transaction_at, reference.received_at),
+      amount,
+      rentAmount,
+      depositAmount,
+      creditAmount,
+      signedOff: reference.signed_off,
+    });
+    recentPaymentsByUnit.set(reference.unit_id, list);
+  }
+  for (const list of recentPaymentsByUnit.values()) {
+    list.sort((a, b) => {
+      const aPeriod = a.periodStart ?? '';
+      const bPeriod = b.periodStart ?? '';
+      if (aPeriod !== bPeriod) return aPeriod < bPeriod ? 1 : -1;
+      const aDate = a.transactionDate ?? '';
+      const bDate = b.transactionDate ?? '';
+      return aDate < bDate ? 1 : -1;
+    });
+  }
+
   let collected = 0;
   let pendingAmountTotal = 0;
   let outstandingTotal = 0;
@@ -1507,33 +2040,60 @@ export async function readPropertyUnitsTable(
 
   const rows: UnitTableRow[] = units.map((unit) => {
     const period = periodsByUnit.get(unit.id);
-    const isBlocked = unit.is_blocked || (period?.is_blocked ?? false) || unit.occupancy_status === 'vacant';
+    const matched = (referencesByUnit.get(unit.id) ?? []).slice().sort((a, b) => (a.received_at < b.received_at ? 1 : -1));
+    const primary = matched[0] ?? null;
+    const primaryTransactionDate = transactionDateOnly(primary?.transaction_at, primary?.received_at);
+    const effectiveStayDate = primaryTransactionDate ?? billingWindow.endDate;
+    const effectiveOccupancy = hasDepositLifecycle ? findStayForDate(unit.id, effectiveStayDate) : null;
+    const periodOccupancyStatus: 'occupied' | 'vacant' =
+      hasDepositLifecycle ? (effectiveOccupancy ? 'occupied' : 'vacant') : unit.occupancy_status;
+    const isBlocked = unit.is_blocked || (period?.is_blocked ?? false) || periodOccupancyStatus === 'vacant';
     const expectedAmount = isBlocked ? 0 : toMoney(period?.expected_amount ?? unit.rent_amount);
     expectedTotal += expectedAmount;
     if (isBlocked) blockedCount += 1;
-
-    const matched = (referencesByUnit.get(unit.id) ?? []).slice().sort((a, b) => (a.received_at < b.received_at ? 1 : -1));
-    const primary = matched[0] ?? null;
-    const depositAmount = toMoney(unit.deposit_amount);
-    const depositBalance = depositBalanceByUnit.get(unit.id) ?? 0;
+    const legacyDepositTarget = toMoney(unit.deposit_amount);
+    const legacyDepositBalance = depositBalanceByUnit.get(unit.id) ?? 0;
+    const activeOccupancy = activeOccupancyByUnit.get(unit.id) ?? null;
+    const depositOccupancy = effectiveOccupancy ?? activeOccupancy;
+    const depositAmount =
+      hasDepositLifecycle && depositOccupancy
+        ? toMoney(depositOccupancy.deposit_target_amount)
+        : hasDepositLifecycle
+          ? legacyDepositTarget
+          : legacyDepositTarget;
+    const depositBalance =
+      hasDepositLifecycle && depositOccupancy
+        ? (depositBalanceByOccupancy.get(depositOccupancy.id) ?? 0)
+        : hasDepositLifecycle
+          ? 0
+          : legacyDepositBalance;
+    const displayContacts = effectiveOccupancy
+      ? stayDisplayContacts(effectiveOccupancy)
+      : cleanContacts(unit.contact_primary, unit.contact_secondary);
     const depositContributedAmount = matched.reduce(
       (sum, reference) => sum + (contributionsByReference.get(reference.id) ?? 0),
       0
     );
     const creditBalance = creditBalanceByUnit.get(unit.id) ?? 0;
+    const creditFromMatchedReferencesAmount = matched.reduce(
+      (sum, reference) => sum + (creditsByReference.get(reference.id) ?? 0),
+      0
+    );
     const creditAppliedAmount = period?.id ? (creditAppliedByPeriod.get(period.id) ?? 0) : 0;
     const statusState = computeUnitStatus({
-      occupancyStatus: unit.occupancy_status,
+      occupancyStatus: periodOccupancyStatus,
       isBlocked,
       expectedAmount,
       // Split suggestions only get the REMAINING deposit headroom.
       depositAmount: roundMoney(Math.max(0, depositAmount - depositBalance)),
       depositContributedAmount,
+      creditFromMatchedReferencesAmount,
       creditAppliedAmount,
       matchedReferences: matched,
       dueDate: period?.due_date ?? billingWindow.endDate,
       now,
     });
+    const allMatchedReferencesSignedOff = matched.length > 0 && matched.every((reference) => reference.signed_off);
     // Decision rule: only signed-off money counts as collected.
     collected += statusState.signedOffAmount;
     pendingAmountTotal += statusState.pendingAmount;
@@ -1547,11 +2107,23 @@ export async function readPropertyUnitsTable(
       dueCount += 1;
     }
 
+    const primaryMeta = primary?.bank_import_entry_id
+      ? entryMeta.get(primary.bank_import_entry_id)
+      : undefined;
+    const overpaymentAmount = statusState.depositSplit
+      ? roundMoney(statusState.depositSplit.depositPortion + statusState.depositSplit.surplusAmount)
+      : 0;
+    const blockedAllocatableAmount =
+      isBlocked && matched.length > 0 && !allMatchedReferencesSignedOff
+        ? roundMoney((statusState.receivedAmount ?? matched.reduce((sum, reference) => sum + toMoney(reference.amount), 0)) - depositContributedAmount - creditFromMatchedReferencesAmount)
+        : 0;
+    const allocationNeededAmount = overpaymentAmount > 0.001 ? overpaymentAmount : blockedAllocatableAmount;
+
     return {
       unitId: unit.id,
       label: unit.label,
-      occupancy: unit.occupancy_status,
-      contacts: cleanContacts(unit.contact_primary, unit.contact_secondary),
+      occupancy: periodOccupancyStatus,
+      contacts: displayContacts,
       expectedAmount,
       expectedReference: unit.expected_reference ?? '',
       matchKeywords: unit.match_keywords ?? [],
@@ -1559,7 +2131,22 @@ export async function readPropertyUnitsTable(
       periodId: period?.id ?? null,
       reference: primary?.reference ?? null,
       referenceId: primary?.id ?? null,
-      transactionDate: transactionDateOnly(primary?.transaction_at, primary?.received_at),
+      referencePayerName: primaryMeta?.payerName ?? null,
+      referenceAccountSuffix: primaryMeta?.accountSuffix ?? null,
+      transactionDate: primaryTransactionDate,
+      matchedReferences: matched.map((reference) => {
+        const meta = reference.bank_import_entry_id ? entryMeta.get(reference.bank_import_entry_id) : undefined;
+        return {
+          id: reference.id,
+          reference: reference.reference,
+          payerName: meta?.payerName ?? null,
+          accountSuffix: meta?.accountSuffix ?? null,
+          transactionDate: transactionDateOnly(reference.transaction_at, reference.received_at),
+          amount: toMoney(reference.amount),
+          signedOff: reference.signed_off,
+        };
+      }),
+      recentPayments: recentPaymentsByUnit.get(unit.id) ?? [],
       receivedAmount: statusState.receivedAmount,
       signedOff: statusState.signedOff,
       locked: statusState.signedOff,
@@ -1571,7 +2158,18 @@ export async function readPropertyUnitsTable(
       depositContributedAmount,
       depositSplit: statusState.depositSplit,
       creditBalance,
+      heldCreditSources: heldCreditSourcesByUnit.get(unit.id) ?? [],
       creditAppliedAmount,
+      creditFromMatchedReferencesAmount,
+      overpaymentOptions:
+        allocationNeededAmount > 0.001
+          ? computeCreditAllocationOptions({
+              creditBalance: allocationNeededAmount,
+              selectedPeriodStart: monthStartDate,
+              arrearsCandidates: arrearsCandidatesByUnit.get(unit.id) ?? [],
+              depositHeadroom: roundMoney(Math.max(0, depositAmount - depositBalance)),
+            })
+          : null,
       creditOptions: isBlocked
         ? null
         : computeCreditAllocationOptions({
@@ -1588,7 +2186,30 @@ export async function readPropertyUnitsTable(
           ? (periodStartById.get(allocation.targetPeriodId) ??
              (period?.id === allocation.targetPeriodId ? monthStartDate : null))
           : null,
+        createdAt: allocation.createdAt,
+        sourcePayments: allocationSourcesById.get(allocation.id) ?? [],
       })),
+      depositLifecycle: {
+        mode: hasDepositLifecycle ? 'occupancy' : 'legacy',
+        occupancyId: depositOccupancy?.id ?? null,
+        status: depositOccupancy?.status ?? null,
+        startsOn: depositOccupancy?.starts_on ?? null,
+        endsOn: depositOccupancy?.ends_on ?? null,
+        closedAt: depositOccupancy?.closed_at ?? null,
+        tenantDisplayName: depositOccupancy?.tenant_display_name || null,
+        depositTargetAmount: depositAmount,
+        depositBalance,
+        previousOccupancyCount: previousOccupancyCountByUnit.get(unit.id) ?? 0,
+        previousOccupancies: (previousOccupanciesByUnit.get(unit.id) ?? []).map((occupancy) => ({
+          id: occupancy.id,
+          status: occupancy.status,
+          startsOn: occupancy.starts_on ?? null,
+          endsOn: occupancy.ends_on ?? null,
+          closedAt: occupancy.closed_at ?? null,
+          depositTargetAmount: toMoney(occupancy.deposit_target_amount),
+          depositBalance: depositBalanceByOccupancy.get(occupancy.id) ?? 0,
+        })),
+      },
     };
   });
 

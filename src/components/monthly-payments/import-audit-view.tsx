@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { Check, ChevronLeft, ChevronRight, CircleAlert, Database, ExternalLink, FileCheck2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleAlert, Database, ExternalLink, FileCheck2, Inbox } from 'lucide-react';
 import type { ImportAuditFile, ImportAuditTransaction, ImportAuditView } from '@/lib/import-audit';
 import { MonthlyPaymentsShell } from './monthly-payments-shell';
+import { ReconciliationControl } from './reconciliation-control';
 
 function shiftPeriod(periodKey: string, offset: number) {
   const date = new Date(`${periodKey}-01T00:00:00Z`);
@@ -24,8 +25,10 @@ function formatTimestamp(value: string) {
   }).format(new Date(value));
 }
 
-function statusDot(ok: boolean) {
-  return ok ? 'bg-emerald-500' : 'bg-rose-500';
+function statusDot(status: 'good' | 'warning' | 'bad') {
+  if (status === 'good') return 'bg-emerald-500';
+  if (status === 'warning') return 'bg-amber-500';
+  return 'bg-rose-500';
 }
 
 function matchLabel(transaction: ImportAuditTransaction) {
@@ -36,8 +39,19 @@ function matchLabel(transaction: ImportAuditTransaction) {
 }
 
 function fileSummary(file: ImportAuditFile) {
+  if (file.transactions.length === 0) return 'No normalized transaction · evidence retained';
   const amount = file.transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
   return `${file.transactions.length} transactions · R ${formatRand(amount)}`;
+}
+
+function fileMatchLabel(file: ImportAuditFile) {
+  if (file.reviewStatus === 'unsupported') return 'Unsupported PDF';
+  if (file.reviewStatus === 'failed') return 'Import failed';
+  if (file.reviewStatus === 'pending') return 'Processing pending';
+  if (file.matchStatus === 'matched') return 'Matched';
+  if (file.matchStatus === 'unmatched') return 'Unmatched';
+  if (file.matchStatus === 'incomplete') return 'Incomplete match';
+  return 'No payment record';
 }
 
 export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
@@ -49,6 +63,7 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
     { key: 'drive-bank', label: 'Drive bank' },
     { key: 'drive', label: 'Drive' },
   ] as const;
+  const unprocessedFiles = view.files.filter((file) => file.needsOperatorReview);
 
   return (
     <MonthlyPaymentsShell
@@ -80,13 +95,16 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
 
         <p className="mt-2 text-[11.5px] text-slate-500">Rent window: {view.billingWindowLabel}</p>
 
-        <div className="mt-4 grid gap-px overflow-hidden rounded-[12px] border border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-5">
+        <ReconciliationControl initialRun={view.reconciliation} />
+
+        <div className="mt-4 grid gap-px overflow-hidden rounded-[12px] border border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-6">
           {[
             ['Files', view.totals.files],
             ['Transactions', view.totals.transactions],
             ['Amount received', `R ${formatRand(view.totals.amount)}`],
             ['In database', `${view.totals.stored}/${view.totals.transactions}`],
             ['Matched / signed', `${view.totals.matched + view.totals.signedOff}/${view.totals.transactions}`],
+            ['Unprocessed', view.totals.unprocessed],
           ].map(([label, value]) => (
             <div key={label} className="bg-white px-3.5 py-3">
               <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">{label}</p>
@@ -110,6 +128,42 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
           ))}
         </div>
 
+        <section className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50/70 p-3.5" aria-labelledby="unprocessed-bank-items">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2 text-amber-900">
+                <Inbox size={16} />
+                <h3 id="unprocessed-bank-items" className="text-[13px] font-bold">Unprocessed bank items</h3>
+              </div>
+              <p className="mt-1 max-w-3xl text-[11.5px] leading-4 text-amber-800">
+                Capitec PDFs and other bank evidence remain visible here when parsing, storage, or safe unit matching cannot complete.
+              </p>
+            </div>
+            <span className="rounded-full bg-amber-900 px-2.5 py-1 text-[11px] font-bold text-white">{unprocessedFiles.length}</span>
+          </div>
+          {unprocessedFiles.length === 0 ? (
+            <p className="mt-3 rounded-[9px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11.5px] font-semibold text-emerald-800">
+              No unresolved bank items for this source and billing window.
+            </p>
+          ) : (
+            <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+              {unprocessedFiles.map((file) => (
+                <a
+                  key={file.id}
+                  href={`#import-file-${file.id}`}
+                  className="block rounded-[10px] border border-amber-200 bg-white px-3 py-2 transition hover:border-amber-400"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="min-w-0 truncate text-[12px] font-bold text-slate-950">{file.fileName}</span>
+                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-800">{file.sourceLabel}</span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-4 text-slate-600">{file.reviewReason}</p>
+                </a>
+              ))}
+            </div>
+          )}
+        </section>
+
         {view.totals.incomplete > 0 ? (
           <div className="mt-4 flex items-center gap-2 rounded-[10px] border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-800">
             <CircleAlert size={15} /> {view.totals.incomplete} incomplete matches need attention.
@@ -123,21 +177,30 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
             </div>
           ) : (
             view.files.map((file, index) => (
-              <details key={file.id} open={index < 2} className="group overflow-hidden rounded-[12px] border border-slate-200 bg-white">
+              <details id={`import-file-${file.id}`} key={file.id} open={index < 2} className="group scroll-mt-4 overflow-hidden rounded-[12px] border border-slate-200 bg-white">
                 <summary className="grid cursor-pointer list-none gap-2 px-3.5 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="truncate text-[13px] font-bold text-slate-950">{file.fileName}</span>
                       <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10.5px] font-bold text-sky-800">{file.sourceLabel}</span>
-                      <span className={`h-2 w-2 rounded-full ${statusDot(file.parserStatus === 'parsed')}`} title={`Parser: ${file.parserStatus}`} />
                     </div>
                     <p className="mt-1 text-[11px] text-slate-500">
                       Imported {formatTimestamp(file.importedAt)} · {fileSummary(file)} · hash {file.hashShort}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
-                    <span className={`h-2 w-2 rounded-full ${statusDot(file.driveStatus !== 'not-archived')}`} />
-                    {file.driveStatus === 'archived' ? 'Archived in Drive' : file.driveStatus === 'in-drive' ? 'Source in Drive' : 'Not archived'}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-600">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${statusDot(file.driveStatus !== 'not-archived' ? 'good' : 'bad')}`} />
+                      {file.driveStatus === 'archived' ? 'Archived' : file.driveStatus === 'in-drive' ? 'In Drive' : 'Not archived'}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${statusDot(file.databaseStatus === 'stored' ? 'good' : 'bad')}`} />
+                      {file.databaseStatus === 'stored' ? 'In database' : 'Not in database'}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${statusDot(file.matchStatus === 'matched' ? 'good' : file.matchStatus === 'unmatched' ? 'warning' : 'bad')}`} />
+                      {fileMatchLabel(file)}
+                    </span>
                   </div>
                 </summary>
 
@@ -155,7 +218,7 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
 
                   {file.transactions.length === 0 ? (
                     <p className="mt-3 rounded-[9px] border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] text-amber-800">
-                      No incoming transactions were extracted from this file for the selected period.
+                      {file.reviewReason}
                     </p>
                   ) : (
                     <div className="mt-3 overflow-x-auto">
@@ -173,7 +236,7 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
                               <td className="py-2 pr-3 whitespace-nowrap">R {formatRand(transaction.amount)}</td>
                               <td className="py-2 pr-3">{transaction.propertyName ?? 'Unassigned'}</td>
                               <td className="py-2 pr-3">
-                                <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${statusDot(transaction.databaseStatus === 'stored')}`} />{transaction.databaseStatus === 'stored' ? 'Stored' : 'Missing'}</span>
+                                <span className="inline-flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${statusDot(transaction.databaseStatus === 'stored' ? 'good' : 'bad')}`} />{transaction.databaseStatus === 'stored' ? 'Stored' : 'Missing'}</span>
                               </td>
                               <td className="py-2">
                                 <span className={`inline-flex items-center gap-1.5 ${transaction.matchStatus === 'unmatched' ? 'text-amber-700' : transaction.matchStatus === 'incomplete' ? 'text-rose-700' : 'text-emerald-700'}`}>

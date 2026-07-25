@@ -10,6 +10,21 @@ function normalize(value: string | null | undefined) {
   return (value ?? '').trim().toUpperCase();
 }
 
+function compact(value: string) {
+  return normalize(value).replace(/[^A-Z0-9]/g, '').replace(/ROOM0+(\d+)/g, 'ROOM$1');
+}
+
+function matcherVariants(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((variant) => normalize(variant))
+        .filter((variant) => variant.length >= 4)
+    )
+  );
+}
+
 function roomLabelHints(label: string) {
   const normalized = normalize(label);
   const digits = normalized.replace(/\D/g, '');
@@ -27,6 +42,10 @@ function roomLabelHints(label: string) {
 
 function tokenListMatches(value: string, matcherValue: string) {
   const normalized = normalize(value);
+  const normalizedMatcher = normalize(matcherValue);
+  if (/\d/.test(normalizedMatcher)) {
+    return normalized.includes(normalizedMatcher) || compact(value).includes(compact(normalizedMatcher));
+  }
   return tokenizeMatcherValue(matcherValue).some((token) => normalized.includes(token));
 }
 
@@ -59,10 +78,15 @@ function matchesRule(rule: UnitTableMatchRule, reference: ReferencePoolRow) {
 export function scoreReferenceForUnit(row: RecommendationUnit, reference: ReferencePoolRow) {
   let score = 0;
   const referenceText = normalize(reference.reference);
-  const expectedTokens = tokenizeMatcherValue(row.expectedReference);
+  const expectedVariants = matcherVariants(row.expectedReference);
 
-  if (expectedTokens.some((token) => referenceText === token)) score += 120;
-  else if (expectedTokens.some((token) => referenceText.includes(token))) score += 90;
+  if (expectedVariants.some((variant) => referenceText === variant || compact(reference.reference) === compact(variant))) {
+    score += 120;
+  } else if (
+    expectedVariants.some((variant) => referenceText.includes(variant) || compact(reference.reference).includes(compact(variant)))
+  ) {
+    score += 90;
+  }
 
   for (const keyword of [...row.matchKeywords, ...roomLabelHints(row.label)]) {
     if (tokenListMatches(reference.reference, keyword)) score += 24;

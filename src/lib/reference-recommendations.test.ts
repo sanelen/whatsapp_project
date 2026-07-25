@@ -41,6 +41,45 @@ test('Room 07 candidate ranks above another equal-amount room reference', () => 
   assert.ok(ranked[0].score > ranked[1].score);
 });
 
+test('Essex room number must beat generic Essex and Room tokens', () => {
+  const room5 = {
+    label: 'Room 05',
+    expectedAmount: 4600,
+    expectedReference: 'ESSEX ROOM 5',
+    matchKeywords: ['ESSEX', 'ROOM 5'],
+    matchRules: [
+      {
+        id: 'essex-5',
+        matcherType: 'reference_regex',
+        matcherValue: '^ESSEX[[:space:]]*(ROOM|NO\\.?)?[[:space:]]*0?5$',
+        amountValue: null,
+        isActive: true,
+      } satisfies UnitTableMatchRule,
+    ],
+  };
+  const room6 = {
+    label: 'Room 06',
+    expectedAmount: 4000,
+    expectedReference: 'ESSEX ROOM 6',
+    matchKeywords: ['ESSEX', 'ROOM 6'],
+    matchRules: [
+      {
+        id: 'essex-6',
+        matcherType: 'reference_regex',
+        matcherValue: '^ESSEX[[:space:]]*(ROOM|NO\\.?)?[[:space:]]*0?6$',
+        amountValue: null,
+        isActive: true,
+      } satisfies UnitTableMatchRule,
+    ],
+  };
+  const ranked = sortReferencesForUnit(room6, [reference('essex-05', 'EssexRoom05')]);
+  assert.ok(ranked[0].score < 90, `Room 6 should not treat EssexRoom05 as strong; got ${ranked[0].score}`);
+  assert.ok(
+    scoreReferenceForUnit(room5, reference('essex-05', 'EssexRoom05')) >
+      scoreReferenceForUnit(room6, reference('essex-05', 'EssexRoom05'))
+  );
+});
+
 test('bare short room number is not enough for a strong recommendation', () => {
   const score = scoreReferenceForUnit(
     { ...room7, expectedReference: '', matchRules: [] },
