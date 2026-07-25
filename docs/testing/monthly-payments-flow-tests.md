@@ -1,6 +1,6 @@
 # Monthly Payments Flow Tests
 
-Last updated: 2026-07-01
+Last updated: 2026-07-25
 
 Purpose: keep a living, flow-first test reference for the monthly payments
 workspace.
@@ -62,6 +62,7 @@ Build automated coverage in this order:
 6. Match-reference flow
 7. Reverse / re-match flow
 8. Import refresh flow
+9. Stay-aware deposit lifecycle and allocation scenarios
 
 ## Flow 01: Entry to dashboard
 
@@ -526,6 +527,213 @@ Automation note:
 
 - A cheap but important regression suite.
 
+## 2026-07-24 Stay Lifecycle Scenario Pack
+
+These scenarios come from the owner's reconciliation walkthrough. They should be
+tested with safe seeded data or privacy-masked local screenshots before any
+production push.
+
+### Scenario A: Holding deposit before move-in
+
+Goal: a deposit paid to hold a unit is not counted as rent for the current month.
+
+Preconditions:
+
+- A unit is vacant or has a future/holding stay.
+- One imported incoming payment reference belongs to that unit.
+- The payment is intended as a deposit, not rent.
+
+Steps:
+
+1. Open the property units page for the selected month.
+2. Expand the unit row.
+3. Confirm the incoming bank reference is visible with date, payer/reference,
+   masked account, and amount.
+4. Choose `Move to deposit` or the stay-aware deposit allocation action.
+5. Reopen or refresh the unit row.
+
+Expected:
+
+- The payment is matched to the unit.
+- Rent received for the month does not include the deposit amount.
+- The deposit ledger/version shows the deposit amount against the holding/current
+  stay.
+- Dashboard/property rollups count the money once.
+- The action is reversible back to the unresolved/matched pile.
+
+### Scenario B: Current rent plus future tenant deposit in one billing window
+
+Goal: two people can pay money for the same room in the same billing window
+without mixing stay ownership.
+
+Preconditions:
+
+- Current stay is still active or in notice.
+- Future/holding stay exists for the same unit.
+- One payment is current tenant rent.
+- A second payment is incoming tenant deposit.
+
+Steps:
+
+1. Open the unit row for the selected month.
+2. Inspect the recent payments list.
+3. Allocate current tenant payment to this month's rent/current stay.
+4. Allocate incoming tenant payment to future stay deposit.
+5. Reopen dashboard, property card, and the unit row.
+
+Expected:
+
+- Rent coverage reflects only the current tenant rent allocation.
+- Deposit ledger for the future stay reflects only the incoming tenant deposit.
+- Current stay deposit ledger is unchanged unless explicitly selected.
+- The same payment amount never appears in both rent and deposit totals.
+- The UI makes the stay choice visible whenever more than one stay is relevant.
+
+### Scenario C: End stay and release deposit
+
+Goal: closing a tenant stay freezes the old deposit ledger and starts the next
+tenant cleanly.
+
+Preconditions:
+
+- A unit has a stay with a deposit balance.
+- Owner has inspection/refund evidence available in a safe test fixture.
+
+Steps:
+
+1. Open the unit's stay lifecycle controls.
+2. End the current stay with a move-out date.
+3. Record inspection result, deduction/refund decision, and evidence reference.
+4. Create or open the next stay for the same unit.
+5. Inspect the monthly-payments row.
+
+Expected:
+
+- Ended stay is visible in previous stay history.
+- Refund/deduction entries are attached to the ended stay.
+- The new/current stay starts with its own deposit target and balance.
+- Closed-stay deposit does not make the new tenant look funded.
+- Full banking details are never shown in normal payment screens.
+
+### Scenario D: Retrospective stay backfill
+
+Goal: owner can define past tenant windows without rewriting imported bank
+records.
+
+Preconditions:
+
+- A unit has historical matched payments for several months.
+- No stay metadata exists for that historical period.
+
+Steps:
+
+1. Open Room Manager or the stay lifecycle control.
+2. Create a historical stay with start and end dates, for example February
+   through June.
+3. Review candidate matched payments in that date range.
+4. Attach the intended rent/deposit allocations.
+5. Return to the monthly-payments unit row for one of those periods.
+
+Expected:
+
+- Imported bank rows remain unchanged.
+- Stay/allocation metadata explains which payments belong to that stay.
+- Ambiguous payments remain unassigned until explicitly handled.
+- Previous/current stay displays agree across months.
+- Room Manager labels the effective ownership date as `Billing from`.
+- Open decision: whether the product also needs a separate physical move-in date.
+
+### Scenario D2: Room Manager tenant-version persistence
+
+Goal: owner can edit active and past tenant versions without changing room-level
+identity or imported bank evidence.
+
+Preconditions:
+
+- A unit has an active tenant version.
+- The stay lifecycle migration is present.
+
+Steps:
+
+1. Open Room Manager for the property and selected unit.
+2. Edit Name and Surname.
+3. Confirm the read-only Tenant display combines Name + Surname.
+4. Set `Billing from`, deposit target, and optional `Ends after`.
+5. Save tenant version.
+6. Refresh the page and reopen the same room.
+7. Add a past stay with Tenant, `Billing from`, `Ended on`, and deposit target.
+
+Expected:
+
+- Active tenant-version fields remain editable.
+- Tenant display derives from Name + Surname.
+- Saved `Billing from` and deposit target persist after refresh.
+- Past stay appears in stay history with `Deposit paid R x / R y`.
+- Imported bank reference rows are not rewritten.
+
+### Scenario E: Known reference delete and exact-room matching
+
+Goal: the operator can remove bad reference hints, and exact room references beat
+generic property tokens.
+
+Preconditions:
+
+- A unit has a temporary or bad known-reference hint.
+- Two rooms share generic hints such as property name or the word `ROOM`.
+- One incoming payment references a specific room number.
+
+Steps:
+
+1. Open the expanded unit row.
+2. Delete the bad known-reference chip.
+3. Refresh the page and confirm the chip remains gone.
+4. Run or inspect match recommendations for the specific-room payment.
+
+Expected:
+
+- Deleted hint no longer appears or influences future matching.
+- Payment naming Room 05 does not strong-match Room 06 because of generic hints.
+- If room identity remains ambiguous, the reference stays in the pool for human
+  review.
+
+### Scenario F: Funded legacy deposit plus held surplus
+
+Goal: when an incoming payment covers rent and leaves surplus, the UI explains
+rent, deposit, held credit, and allocation history without implying the room-level
+deposit proves the current tenant stay is fully reconciled.
+
+Recorded evidence:
+
+- Record & Replay session `73D6AEB2-128B-4AD7-BE04-E63B43AD1C75`, captured
+  2026-07-24.
+- The owner walked Room 1 across April and May 2026.
+
+Preconditions:
+
+- A unit has a legacy room-level deposit ledger already showing funded.
+- A later matched bank reference exceeds the month's rent.
+- Some surplus is held or allocated, and active allocation reversals exist.
+
+Steps:
+
+1. Open April 2026 for the unit.
+2. Confirm rent coverage is zero/no matched rent while the legacy deposit ledger
+   still shows funded.
+3. Move to May 2026 for the same unit.
+4. Confirm the later reference shows full amount, rent portion, held surplus, and
+   signed-off amount.
+5. Inspect allocation history and reverse guards.
+
+Expected:
+
+- Rent coverage shows only the selected month's rent portion.
+- Held surplus is visible as held credit, not hidden inside rent.
+- Allocation history shows where prior surplus went.
+- Reverse controls explain dependency order, for example reverse active allocation
+  first.
+- The deposit version panel continues to warn that legacy room-level deposit
+  needs occupancy migration before old/new tenant deposit ownership is trustworthy.
+
 ## Suggested test data packs
 
 Keep a few named scenarios available for automation:
@@ -606,3 +814,34 @@ Expected:
 - No console-error / Next dev overlay appears.
 - Hint chips render once each even if keywords and room-label hints overlap.
 - The page remains interactive across units → room manager → units round-trips.
+
+## 2026-07-24 rent-period move and Capitec parity regression
+
+### Move a matched rent payment to the next month
+
+1. Open a unit with a matched rent reference in the selected month.
+2. Expand the unit and choose **Move to next month**.
+3. Confirm the full amount, target month, and optional reason.
+
+Expected:
+
+- The reference disappears from the source month's rent total and appears in
+  the immediately following month for the same unit.
+- Bank date, amount, reference text, and sign-off state do not change.
+- Both month statuses are recalculated and an audit note records the move.
+- A reference with an active deposit or held-credit allocation is blocked until
+  that allocation is reversed.
+
+### Retain unprocessed Capitec evidence
+
+1. Import one supported incoming-funds Capitec PDF and one unsupported or
+   non-extracting Capitec PDF in the same billing window.
+2. Open **Import audit** for that period.
+
+Expected:
+
+- The supported payment has the same database and match workflow as a Gmail or
+  CSV payment.
+- The unsupported file remains visible under **Unprocessed bank items**.
+- Its source, filename, parser/import status, and human-readable reason are
+  visible; no bank evidence silently disappears.

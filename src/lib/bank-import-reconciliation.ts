@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { listActiveBankImportMailboxes, runBankImport, type BankImportRunSummary } from '@/lib/bank-import';
+import { getBillingPeriodForDate, listActiveBankImportMailboxes, runBankImport, type BankImportRunSummary } from '@/lib/bank-import';
 import { ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
 
 export const RECONCILIATION_CADENCE_HOURS = 72;
@@ -30,14 +30,12 @@ export type ReconciliationRunView = {
   };
 };
 
-function monthKey(date: Date) {
-  return date.toISOString().slice(0, 7);
-}
-
 export function reconciliationPeriods(now = new Date()) {
-  return [0, -1, -2].map((offset) => {
-    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, 1));
-    return monthKey(date);
+  const activePeriod = getBillingPeriodForDate(now.toISOString().slice(0, 10));
+  const [year, month] = activePeriod.split('-').map(Number);
+  return [-3, -2, -1, 0, 1, 2].map((offset) => {
+    const date = new Date(Date.UTC(year, month - 1 + offset, 1));
+    return date.toISOString().slice(0, 7);
   });
 }
 

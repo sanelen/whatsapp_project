@@ -302,6 +302,11 @@ The read-only import validation slice shipped on 2026-07-12:
 - Each file exposes parser status, Drive archive/source state, hash provenance,
   extracted incoming amounts, database presence, and current unit match or
   sign-off status.
+- Capitec PDFs have source parity with Gmail/CSV evidence: a file that cannot
+  safely produce or match a payment is retained and shown in **Unprocessed bank
+  items** with its parser/import reason and a link back to the source evidence.
+- Source format controls provenance only. It must not decide whether a payment
+  can be stored, matched, or made visible to the operator.
 - The page deliberately does not edit matches; operators continue matching in
   the reference pool or property table.
 - `/monthly-payments/import-configuration` documents the live Gmail mailbox,

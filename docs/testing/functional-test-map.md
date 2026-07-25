@@ -18,10 +18,10 @@ Owner decision rules these tests enforce (rulings 2026-07-02):
    `property_units.deposit_amount`; suggestions are capped by REMAINING headroom.
 3. **Under-payment = `partial` + outstanding**, more references matchable until
    covered.
-4. **Surplus = held unit credit, operator-allocated only** (rulings 2026-07-03):
-   destinations are arrears within the last 3 months, next month's rent, or
-   deposit while headroom remains; suggest only, never auto-apply; sign-off is
-   not blocked by surplus.
+4. **Overpayment = explicit operator allocation** (rulings 2026-07-03 and
+   2026-07-20): show the full bank reference and offer current month, arrears
+   within the last 3 months, next month's rent, or deposit while headroom
+   remains; never guess deposit and never auto-apply.
 5. **TEST rooms count like normal rooms** (owner ruling 2026-07-03): `is_test`
    fixtures are NOT excluded from dashboard totals/counts — the owner accepts
    ~R6,000/month fake expected in the numbers. Do not "fix" this by filtering
@@ -36,6 +36,8 @@ Owner decision rules these tests enforce (rulings 2026-07-02):
 | FR-2.8 [overpayment = rent + deposit split] | FR-2.8 | Deposit contributions don't get lost | Check `computeDepositSplitSuggestion` wiring + `depositAmount > 0` guard |
 | FR-2.8 [deposit ledger: accepted split reads paid] | FR-2.8 | Resolved overpayments stop nagging | `computeUnitStatus` must subtract `depositContributedAmount` before rent comparison |
 | FR-2.8 [deposit ledger: remaining headroom cap] | FR-2.8 | Deposits never over-fund | Pass `target − balance` (not raw target) as `depositAmount` |
+| FR-2.8 [two ordinary references = one period overpayment] | FR-2.8 | Combined payments can be allocated without a false “no overpayment” 500 | Compute surplus from all references on `unit_payment_period_id`; preserve the later source reference(s) in `unit_credits` |
+| FR-2.8 [period surplus source audit] | FR-2.8, NFR-2.3 | Every credited rand remains tied to the bank reference that supplied it | Allocate rent to references chronologically, then record only the later remainder as source credit |
 | FR-2.1/NFR-2.3 [chase list] | FR-2.1, NFR-2.3 | "Due" = who to actually chase | Dashboard must use `computeUnitStatus`; due excludes pending/blocked/paid |
 | NFR-2.3 [one money story] | NFR-2.3 | Dashboard vs units-table agreement | `signedOff + pending = matched` in `buildLocationsForMonth`; rate = signedOff/expected |
 | NFR-2.3 [no invisible money] | NFR-2.3, FR-2.1 | Imported money never vanishes ("where did the data go?", 2026-07-02) | `signedOff + pending + unmatched = arrived` on the rolling total; unmatched shown in rand, months show "Rxk in" |
@@ -61,7 +63,7 @@ table, room manager, reference pool). The Playwright HTML report
 | `dashboard-units-reconciliation.spec.ts` (Flow 03) | Property card totals are explained by unit rows | See Flow 03 header; usually a read-model divergence |
 | `navigation-safety.spec.ts` | Every payments page has a way back | NFR-2.2 |
 | `match-flow-feedback.spec.ts` (Flow 04, stubs) | FR-2.7a: after clicking Match, the candidate drawer STAYS OPEN with remaining refs + a green confirmation; operator can chain matches without re-opening. FR-2.7b: signing off a manually-matched ref offers "Add this reference to this unit's list?" | Owner scenario from the 2026-07-03 live session ("I clicked one and the rest disappeared"). Fix drawer state in `units-table.tsx` `handleMatch` — it must not call `closeMatchDrawer` |
-| `surplus-credit-scenarios.spec.ts` (Flow 05, stubs) | FR-2.8 surplus credit: the three allocation destinations (arrears ≤ 3 months back, next-month advance, deposit while headroom > 0) + never-auto-apply. **TEST rooms only** (`is_test = true`, 2 per location, migration 20260703120000) — real rooms must never be touched by tests. Owner watches these headed: `npm run test:e2e:headed` | If a Flow 05 test touched a non-TEST room, that is the bug — fix the test scoping first. Otherwise fix the credit ledger / allocate action |
+| `surplus-credit-scenarios.spec.ts` (Flow 05, stubs) | FR-2.8 overpayment allocation: full reference context + four destinations (current month, arrears ≤ 3 months back, next-month advance, deposit while headroom > 0) + never-auto-apply. **TEST rooms only** (`is_test = true`, 2 per location, migration 20260703120000) — real rooms must never be touched by tests. Owner watches these headed: `npm run test:e2e:headed` | If a Flow 05 test touched a non-TEST room, that is the bug — fix the test scoping first. Otherwise fix the credit ledger / allocation action |
 
 ## The loop
 

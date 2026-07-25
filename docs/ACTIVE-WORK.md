@@ -54,6 +54,14 @@ is active only as an owner-present operation and must never be performed unatten
 - Combined-payment allocation or other open payments follow-ups. The Capitec
   reconciliation/run history was
   explicitly promoted by the owner on 2026-07-20 and is therefore active.
+- Full stay/deposit lifecycle implementation remains decision-gated. The
+  2026-07-24 owner walkthrough promoted it to a documented requirement, and the
+  2026-07-25 local slice now has stay tables, Room Manager tenant-version
+  controls, deposit-version copy, recent unit payments, known reference bindings,
+  and allocation history available for owner testing. The unresolved parts are
+  deposit refund/release, retrospective evidence rules, current-vs-future tenant
+  allocation, and whether a separate physical move-in date is needed alongside
+  the current Billing from date.
 - A wholesale visual redesign.
 
 These items may remain documented as Planned/Partial. That status is not permission

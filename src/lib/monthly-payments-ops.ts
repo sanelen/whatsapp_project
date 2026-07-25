@@ -4,6 +4,7 @@ import { computeUnitStatus } from '@/lib/monthly-payment-status';
 import {
   computeCreditAllocationOptions,
   computeOverpaymentAllocation,
+  computePeriodReferenceCreditSources,
   roundMoney,
   shiftPeriodStart,
 } from '@/lib/payment-allocation';
@@ -197,8 +198,56 @@ async function activeContributionAmountsByReference(paymentReferenceIds: string[
   return amounts;
 }
 
+async function activeCreditAmountsByReference(paymentReferenceIds: string[]): Promise<Map<string, number>> {
+  if (paymentReferenceIds.length === 0) return new Map();
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from('unit_credits')
+    .select('payment_reference_id,amount')
+    .in('payment_reference_id', paymentReferenceIds)
+    .is('reversed_at', null);
+  if (error) {
+    if (MISSING_TABLE_CODES.has(error.code ?? '')) return new Map();
+    throw new Error(`Failed to load held credits for period: ${error.message}`);
+  }
+  const amounts = new Map<string, number>();
+  for (const row of data ?? []) {
+    const referenceId = row.payment_reference_id as string | null;
+    if (!referenceId) continue;
+    amounts.set(referenceId, roundMoney((amounts.get(referenceId) ?? 0) + toMoney(row.amount as number | string)));
+  }
+  return amounts;
+}
+
 async function activeContributionBalanceForUnit(unitId: string): Promise<number> {
   const admin = getSupabaseAdmin();
+  const { data: activeOccupancy, error: occupancyError } = await admin
+    .from('unit_occupancies')
+    .select('id')
+    .eq('unit_id', unitId)
+    .is('closed_at', null)
+    .in('status', ['holding', 'active', 'notice'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  if (occupancyError && !MISSING_TABLE_CODES.has(occupancyError.code ?? '')) {
+    throw new Error(`Failed to load current occupancy deposit scope: ${occupancyError.message}`);
+  }
+  if (!occupancyError) {
+    if (!activeOccupancy) return 0;
+    const { data: ledgerRows, error: ledgerError } = await admin
+      .from('deposit_ledger_entries')
+      .select('amount')
+      .eq('unit_occupancy_id', activeOccupancy.id)
+      .is('reversed_at', null);
+    if (ledgerError && !MISSING_TABLE_CODES.has(ledgerError.code ?? '')) {
+      throw new Error(`Failed to load current occupancy deposit balance: ${ledgerError.message}`);
+    }
+    if (!ledgerError) {
+      return roundMoney((ledgerRows ?? []).reduce((sum, row) => sum + toMoney(row.amount as number | string), 0));
+    }
+  }
+
   const { data, error } = await admin
     .from('deposit_contributions')
     .select('amount,reversed_at')
@@ -209,6 +258,63 @@ async function activeContributionBalanceForUnit(unitId: string): Promise<number>
     throw new Error(`Failed to load unit deposit balance: ${error.message}`);
   }
   return roundMoney((data ?? []).reduce((sum, row) => sum + toMoney(row.amount as number | string), 0));
+}
+
+async function ensureCurrentDepositOccupancy(input: {
+  organizationId: string;
+  propertyId: string | null;
+  unitId: string;
+  occupancyStatus: 'occupied' | 'vacant';
+  depositTargetAmount: number;
+  actor: string;
+}): Promise<string | null> {
+  if (!input.propertyId) return null;
+  const admin = getSupabaseAdmin();
+  const { data: activeOccupancy, error: activeError } = await admin
+    .from('unit_occupancies')
+    .select('id')
+    .eq('unit_id', input.unitId)
+    .is('closed_at', null)
+    .in('status', ['holding', 'active', 'notice'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  if (activeError) {
+    if (MISSING_TABLE_CODES.has(activeError.code ?? '')) return null;
+    throw new Error(`Failed to load current deposit occupancy: ${activeError.message}`);
+  }
+  if (activeOccupancy) return activeOccupancy.id;
+
+  const { data: inserted, error: insertError } = await admin
+    .from('unit_occupancies')
+    .insert({
+      organization_id: input.organizationId,
+      property_id: input.propertyId,
+      unit_id: input.unitId,
+      status: input.occupancyStatus === 'vacant' ? 'holding' : 'active',
+      deposit_target_amount: input.depositTargetAmount,
+      actor: input.actor,
+    })
+    .select('id')
+    .maybeSingle<{ id: string }>();
+  if (insertError) {
+    if (MISSING_TABLE_CODES.has(insertError.code ?? '')) return null;
+    if (insertError.code === '23505') {
+      const { data: existing, error: existingError } = await admin
+        .from('unit_occupancies')
+        .select('id')
+        .eq('unit_id', input.unitId)
+        .is('closed_at', null)
+        .in('status', ['holding', 'active', 'notice'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<{ id: string }>();
+      if (existingError) throw new Error(`Failed to recover current deposit occupancy: ${existingError.message}`);
+      return existing?.id ?? null;
+    }
+    throw new Error(`Failed to open deposit occupancy: ${insertError.message}`);
+  }
+  return inserted?.id ?? null;
 }
 
 const MISSING_TABLE_CODES = new Set(['42P01', '42703', 'PGRST205']);
@@ -277,11 +383,17 @@ async function recomputeAndPersistPeriodStatus(periodId: string) {
   if (referencesError) throw new Error(`Failed to load matched references for period recompute: ${referencesError.message}`);
 
   const referenceIds = (matchedReferences ?? []).map((reference) => reference.id as string);
-  const contributionsByReference = await activeContributionAmountsByReference(referenceIds);
+  const [contributionsByReference, creditsByReference] = await Promise.all([
+    activeContributionAmountsByReference(referenceIds),
+    activeCreditAmountsByReference(referenceIds),
+  ]);
   const depositContributedAmount = roundMoney(
     referenceIds.reduce((sum, referenceId) => sum + (contributionsByReference.get(referenceId) ?? 0), 0)
   );
   const depositBalance = await activeContributionBalanceForUnit(unit.id);
+  const creditFromMatchedReferencesAmount = roundMoney(
+    referenceIds.reduce((sum, referenceId) => sum + (creditsByReference.get(referenceId) ?? 0), 0)
+  );
   const creditAppliedAmount = await activeCreditAppliedForPeriod(periodId);
 
   const computed = computeUnitStatus({
@@ -290,6 +402,7 @@ async function recomputeAndPersistPeriodStatus(periodId: string) {
     expectedAmount: toMoney(period.expected_amount),
     depositAmount: roundMoney(Math.max(0, toMoney(unit.deposit_amount) - depositBalance)),
     depositContributedAmount,
+    creditFromMatchedReferencesAmount,
     creditAppliedAmount,
     matchedReferences: (matchedReferences ?? []).map((reference) => ({
       amount: reference.amount as number | string,
@@ -713,6 +826,110 @@ export async function addUnitReferenceRule(input: {
   return { added: true, alreadyCovered: false };
 }
 
+export async function removeUnitMatchKeyword(input: {
+  unitId: string;
+  keyword: string;
+  actor: string;
+}) {
+  const keyword = input.keyword.trim();
+  if (!keyword) throw new Error('Keyword is required');
+
+  const admin = getSupabaseAdmin();
+  const { data: unit, error: unitError } = await admin
+    .from('property_units')
+    .select('id,property_id,match_keywords')
+    .eq('id', input.unitId)
+    .maybeSingle<{
+      id: string;
+      property_id: string;
+      match_keywords: string[] | null;
+    }>();
+  if (unitError || !unit) throw new Error(unitError?.message ?? 'Unit not found');
+
+  const current = unit.match_keywords ?? [];
+  const next = current.filter((candidate) => candidate.trim() !== keyword);
+  if (next.length === current.length) {
+    return { removed: false, alreadyRemoved: true };
+  }
+
+  const { error: updateError } = await admin
+    .from('property_units')
+    .update({ match_keywords: next })
+    .eq('id', input.unitId);
+  if (updateError) throw new Error(`Failed to remove known reference hint: ${updateError.message}`);
+
+  const { data: property, error: propertyError } = await admin
+    .from('properties')
+    .select('organization_id')
+    .eq('id', unit.property_id)
+    .maybeSingle<{ organization_id: string }>();
+  if (propertyError || !property) throw new Error(propertyError?.message ?? 'Property not found for audit log');
+
+  await logPaymentMatchEvent({
+    organizationId: property.organization_id,
+    propertyId: unit.property_id,
+    unitId: unit.id,
+    unitPaymentPeriodId: null,
+    paymentReferenceId: null,
+    eventType: 'note_added',
+    actor: input.actor,
+    referenceText: keyword,
+    amount: 0,
+    expectedAmount: 0,
+    note: `Known reference hint removed: "${keyword}"`,
+  });
+
+  return { removed: true, alreadyRemoved: false };
+}
+
+export async function removeUnitMatchRule(input: {
+  unitId: string;
+  ruleId: string;
+  actor: string;
+}) {
+  const admin = getSupabaseAdmin();
+  const { data: rule, error: ruleError } = await admin
+    .from('bank_import_unit_match_hints')
+    .select('id,organization_id,property_id,unit_id,matcher_value,is_active')
+    .eq('id', input.ruleId)
+    .eq('unit_id', input.unitId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      property_id: string | null;
+      unit_id: string;
+      matcher_value: string | null;
+      is_active: boolean;
+    }>();
+  if (ruleError || !rule) throw new Error(ruleError?.message ?? 'Known reference rule not found');
+  if (!rule.is_active) {
+    return { removed: false, alreadyRemoved: true };
+  }
+
+  const { error: updateError } = await admin
+    .from('bank_import_unit_match_hints')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('id', input.ruleId)
+    .eq('unit_id', input.unitId);
+  if (updateError) throw new Error(`Failed to remove known reference rule: ${updateError.message}`);
+
+  await logPaymentMatchEvent({
+    organizationId: rule.organization_id,
+    propertyId: rule.property_id,
+    unitId: rule.unit_id,
+    unitPaymentPeriodId: null,
+    paymentReferenceId: null,
+    eventType: 'note_added',
+    actor: input.actor,
+    referenceText: rule.matcher_value ?? '',
+    amount: 0,
+    expectedAmount: 0,
+    note: `Known reference rule removed: "${rule.matcher_value ?? input.ruleId}"`,
+  });
+
+  return { removed: true, alreadyRemoved: false };
+}
+
 export async function signOffMatchedReference(input: {
   paymentReferenceId: string;
   actor: string;
@@ -746,8 +963,11 @@ export async function signOffMatchedReference(input: {
 
   const amount = toMoney(reference.amount);
 
-  const contributedAmount = await activeContributionAmountForReference(reference.id);
-  const effectiveAmount = roundMoney(amount - contributedAmount);
+  const [contributedAmount, creditedAmount] = await Promise.all([
+    activeContributionAmountForReference(reference.id),
+    activeCreditAmountForReference(reference.id),
+  ]);
+  const effectiveAmount = roundMoney(amount - contributedAmount - creditedAmount);
   if (effectiveAmount > toMoney(period.expected_amount) && Math.abs(effectiveAmount - toMoney(period.expected_amount)) > 0.001) {
     throw new Error('Overpaid rows need the deposit split accepted (or the match reviewed) before sign-off');
   }
@@ -803,6 +1023,140 @@ export async function signOffMatchedReference(input: {
   };
 }
 
+/**
+ * Move an already matched rent payment to the next billing period without
+ * changing its bank transaction date or unit. This is deliberately separate
+ * from held-credit allocation: the whole payment reference moves, so an early
+ * rent payment can be corrected even when it is not a deposit or surplus.
+ *
+ * References that already feed the deposit/credit ledgers must have those
+ * dependent allocations reversed first; otherwise moving the reference would
+ * make the source period and allocation history disagree.
+ */
+export async function reassignMatchedReferenceToNextPeriod(input: {
+  paymentReferenceId: string;
+  targetPeriodKey: string;
+  actor: string;
+  reason?: string;
+}) {
+  if (!/^\d{4}-\d{2}$/.test(input.targetPeriodKey)) {
+    throw new Error('Target billing period must use YYYY-MM');
+  }
+
+  const admin = getSupabaseAdmin();
+  const { data: reference, error: referenceError } = await admin
+    .from('payment_references')
+    .select('id,organization_id,property_id,unit_id,unit_payment_period_id,reference,amount,signed_off,received_at')
+    .eq('id', input.paymentReferenceId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      property_id: string | null;
+      unit_id: string | null;
+      unit_payment_period_id: string | null;
+      reference: string;
+      amount: number | string;
+      signed_off: boolean;
+      received_at: string;
+    }>();
+  if (referenceError || !reference) throw new Error(referenceError?.message ?? 'Payment reference not found');
+  if (!reference.property_id || !reference.unit_id || !reference.unit_payment_period_id) {
+    throw new Error('Payment must be matched to a property, unit, and billing period before it can move');
+  }
+
+  const { data: sourcePeriod, error: sourcePeriodError } = await admin
+    .from('unit_payment_periods')
+    .select('id,period_start,expected_amount,status')
+    .eq('id', reference.unit_payment_period_id)
+    .maybeSingle<{
+      id: string;
+      period_start: string;
+      expected_amount: number | string;
+      status: string;
+    }>();
+  if (sourcePeriodError || !sourcePeriod) {
+    throw new Error(sourcePeriodError?.message ?? 'Source billing period not found');
+  }
+
+  const expectedTargetStart = shiftPeriodStart(sourcePeriod.period_start, 1);
+  const targetPeriodStart = `${input.targetPeriodKey}-01`;
+  if (targetPeriodStart !== expectedTargetStart) {
+    throw new Error(`A rent payment can move only to the next billing period (${expectedTargetStart.slice(0, 7)})`);
+  }
+
+  const [contributedAmount, creditedAmount] = await Promise.all([
+    activeContributionAmountForReference(reference.id),
+    activeCreditAmountForReference(reference.id),
+  ]);
+  if (contributedAmount > 0.001 || creditedAmount > 0.001) {
+    throw new Error('Reverse this payment’s deposit or held-credit allocation before moving its rent period');
+  }
+
+  await ensurePaymentPeriodsForPeriod({
+    periodKey: input.targetPeriodKey,
+    propertyId: reference.property_id,
+  });
+  const { data: targetPeriod, error: targetPeriodError } = await admin
+    .from('unit_payment_periods')
+    .select('id,period_start,expected_amount,status,is_blocked')
+    .eq('unit_id', reference.unit_id)
+    .eq('period_start', targetPeriodStart)
+    .maybeSingle<{
+      id: string;
+      period_start: string;
+      expected_amount: number | string;
+      status: string;
+      is_blocked: boolean;
+    }>();
+  if (targetPeriodError || !targetPeriod) {
+    throw new Error(targetPeriodError?.message ?? 'Next billing period could not be created');
+  }
+  if (targetPeriod.is_blocked || toMoney(targetPeriod.expected_amount) <= 0) {
+    throw new Error('The next billing period has no active rent due; use deposit or held credit instead');
+  }
+
+  const { error: updateError } = await admin
+    .from('payment_references')
+    .update({
+      unit_payment_period_id: targetPeriod.id,
+      matched_at: new Date().toISOString(),
+      matched_by: input.actor,
+      match_method: 'manual',
+    })
+    .eq('id', reference.id);
+  if (updateError) throw new Error(`Failed to move payment to next billing period: ${updateError.message}`);
+
+  const sourceStatus = await recomputeAndPersistPeriodStatus(sourcePeriod.id);
+  const targetStatus = await recomputeAndPersistPeriodStatus(targetPeriod.id);
+  const reason = input.reason?.trim() || 'Early rent payment reassigned by operator';
+
+  await logPaymentMatchEvent({
+    organizationId: reference.organization_id,
+    propertyId: reference.property_id,
+    unitId: reference.unit_id,
+    unitPaymentPeriodId: targetPeriod.id,
+    paymentReferenceId: reference.id,
+    eventType: 'status_changed',
+    actor: input.actor,
+    referenceText: reference.reference,
+    amount: toMoney(reference.amount),
+    expectedAmount: toMoney(targetPeriod.expected_amount),
+    previousStatus: sourceStatus.persistedStatus,
+    newStatus: targetStatus.persistedStatus,
+    note: `${reason}. Full payment moved ${sourcePeriod.period_start.slice(0, 7)} → ${targetPeriod.period_start.slice(0, 7)}; bank received date ${reference.received_at.slice(0, 10)} unchanged.`,
+  });
+
+  return {
+    moved: true,
+    paymentReferenceId: reference.id,
+    sourcePeriodKey: sourcePeriod.period_start.slice(0, 7),
+    targetPeriodKey: targetPeriod.period_start.slice(0, 7),
+    sourceStatus: sourceStatus.persistedStatus,
+    targetStatus: targetStatus.persistedStatus,
+    signedOff: reference.signed_off,
+  };
+}
+
 async function activeContributionAmountForReference(paymentReferenceId: string): Promise<number> {
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
@@ -816,6 +1170,20 @@ async function activeContributionAmountForReference(paymentReferenceId: string):
     throw new Error(`Failed to load deposit contributions: ${error.message}`);
   }
   return (data ?? []).reduce((sum, row) => sum + toMoney(row.amount as number | string), 0);
+}
+
+async function activeCreditAmountForReference(paymentReferenceId: string): Promise<number> {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from('unit_credits')
+    .select('amount')
+    .eq('payment_reference_id', paymentReferenceId)
+    .is('reversed_at', null);
+  if (error) {
+    if (MISSING_TABLE_CODES.has(error.code ?? '')) return 0;
+    throw new Error(`Failed to load held credit for reference: ${error.message}`);
+  }
+  return roundMoney((data ?? []).reduce((sum, row) => sum + toMoney(row.amount as number | string), 0));
 }
 
 /**
@@ -861,28 +1229,30 @@ export async function acceptDepositSplit(input: {
       .maybeSingle<{ id: string; expected_amount: number | string; status: string }>(),
     admin
       .from('property_units')
-      .select('id,deposit_amount')
+      .select('id,property_id,occupancy_status,deposit_amount')
       .eq('id', reference.unit_id)
-      .maybeSingle<{ id: string; deposit_amount: number | string }>(),
+      .maybeSingle<{ id: string; property_id: string; occupancy_status: 'occupied' | 'vacant'; deposit_amount: number | string }>(),
   ]);
   if (periodError || !period) throw new Error(periodError?.message ?? 'Unit payment period not found');
   if (unitError || !unit) throw new Error(unitError?.message ?? 'Unit not found');
 
-  // Remaining headroom = deposit target minus the unit's active ledger balance.
-  const { data: balanceRows, error: balanceError } = await admin
-    .from('deposit_contributions')
-    .select('amount')
-    .eq('unit_id', reference.unit_id)
-    .is('reversed_at', null);
-  if (balanceError && balanceError.code !== '42P01' && balanceError.code !== 'PGRST205') {
-    throw new Error(`Failed to load deposit balance: ${balanceError.message}`);
-  }
-  const depositBalance = (balanceRows ?? []).reduce((sum, row) => sum + toMoney(row.amount as number | string), 0);
   const depositTarget = toMoney(unit.deposit_amount);
+  await ensureCurrentDepositOccupancy({
+    organizationId: reference.organization_id,
+    propertyId: reference.property_id ?? unit.property_id,
+    unitId: reference.unit_id,
+    occupancyStatus: unit.occupancy_status,
+    depositTargetAmount: depositTarget,
+    actor: input.actor,
+  });
+  const depositBalance = await activeContributionBalanceForUnit(reference.unit_id);
   const remainingDeposit = roundMoney(Math.max(0, depositTarget - depositBalance));
 
   const expectedAmount = toMoney(period.expected_amount);
   const amount = toMoney(reference.amount);
+  if (!(expectedAmount > 0)) {
+    throw new Error('This unit has no rent due for the selected month; allocate the matched payment to deposit, advance, or held credit from the unit allocation panel');
+  }
   // FR-2.8 rulings 2026-07-03: surplus no longer blocks — rent first, deposit
   // up to remaining headroom, remainder HELD as unit credit for the operator
   // to allocate later (arrears ≤ 3 months / next-month advance / deposit).
@@ -962,6 +1332,281 @@ export async function acceptDepositSplit(input: {
   return await signOffMatchedReference({ paymentReferenceId: reference.id, actor: input.actor });
 }
 
+export async function moveMatchedReferenceToDeposit(input: {
+  paymentReferenceId: string;
+  actor: string;
+}) {
+  const admin = getSupabaseAdmin();
+  const { data: reference, error: referenceError } = await admin
+    .from('payment_references')
+    .select('id,organization_id,property_id,unit_id,unit_payment_period_id,reference,amount,signed_off')
+    .eq('id', input.paymentReferenceId)
+    .maybeSingle<{
+      id: string;
+      organization_id: string;
+      property_id: string | null;
+      unit_id: string | null;
+      unit_payment_period_id: string | null;
+      reference: string;
+      amount: number | string;
+      signed_off: boolean;
+    }>();
+  if (referenceError || !reference) throw new Error(referenceError?.message ?? 'Payment reference not found');
+  if (!reference.unit_id || !reference.unit_payment_period_id) {
+    throw new Error('Reference must be matched to a unit before it can be moved to deposit');
+  }
+  if (reference.signed_off) throw new Error('Signed-off references must be reversed before moving them to deposit');
+
+  const [existingContribution, existingCredit, { data: period, error: periodError }, { data: unit, error: unitError }] =
+    await Promise.all([
+      activeContributionAmountForReference(reference.id),
+      activeCreditAmountForReference(reference.id),
+      admin
+        .from('unit_payment_periods')
+        .select('id,expected_amount,status')
+        .eq('id', reference.unit_payment_period_id)
+        .maybeSingle<{ id: string; expected_amount: number | string; status: string }>(),
+      admin
+        .from('property_units')
+        .select('id,property_id,occupancy_status,deposit_amount')
+        .eq('id', reference.unit_id)
+        .maybeSingle<{ id: string; property_id: string; occupancy_status: 'occupied' | 'vacant'; deposit_amount: number | string }>(),
+    ]);
+  if (periodError || !period) throw new Error(periodError?.message ?? 'Unit payment period not found');
+  if (unitError || !unit) throw new Error(unitError?.message ?? 'Unit not found');
+  if (existingContribution > 0.001 || existingCredit > 0.001) {
+    throw new Error('This reference already has a deposit or credit allocation; refresh the row to review it');
+  }
+  const { data: activeAllocations, error: allocationGuardError } = await admin
+    .from('unit_credit_allocations')
+    .select('id')
+    .eq('unit_id', reference.unit_id)
+    .is('reversed_at', null)
+    .limit(1);
+  if (allocationGuardError && !MISSING_TABLE_CODES.has(allocationGuardError.code ?? '')) {
+    throw new Error(`Failed to check active credit allocations before moving to deposit: ${allocationGuardError.message}`);
+  }
+  if ((activeAllocations ?? []).length > 0) {
+    throw new Error("Reverse this unit's active credit/deposit allocation before moving a matched payment to deposit");
+  }
+
+  const amount = toMoney(reference.amount);
+  const depositTarget = toMoney(unit.deposit_amount);
+  await ensureCurrentDepositOccupancy({
+    organizationId: reference.organization_id,
+    propertyId: reference.property_id ?? unit.property_id,
+    unitId: reference.unit_id,
+    occupancyStatus: unit.occupancy_status,
+    depositTargetAmount: depositTarget,
+    actor: input.actor,
+  });
+  const depositBalance = await activeContributionBalanceForUnit(reference.unit_id);
+  const remainingDeposit = roundMoney(Math.max(0, depositTarget - depositBalance));
+  if (!(remainingDeposit > 0.001)) {
+    throw new Error('Deposit is already fully funded for this unit');
+  }
+  if (amount > remainingDeposit + 0.001) {
+    throw new Error(`Payment exceeds remaining deposit headroom by R${roundMoney(amount - remainingDeposit).toFixed(2)}`);
+  }
+
+  const { error: insertError } = await admin.from('deposit_contributions').insert({
+    organization_id: reference.organization_id,
+    property_id: reference.property_id,
+    unit_id: reference.unit_id,
+    unit_payment_period_id: period.id,
+    payment_reference_id: reference.id,
+    amount,
+    rent_portion: 0,
+    surplus_amount: 0,
+    reference_text: reference.reference,
+    actor: input.actor,
+  });
+  if (insertError) throw new Error(`Failed to move payment to deposit: ${insertError.message}`);
+
+  await logPaymentMatchEvent({
+    organizationId: reference.organization_id,
+    propertyId: reference.property_id,
+    unitId: reference.unit_id,
+    unitPaymentPeriodId: period.id,
+    paymentReferenceId: reference.id,
+    eventType: 'deposit_split_accepted',
+    actor: input.actor,
+    referenceText: reference.reference,
+    amount,
+    expectedAmount: toMoney(period.expected_amount),
+    previousStatus: period.status,
+    newStatus: period.status,
+    note: `payment moved to deposit only (balance R${roundMoney(depositBalance + amount).toFixed(2)} / R${depositTarget.toFixed(2)})`,
+  });
+
+  return await signOffMatchedReference({ paymentReferenceId: reference.id, actor: input.actor });
+}
+
+/**
+ * Resolve an overpayment from the operator's first decision surface. The rent
+ * portion stays on the matched month; the extra is first recorded as unit
+ * credit, then explicitly allocated to the selected month, recent arrears,
+ * next month, or deposit. Recording the credit source separately keeps the
+ * full bank amount traceable and makes every destination reversible.
+ */
+export async function resolveOverpayment(input: {
+  unitPaymentPeriodId: string;
+  destination: 'current' | 'arrears' | 'advance' | 'deposit';
+  selectedPeriodKey: string;
+  targetPeriodId?: string;
+  amount?: number;
+  actor: string;
+}) {
+  const admin = getSupabaseAdmin();
+  const { data: period, error: periodError } = await admin
+    .from('unit_payment_periods')
+    .select('id,unit_id,period_start,expected_amount,status')
+    .eq('id', input.unitPaymentPeriodId)
+    .maybeSingle<{
+      id: string;
+      unit_id: string;
+      period_start: string;
+      expected_amount: number | string;
+      status: string;
+    }>();
+  if (periodError || !period) throw new Error(periodError?.message ?? 'Unit payment period not found');
+  if (period.period_start.slice(0, 7) !== input.selectedPeriodKey) {
+    throw new Error('The selected month no longer matches this payment row; refresh before allocating');
+  }
+
+  const [{ data: unit, error: unitError }, { data: references, error: referencesError }] = await Promise.all([
+    admin
+      .from('property_units')
+      .select('id,property_id')
+      .eq('id', period.unit_id)
+      .maybeSingle<{ id: string; property_id: string }>(),
+    admin
+      .from('payment_references')
+      .select('id,organization_id,property_id,unit_id,reference,amount,signed_off,transaction_at,received_at')
+      .eq('unit_payment_period_id', period.id),
+  ]);
+  if (unitError || !unit) throw new Error(unitError?.message ?? 'Unit not found');
+  if (referencesError) throw new Error(`Failed to load the period's payment references: ${referencesError.message}`);
+  if (!references || references.length === 0) throw new Error('No matched payment references exist for this month');
+
+  const referenceIds = references.map((reference) => reference.id as string);
+  const [contributionsByReference, creditsByReference] = await Promise.all([
+    activeContributionAmountsByReference(referenceIds),
+    activeCreditAmountsByReference(referenceIds),
+  ]);
+  const existingContribution = referenceIds.reduce(
+    (sum, referenceId) => sum + (contributionsByReference.get(referenceId) ?? 0),
+    0
+  );
+  const existingCredit = referenceIds.reduce(
+    (sum, referenceId) => sum + (creditsByReference.get(referenceId) ?? 0),
+    0
+  );
+  if (existingContribution > 0.001 || existingCredit > 0.001) {
+    throw new Error('This overpayment already has an allocation; refresh the row to review it');
+  }
+
+  const expectedAmount = toMoney(period.expected_amount);
+  const creditSources = computePeriodReferenceCreditSources({
+    expectedAmount,
+    references: references.map((reference) => ({
+      id: reference.id as string,
+      amount: toMoney(reference.amount as number | string),
+      receivedAt: ((reference.transaction_at as string | null) ?? (reference.received_at as string)) || '',
+    })),
+  });
+  const extraAmount = roundMoney(creditSources.reduce((sum, source) => sum + source.creditAmount, 0));
+  if (!(extraAmount > 0.001)) throw new Error('No overpayment exists on this payment month');
+
+  const referencesById = new Map(references.map((reference) => [reference.id as string, reference]));
+  const { data: createdCredits, error: creditError } = await admin
+    .from('unit_credits')
+    .insert(
+      creditSources.map((source) => {
+        const reference = referencesById.get(source.id);
+        return {
+          organization_id: reference?.organization_id,
+          property_id: reference?.property_id ?? unit.property_id,
+          unit_id: unit.id,
+          unit_payment_period_id: period.id,
+          payment_reference_id: source.id,
+          amount: source.creditAmount,
+          reference_text: (reference?.reference as string | undefined) ?? '',
+          actor: input.actor,
+        };
+      })
+    )
+    .select('id');
+  if (creditError) throw new Error(`Failed to record overpayment credit: ${creditError.message}`);
+  const createdCreditIds = (createdCredits ?? []).map((credit) => credit.id as string);
+  const originallyUnsignedReferenceIds = references
+    .filter((reference) => !reference.signed_off)
+    .map((reference) => reference.id as string);
+  let allocation: Awaited<ReturnType<typeof allocateUnitCredit>> | null = null;
+
+  try {
+    // Allocate before sign-off so a destination/schema error cannot leave the
+    // incoming references signed off. Any failed allocation reverses the new
+    // source-credit rows below.
+    allocation = await allocateUnitCredit({
+      unitId: unit.id,
+      destination: input.destination,
+      selectedPeriodKey: input.selectedPeriodKey,
+      targetPeriodId: input.targetPeriodId,
+      amount: input.amount,
+      actor: input.actor,
+    });
+
+    await logPaymentMatchEvent({
+      organizationId: references[0].organization_id as string,
+      propertyId: (references[0].property_id as string | null) ?? unit.property_id,
+      unitId: unit.id,
+      unitPaymentPeriodId: period.id,
+      paymentReferenceId: null,
+      eventType: 'credit_held',
+      actor: input.actor,
+      referenceText: references.map((reference) => reference.reference as string).join(' | '),
+      amount: extraAmount,
+      expectedAmount,
+      previousStatus: period.status,
+      newStatus: 'paid',
+      note: `R${extraAmount.toFixed(2)} period-level extra from ${references.length} reference(s), held for explicit allocation to ${input.destination}`,
+    });
+
+    const signedOff = [];
+    for (const reference of references) {
+      signedOff.push(
+        await signOffMatchedReference({
+          paymentReferenceId: reference.id as string,
+          actor: input.actor,
+        })
+      );
+    }
+
+    return { signedOff, allocation, extraAmount, referenceCount: references.length };
+  } catch (error) {
+    if (allocation) {
+      await reverseUnitCreditAllocation({ allocationId: allocation.allocationId, actor: `${input.actor} (rollback)` }).catch(
+        () => undefined
+      );
+    }
+    if (createdCreditIds.length > 0) {
+      await admin
+        .from('unit_credits')
+        .update({ reversed_at: new Date().toISOString(), reversed_by: `${input.actor} (rollback)` })
+        .in('id', createdCreditIds);
+    }
+    if (originallyUnsignedReferenceIds.length > 0) {
+      await admin
+        .from('payment_references')
+        .update({ signed_off: false, signed_off_at: null, signed_off_by: null })
+        .in('id', originallyUnsignedReferenceIds);
+    }
+    await recomputeAndPersistPeriodStatus(period.id).catch(() => undefined);
+    throw error;
+  }
+}
+
 /**
  * Allocate held unit credit (FR-2.8, owner rulings 2026-07-03). Explicit
  * operator action only — never called automatically. Destinations:
@@ -972,7 +1617,7 @@ export async function acceptDepositSplit(input: {
  */
 export async function allocateUnitCredit(input: {
   unitId: string;
-  destination: 'arrears' | 'advance' | 'deposit';
+  destination: 'current' | 'arrears' | 'advance' | 'deposit';
   /** Period the operator is viewing, YYYY-MM key. */
   selectedPeriodKey: string;
   /** Required for 'arrears'. */
@@ -984,9 +1629,9 @@ export async function allocateUnitCredit(input: {
   const admin = getSupabaseAdmin();
   const { data: unit, error: unitError } = await admin
     .from('property_units')
-    .select('id,property_id,deposit_amount')
+    .select('id,property_id,occupancy_status,deposit_amount')
     .eq('id', input.unitId)
-    .maybeSingle<{ id: string; property_id: string; deposit_amount: number | string }>();
+    .maybeSingle<{ id: string; property_id: string; occupancy_status: 'occupied' | 'vacant'; deposit_amount: number | string }>();
   if (unitError || !unit) throw new Error(unitError?.message ?? 'Unit not found');
 
   const { data: property, error: propertyError } = await admin
@@ -1055,7 +1700,21 @@ export async function allocateUnitCredit(input: {
   let maxAmount = 0;
   let noteTarget = '';
 
-  if (input.destination === 'arrears') {
+  if (input.destination === 'current') {
+    await ensurePaymentPeriodsForPeriod({ periodKey: input.selectedPeriodKey, propertyId: unit.property_id });
+    const { data: currentPeriod, error: currentError } = await admin
+      .from('unit_payment_periods')
+      .select('id')
+      .eq('unit_id', unit.id)
+      .eq('period_start', selectedPeriodStart)
+      .maybeSingle<{ id: string }>();
+    if (currentError || !currentPeriod) {
+      throw new Error(currentError?.message ?? 'Could not resolve the selected month for this allocation');
+    }
+    targetPeriodId = currentPeriod.id;
+    maxAmount = options.current.maxAmount;
+    noteTarget = `current rent ${input.selectedPeriodKey}`;
+  } else if (input.destination === 'arrears') {
     const option = options.arrears.find((candidate) => candidate.periodId === input.targetPeriodId);
     if (!option) {
       throw new Error('That month is not an allocatable arrears target (must be short and within the last 3 months)');
@@ -1111,6 +1770,14 @@ export async function allocateUnitCredit(input: {
 
   // Deposit destination also feeds the deposit ledger so both balances stay truthful.
   if (input.destination === 'deposit') {
+    await ensureCurrentDepositOccupancy({
+      organizationId: property.organization_id,
+      propertyId: unit.property_id,
+      unitId: unit.id,
+      occupancyStatus: unit.occupancy_status,
+      depositTargetAmount: toMoney(unit.deposit_amount),
+      actor: input.actor,
+    });
     const { error: depositError } = await admin.from('deposit_contributions').insert({
       organization_id: property.organization_id,
       property_id: unit.property_id,
@@ -1143,6 +1810,7 @@ export async function allocateUnitCredit(input: {
   });
 
   return {
+    allocationId: allocation.id,
     allocated: amount,
     destination: input.destination,
     targetPeriodId,
@@ -1164,7 +1832,7 @@ export async function reverseUnitCreditAllocation(input: { allocationId: string;
       property_id: string | null;
       unit_id: string;
       amount: number | string;
-      destination: 'arrears' | 'advance' | 'deposit';
+      destination: 'current' | 'arrears' | 'advance' | 'deposit';
       target_period_id: string | null;
       reversed_at: string | null;
     }>();
@@ -1263,6 +1931,20 @@ export async function reverseSignOffAndUnmatch(input: {
       throw new Error(
         `R${roundMoney(creditFromReference - creditBalance).toFixed(2)} of this payment's credit has already been allocated — reverse the credit allocation(s) first`
       );
+    }
+  }
+  if (reference.unit_id) {
+    const { data: activeAllocations, error: allocationGuardError } = await admin
+      .from('unit_credit_allocations')
+      .select('id')
+      .eq('unit_id', reference.unit_id)
+      .is('reversed_at', null)
+      .limit(1);
+    if (allocationGuardError && !MISSING_TABLE_CODES.has(allocationGuardError.code ?? '')) {
+      throw new Error(`Failed to check active credit allocations before release: ${allocationGuardError.message}`);
+    }
+    if ((activeAllocations ?? []).length > 0) {
+      throw new Error("Reverse this unit's active credit/deposit allocation before releasing a matched reference");
     }
   }
 

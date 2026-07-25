@@ -124,8 +124,19 @@ Approved product boundary after the 2026-07-17 production review:
   - Under-payments read `partial` with an explicit outstanding amount; partial
     sign-off is allowed (period status `partial`) and more references can be
     matched until covered.
-  - Surplus rule (owner rulings 2026-07-03, replaces the previous BLOCKED
-    behavior — **Shipped 2026-07-03, pending owner browser check**. Tables
+  - Overpayment allocation (owner ruling 2026-07-20, replacing the earlier
+    deposit-first presentation): an overpayment must show the **full incoming
+    bank reference**, payer/account/date/amount context, and ask where the extra
+    amount belongs before sign-off. The operator gets four explicit choices:
+    selected/current month's rent, a short previous period within the last 3
+    months, next month's rent, or deposit while headroom remains. The UI must
+    never imply that an unexplained extra amount is a deposit.
+  - Period-level surplus (owner walkthrough 2026-07-21): when several normal
+    bank references combine to exceed one month's rent, the decision and write
+    operation use the **combined period total**, show every reference and its
+    own amount, and preserve the exact later reference(s) that supplied the
+    credit. Never recalculate the surplus from only the first reference.
+  - Surplus ledger (owner rulings 2026-07-03, extended 2026-07-20. Tables
     `unit_credits` + `unit_credit_allocations` (migration 20260703140000,
     applied live); ops `allocateUnitCredit`/`reverseUnitCreditAllocation`;
     API actions `allocate_credit`/`reverse_credit_allocation`; drawer "Held
@@ -133,17 +144,24 @@ Approved product boundary after the 2026-07-17 production review:
     - Surplus beyond rent + remaining deposit headroom is **held as a per-unit
       unallocated credit** (own ledger, like `deposit_contributions`); sign-off
       is no longer blocked by surplus.
-    - Operator allocates credit via an explicit action to one of THREE
-      destinations: (1) a short/unpaid billing period within the **last 3
-      months** (arrears outside that window are not offered), (2) **next
-      month's** rent (advance — one month ahead, e.g. July surplus → August),
-      (3) **deposit**, only when remaining headroom > 0.
+    - Operator allocates credit via an explicit action to one of FOUR
+      destinations: (1) the **selected/current month** when the business wants
+      to absorb the extra there, (2) a short/unpaid billing period within the
+      **last 3 months** (older arrears are not offered), (3) **next month's**
+      rent (one month ahead), or (4) **deposit**, only when headroom remains.
     - **Suggest only, never auto-apply** (explicit owner answer): the system
       may propose a destination, but nothing moves without the operator's
       click. Allocations must be reversible like sign-offs.
     - Live motivating case: ESSEXROOM1 July — R9,067 received, R3,800 rent,
       deposit fully funded, R1,467 surplus currently stuck.
   - Still open: tenant-visible deposit statements.
+  - Full-payment rent-period correction (owner ruling 2026-07-24): an already
+    matched rent reference can be moved from its current billing period to the
+    immediately following month without changing the bank transaction date,
+    amount, reference, unit, or sign-off state. The operator must confirm the
+    target and may record a reason; source and target month statuses are
+    recalculated and the move is audited. Deposit or held-credit allocations
+    must be reversed first.
 - FR-2.9 **Shipped** — Bank import pulls from Gmail and/or Google Drive, parses
   forwarded Capitec PDF notifications, and only imports `Incoming Funds` entries.
 - FR-2.10 **Shipped** — Billing window is 9th-of-previous-month through
@@ -162,7 +180,11 @@ Approved product boundary after the 2026-07-17 production review:
   period-scoped source-to-database ledger for Gmail PDFs, Drive bank uploads,
   and extracted transactions. It shows parser and Drive archive status, file
   provenance, database presence, and matched/signed-off unit state without
-  duplicating matching controls from the reference pool.
+  duplicating matching controls from the reference pool. **Extended locally
+  2026-07-24:** Capitec PDFs receive the same evidence visibility as other
+  sources. Unsupported, failed, pending, no-record, incomplete, and unmatched
+  files remain visible in a period-scoped **Unprocessed bank items** queue with
+  a reason and source link instead of disappearing from the audit.
 - FR-2.13 **Shipped 2026-07-12** — Import configuration provides a read-only
   explanation of connected mailboxes, masked account/property mappings,
   parser acceptance policy, and unit matching hints. Outgoing `Account Paid
@@ -189,6 +211,22 @@ Approved product boundary after the 2026-07-17 production review:
   payment references but never signs off or guesses a tenant/unit. Activation
   requires a separate OAuth refresh token for `Sanele.ngcobo@gmail.com`, an active
   mailbox row, the additive reconciliation migration, and production deployment.
+- FR-2.17 **Partial / Needs decision 2026-07-25** — Stay-aware deposit lifecycle
+  and recent unit payment history. Owner walkthrough promoted the deposit problem
+  from "a room has a balance" to "a tenant stay has a deposit ledger." A unit is
+  the physical room; a stay is the tenant occupancy episode. Matching a bank
+  reference to a unit must not decide rent versus deposit by itself, especially
+  when an outgoing tenant and incoming tenant both have payments in the same
+  billing window. Local work now shows recent unit payments, known reference
+  bindings with delete controls, compact allocation history, applied/held credit
+  provenance, stay-backed deposit-version display, and Room Manager controls for
+  active/past tenant versions. The hosted Supabase stay lifecycle migration was
+  applied after owner approval. Full implementation remains decision-gated:
+  allocate money to current versus future stays, release/refund deposits with
+  evidence, support retrospective backfill without rewriting bank evidence, and
+  decide whether the product needs a separate physical move-in date in addition
+  to the current Billing from date.
+  See [MONTHLY-PAYMENTS-STAY-LIFECYCLE.md](./requirements/MONTHLY-PAYMENTS-STAY-LIFECYCLE.md).
 
 ### Non-functional
 

@@ -1,6 +1,6 @@
 # Requirement Tracker
 
-Last reconciled: 2026-07-20
+Last reconciled: 2026-07-25
 
 This is the progress register shared by repository requirements, Linear, and
 scheduled jobs. It answers four questions for every requirement: is it still valid,
@@ -40,6 +40,8 @@ issue can still need its description corrected when the shipped product changed.
 | PAY-1 / AUT-20 | Valid | Met | No | Payments operator loop, imports, matching, sign-off/reversal, audit/config and staff navigation shipped. |
 | PAY-2 / AUT-33 | Valid | Met | No | PR #3 is merged and production-verified: August is selected, R8,700 imported/unmatched is visible, the blue Imported/Matched strip is live, and the signed-in route has no browser errors. |
 | PAY-3 / AUT-34 | Valid | Partial | Owner-promoted; active | Three-day run ledger, hash-based two-mailbox comparison, safe re-import, cron route, audit status, live migration, and tests are built on `feature/payment-import-reconciliation`. First visible run correctly exposed the expired destination OAuth token. Remaining: reconnect destination OAuth, source-mailbox OAuth consent/activation, deployment, and first successful two-mailbox run. |
+| PAY-4 / AUT-35-AUT-37 | Valid | Partial / Needs decision | Owner testing only; decision-gated implementation | 2026-07-24 owner walkthrough defined the stay/deposit lifecycle: a physical unit can have multiple tenant versions, and deposit money must belong to the correct tenant version instead of the room forever. 2026-07-25 local work shows recent unit payments, known reference bindings/removal, compact allocation history, source-payment provenance, stay-backed deposit-version display, and Room Manager controls for active/past tenant versions. Hosted Supabase migration `add_unit_occupancy_deposit_lifecycle` was applied after owner approval. Remaining: owner decisions for final stay statuses, retrospective evidence rules, current-vs-future tenant allocation, refund/release evidence, and whether Billing from is enough or physical move-in needs its own field. |
+| PAY-5 / owner 2026-07-24 | Valid | Local implementation | Owner-promoted; active | Full matched-rent references can move to the immediately following billing month with bank evidence unchanged, recalculated month statuses, allocation guards, and audit history. Import audit now gives Capitec PDF evidence source parity and retains unsupported/failed/unmatched/no-record files in a visible Unprocessed bank items queue. Production deployment and signed-in operator verification remain. |
 | OFFBOARD-1 / AUT-21 | Valid | Not started | Deferred | Leaving/offboarding remains a future owner-promoted workstream. |
 | UI-1 / AUT-22 | Valid in part | Partial | Only when a selected UI slice needs it | HeroUI is installed and used selectively. No wholesale component migration or dark-mode job is approved. |
 | TOOL-1 / AUT-19 | Valid | Met | No | Voice-note transcription CLI shipped. |

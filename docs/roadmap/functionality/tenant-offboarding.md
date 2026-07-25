@@ -1,6 +1,6 @@
 # Tenant Offboarding Roadmap
 
-Last updated: 2026-06-29
+Last updated: 2026-07-24
 
 > Derived from [2026-06-14 La Lucia Mall session](../../voice-notes/2026-06-14-la-lucia-mall-16.md).
 > Status: **planning only, but now aligned to the reviewed wireframe sequence.**
@@ -63,9 +63,50 @@ The wireframe handoff breaks the offboarding experience into four connected scre
   extract banking details can reuse the KB parser (`src/lib/kb/sources.ts`) plus a
   structured-extraction LLM step.
 
+## Deposit lifecycle model
+
+Owner review on 2026-07-24 promoted the deposit problem from a room-level balance
+into a tenant-lifecycle requirement. The room stays the same, but the deposit must
+belong to the tenant's stay in that room so an old tenant can be refunded and a new
+tenant can start with a fresh deposit ledger. The canonical requirements and test
+scenarios now live in
+[MONTHLY-PAYMENTS-STAY-LIFECYCLE.md](../../requirements/MONTHLY-PAYMENTS-STAY-LIFECYCLE.md).
+
+Recommended model:
+
+- **Occupancy episode (new):** add `unit_occupancies` or `tenant_unit_stays` with
+  `unit_id`, tenant/contact snapshot, `status` (`holding`, `active`, `notice`,
+  `ended`), `starts_on`, `ends_on`, `deposit_target_amount`, and `closed_at`.
+- **Deposit ledger entries (new or replacement):** record every movement against
+  the occupancy episode, not only the unit: `charge`, `contribution`, `refund`,
+  `deduction`, `interest`, `adjustment`, and `reversal`. Each entry should carry
+  the source payment reference or payout evidence where applicable.
+- **Payment reference attachment:** `payment_references` can stay attached to the
+  unit/month for reconciliation, but deposit-specific allocations should point to
+  the active occupancy episode.
+- **Close-out:** when the tenant leaves, the offboarding flow freezes the old
+  occupancy episode, records inspection deductions/refund/interest, and closes the
+  deposit balance. The next tenant creates a new occupancy episode and a new
+  deposit ledger for the same room.
+- **Payments dashboard display:** the expanded room row should default to the
+  current occupancy episode's deposit balance and expose a link or modal to
+  previous occupancies. This prevents old tenant deposits from making the current
+  room look funded.
+
+Safe UI slice already allowed inside monthly payments:
+
+- Show the latest matched payments for the selected room across the current and
+  previous two billing months.
+- Split each reference visually into rent, deposit, and held-credit portions.
+- Do not mutate deposit ownership until the occupancy episode schema exists.
+
 ## Guardrails
 
 - Don't promise a deposit amount before inspection.
+- Do not carry a closed tenant's deposit balance forward into the next tenant's
+  occupancy episode.
+- Do not mark a deposit as refunded unless payout evidence has been captured and
+  reviewed by a human.
 - Treat banking/ID documents as **sensitive**: private storage, restricted access,
   no echoing back full numbers in chat.
 - Performance-related exits escalate to a human (retention opportunity).

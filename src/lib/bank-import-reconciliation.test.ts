@@ -8,8 +8,9 @@ test('reconciliation cadence is a true 72 hours across month boundaries', () => 
   assert.equal(isReconciliationDue('2026-07-29T05:00:00Z', now), true);
 });
 
-test('reconciliation scans the current and previous two rent periods', () => {
-  assert.deepEqual(reconciliationPeriods(new Date('2026-07-20T10:00:00Z')), ['2026-07', '2026-06', '2026-05']);
+test('reconciliation scans the six-month rent window around the active period', () => {
+  assert.deepEqual(reconciliationPeriods(new Date('2026-07-08T10:00:00Z')), ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09']);
+  assert.deepEqual(reconciliationPeriods(new Date('2026-07-20T10:00:00Z')), ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']);
 });
 
 test('mailbox coverage compares stable file hashes instead of Gmail message ids', () => {

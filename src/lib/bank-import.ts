@@ -98,9 +98,13 @@ type GmailAttachmentResponse = {
   size?: number;
 };
 
+type GmailProfileResponse = {
+  emailAddress?: string;
+};
+
 type GoogleAuthMode = 'oauth_refresh_token' | 'service_account';
 
-type GoogleAccessTokenResult = {
+export type GoogleAccessTokenResult = {
   accessToken: string;
   authMode: GoogleAuthMode;
 };
@@ -985,6 +989,17 @@ async function getGoogleAccessToken(userEmail: string) {
   );
 }
 
+export function gmailUserIdForRequest(auth: Pick<GoogleAccessTokenResult, 'authMode'>, userEmail: string) {
+  return auth.authMode === 'oauth_refresh_token' ? 'me' : encodeURIComponent(userEmail);
+}
+
+function sourceMailboxHint(userEmail: string) {
+  const sourceMailboxEmail = process.env.BANK_IMPORT_SOURCE_MAILBOX_EMAIL?.trim().toLowerCase();
+  return sourceMailboxEmail && userEmail.trim().toLowerCase() === sourceMailboxEmail
+    ? ' Reconnect the source Gmail mailbox and update GMAIL_SOURCE_OAUTH_REFRESH_TOKEN.'
+    : ' Reconnect the Gmail mailbox used for bank imports.';
+}
+
 async function gmailRequest<T>(
   accessToken: string,
   path: string,
@@ -1000,26 +1015,55 @@ async function gmailRequest<T>(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!response.ok) {
-    throw new Error(`Gmail request failed (${response.status}) for ${path}`);
+    let detail = '';
+    try {
+      const body = (await response.json()) as { error?: { status?: string; message?: string }; error_description?: string };
+      detail = [body.error?.status, body.error?.message, body.error_description].filter(Boolean).join(': ');
+    } catch {
+      // Non-JSON error body; keep the status and path.
+    }
+    throw new Error(`Gmail request failed (${response.status}) for ${path}${detail ? `: ${detail}` : ''}`);
   }
   return (await response.json()) as T;
 }
 
+async function verifyGmailMailboxAccess(auth: GoogleAccessTokenResult, userEmail: string) {
+  if (auth.authMode !== 'oauth_refresh_token') return;
+  let profile: GmailProfileResponse;
+  try {
+    profile = await gmailRequest<GmailProfileResponse>(auth.accessToken, 'users/me/profile');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not verify Gmail OAuth access for ${userEmail}. ${message}.${sourceMailboxHint(userEmail)}`);
+  }
+
+  const grantedEmail = profile.emailAddress?.trim().toLowerCase() ?? '';
+  const expectedEmail = userEmail.trim().toLowerCase();
+  if (!grantedEmail) {
+    throw new Error(`Could not verify which Gmail account the OAuth token belongs to for ${userEmail}.${sourceMailboxHint(userEmail)}`);
+  }
+  if (grantedEmail !== expectedEmail) {
+    throw new Error(
+      `Gmail OAuth token is connected to ${profile.emailAddress}, but this import mailbox is ${userEmail}.${sourceMailboxHint(userEmail)}`
+    );
+  }
+}
+
 async function loadGmailAttachment(
   accessToken: string,
-  userEmail: string,
+  gmailUserId: string,
   messageId: string,
   attachmentId: string
 ) {
   const payload = await gmailRequest<GmailAttachmentResponse>(
     accessToken,
-    `users/${encodeURIComponent(userEmail)}/messages/${messageId}/attachments/${attachmentId}`
+    `users/${gmailUserId}/messages/${messageId}/attachments/${attachmentId}`
   );
   if (!payload.data) throw new Error(`Attachment ${attachmentId} for message ${messageId} had no data`);
   return decodeBase64Url(payload.data);
 }
 
-async function collectGmailAttachments(accessToken: string, userEmail: string, message: GmailMessage) {
+async function collectGmailAttachments(accessToken: string, gmailUserId: string, message: GmailMessage) {
   const attachments: ImportedAttachment[] = [];
 
   async function walk(part: GmailMessagePart | undefined): Promise<void> {
@@ -1036,7 +1080,7 @@ async function collectGmailAttachments(accessToken: string, userEmail: string, m
     if (part.body?.data) {
       data = decodeBase64Url(part.body.data);
     } else if (part.body?.attachmentId) {
-      data = await loadGmailAttachment(accessToken, userEmail, message.id, part.body.attachmentId);
+      data = await loadGmailAttachment(accessToken, gmailUserId, message.id, part.body.attachmentId);
     }
     if (!data) return;
 
@@ -2032,11 +2076,13 @@ export async function listBankImportGmailMessageIds(input: {
   if (!mailbox) throw new Error('No active bank import mailbox matched the request');
 
   const googleAuth = await getGoogleAccessToken(mailbox.email_address);
+  await verifyGmailMailboxAccess(googleAuth, mailbox.email_address);
+  const gmailUserId = gmailUserIdForRequest(googleAuth, mailbox.email_address);
   const billingWindow = getBillingWindowForPeriod(input.billingPeriod);
   const searchQuery = buildGmailSearchQuery(mailbox, billingWindow);
   const listResponse = await gmailRequest<GmailListResponse>(
     googleAuth.accessToken,
-    `users/${encodeURIComponent(mailbox.email_address)}/messages`,
+    `users/${gmailUserId}/messages`,
     { q: searchQuery, maxResults: input.maxMessages ?? 250 }
   );
   return (listResponse.messages ?? []).map((message) => message.id);
@@ -2052,14 +2098,16 @@ export async function importMailboxPayments(
   const organizationId = mailbox.organization_id;
 
   const googleAuth = await getGoogleAccessToken(mailbox.email_address);
+  await verifyGmailMailboxAccess(googleAuth, mailbox.email_address);
   const accessToken = googleAuth.accessToken;
+  const gmailUserId = gmailUserIdForRequest(googleAuth, mailbox.email_address);
   const searchQuery = buildGmailSearchQuery(mailbox, options?.billingWindow);
   const { propertyMappings, unitMatchHints } = await loadImportLookups(mailbox.organization_id);
   const listedMessages = options?.messageIds
     ? options.messageIds.map((id) => ({ id }))
     : (await gmailRequest<GmailListResponse>(
         accessToken,
-        `users/${encodeURIComponent(mailbox.email_address)}/messages`,
+        `users/${gmailUserId}/messages`,
         {
           q: searchQuery,
           maxResults: options?.maxMessages ?? 25,
@@ -2145,7 +2193,7 @@ export async function importMailboxPayments(
       try {
         const message = await gmailRequest<GmailMessage>(
           accessToken,
-          `users/${encodeURIComponent(mailbox.email_address)}/messages/${listedMessage.id}`,
+          `users/${gmailUserId}/messages/${listedMessage.id}`,
           { format: 'full' }
         );
         const headers = parseHeaders(message.payload?.headers);
@@ -2161,7 +2209,7 @@ export async function importMailboxPayments(
         messageRowId = messageRow.id;
         summary.messagesImported += 1;
 
-        const attachments = await collectGmailAttachments(accessToken, mailbox.email_address, message);
+        const attachments = await collectGmailAttachments(accessToken, gmailUserId, message);
         const attachmentErrors: string[] = [];
         for (const attachment of attachments) {
           summary.attachmentsProcessed += 1;

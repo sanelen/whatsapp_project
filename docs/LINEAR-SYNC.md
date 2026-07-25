@@ -1,4 +1,4 @@
-Last updated: 2026-07-18
+Last updated: 2026-07-25
 
 # Linear Sync
 
@@ -28,6 +28,10 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 | AUT-21, AUT-22 | Backlog | Future work | Offboarding and selective HeroUI adoption remain valid but are not general nightly queues. |
 | AUT-32 | Done | [Requirement tracker](./REQUIREMENT-TRACKER.md) | The tracker is on `main`, two-day reconciliation is active, and implementation jobs now write evidence back to Linear and the register. |
 | AUT-33 | Done | [REQUIREMENTS.md §2](./REQUIREMENTS.md#2-monthly-payments-operations) | PR #3 is merged and production-verified: August shows R8,700 imported and 0% matched in the refreshed blue strip. |
+| AUT-34 | In Progress | [REQUIREMENTS.md FR-2.16](./REQUIREMENTS.md#2-monthly-payments-operator-loop) | Owner-promoted two-mailbox Capitec reconciliation remains active; OAuth/source-mailbox activation and first successful two-mailbox run remain. |
+| AUT-35 | Backlog | [MONTHLY-PAYMENTS-STAY-LIFECYCLE.md](./requirements/MONTHLY-PAYMENTS-STAY-LIFECYCLE.md) | Created 2026-07-24. Defines physical unit versus tenant version, deposit ledger ownership, retrospective stay versioning, and deposit close-out decision points. 2026-07-25 local slice: hosted migration applied after owner approval; Room Manager now exposes editable active/past tenant-version controls and Billing from copy for owner testing. |
+| AUT-36 | Backlog | [MONTHLY-PAYMENTS-STAY-LIFECYCLE.md](./requirements/MONTHLY-PAYMENTS-STAY-LIFECYCLE.md) | Created 2026-07-24. Stay-aware allocation chooser requirement to prevent rent/deposit double counting when current and future tenant money hit the same unit. Still blocked by AUT-35 decisions: final statuses, current-vs-future stay choice, refund evidence, and whether physical move-in date is separate from Billing from. |
+| AUT-37 | Backlog | [monthly-payments-flow-tests.md](./testing/monthly-payments-flow-tests.md) | Created 2026-07-24. Safe manual/automated scenario pack for holding deposits, current/future tenant allocation, deposit release, retrospective backfill, bad reference removal, exact-room matching, Room Manager tenant-version persistence, and source-payment-date provenance. |
 
 ## Gaps not yet ticketed
 
@@ -101,6 +105,18 @@ These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ti
   build, and before/after fixture renders. Remaining: owner browser check of
   both FR-2.7a and FR-2.7b on a TEST room, then un-fixme
   `e2e/match-flow-feedback.spec.ts`.
+- Stay-aware deposit lifecycle (REQUIREMENTS FR-2.17) — **tracked
+  2026-07-24; local owner-test slice updated 2026-07-25**. Linear changes made:
+  - AUT-35 created: stay versions and deposit lifecycle.
+  - AUT-36 created: stay-aware payment allocation to prevent rent/deposit double
+    counting.
+  - AUT-37 created: safe lifecycle scenario tests.
+  - Linear project document created: "Monthly payments stay lifecycle current
+    state - 2026-07-24".
+  Full lifecycle remains Backlog/Needs decision. Local code now has the
+  operator-clarity slice, active/past tenant-version controls, and an applied
+  Supabase stay lifecycle migration for owner testing; refund/release and
+  current-vs-future stay allocation remain decision-gated.
 
 ## Suggested sync process going forward
 

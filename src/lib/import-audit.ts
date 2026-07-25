@@ -3,6 +3,14 @@ import { getSupabaseAdmin } from './supabase';
 import { readLatestReconciliationRun, type ReconciliationRunView } from './bank-import-reconciliation';
 
 export type ImportAuditSource = 'gmail' | 'drive-bank' | 'drive' | 'unknown';
+export type ImportAuditReviewStatus =
+  | 'ready'
+  | 'unmatched'
+  | 'incomplete'
+  | 'unsupported'
+  | 'failed'
+  | 'pending'
+  | 'no-payment-record';
 
 export type ImportAuditTransaction = {
   id: string;
@@ -30,6 +38,9 @@ export type ImportAuditFile = {
   driveStatus: 'in-drive' | 'archived' | 'not-archived';
   databaseStatus: 'stored' | 'missing';
   matchStatus: 'matched' | 'unmatched' | 'incomplete' | 'not-applicable';
+  reviewStatus: ImportAuditReviewStatus;
+  reviewReason: string;
+  needsOperatorReview: boolean;
   driveFolderPath: string | null;
   hashShort: string;
   transactions: ImportAuditTransaction[];
@@ -51,6 +62,7 @@ export type ImportAuditView = {
     signedOff: number;
     unmatched: number;
     incomplete: number;
+    unprocessed: number;
   };
   reconciliation: ReconciliationRunView | null;
 };
@@ -108,6 +120,67 @@ function sourceDriveFileId(messageRaw: unknown) {
   return typeof id === 'string' && id ? id : null;
 }
 
+export function classifyImportAuditReview(input: {
+  parserStatus: string;
+  importStatus: string;
+  transactionMatchStatuses: ImportAuditTransaction['matchStatus'][];
+}): {
+  status: ImportAuditReviewStatus;
+  reason: string;
+  needsOperatorReview: boolean;
+} {
+  const parserStatus = input.parserStatus.toLowerCase();
+  const importStatus = input.importStatus.toLowerCase();
+
+  if (parserStatus === 'failed' || importStatus === 'failed') {
+    return {
+      status: 'failed',
+      reason: 'Import or PDF parsing failed. Review the source evidence and retry after the parser issue is understood.',
+      needsOperatorReview: true,
+    };
+  }
+  if (parserStatus === 'unsupported') {
+    return {
+      status: 'unsupported',
+      reason: 'Capitec evidence was retained, but this PDF format did not produce a normalized transaction.',
+      needsOperatorReview: true,
+    };
+  }
+  if (parserStatus === 'pending' || !parserStatus) {
+    return {
+      status: 'pending',
+      reason: 'The source file is stored but has not completed transaction extraction.',
+      needsOperatorReview: true,
+    };
+  }
+  if (input.transactionMatchStatuses.length === 0) {
+    return {
+      status: 'no-payment-record',
+      reason: 'No incoming payment record was created for this file in the selected billing window.',
+      needsOperatorReview: true,
+    };
+  }
+  if (input.transactionMatchStatuses.some((status) => status === 'incomplete')) {
+    return {
+      status: 'incomplete',
+      reason: 'A transaction is partly matched but is missing either its unit or billing period.',
+      needsOperatorReview: true,
+    };
+  }
+  if (input.transactionMatchStatuses.some((status) => status === 'unmatched')) {
+    return {
+      status: 'unmatched',
+      reason: 'The payment is normalized and visible, but its reference did not safely identify a unit.',
+      needsOperatorReview: true,
+    };
+  }
+  return {
+    status: 'ready',
+    reason: 'Every normalized payment from this file is matched to a unit and billing period.',
+    needsOperatorReview: false,
+  };
+}
+
 export async function readImportAuditView(input?: {
   periodKey?: string;
   source?: string;
@@ -141,13 +214,11 @@ export async function readImportAuditView(input?: {
   const entryFileIds = new Set(entries.map((entry) => entry.file_id as string));
   const entryIds = entries.map((entry) => entry.id as string);
   const entryIdSet = new Set(entryIds);
-  const files = (filesResult.data ?? []).filter((file) => {
+  const candidateFiles = (filesResult.data ?? []).filter((file) => {
     const metadata = file.raw_metadata as Record<string, unknown> | null;
-    if (metadata?.exclusionReason === 'internal_non_rent_account') return false;
-    const canonicalEntryId = typeof metadata?.canonicalEntryId === 'string' ? metadata.canonicalEntryId : null;
-    return entryFileIds.has(file.id as string) || Boolean(canonicalEntryId && entryIdSet.has(canonicalEntryId));
+    return metadata?.exclusionReason !== 'internal_non_rent_account';
   });
-  const messageIds = files.map((file) => file.message_id as string).filter(Boolean);
+  const messageIds = candidateFiles.map((file) => file.message_id as string).filter(Boolean);
   const propertyIds = Array.from(new Set(entries.map((entry) => entry.property_id as string | null).filter(Boolean))) as string[];
 
   const [messagesResult, referencesResult, propertiesResult] = await Promise.all([
@@ -180,6 +251,16 @@ export async function readImportAuditView(input?: {
   if (unitsResult.error) throw new Error(`Failed to load import audit units: ${unitsResult.error.message}`);
 
   const messagesById = new Map((messagesResult.data ?? []).map((message) => [message.id as string, message]));
+  const files = candidateFiles.filter((file) => {
+    const metadata = file.raw_metadata as Record<string, unknown> | null;
+    const canonicalEntryId = typeof metadata?.canonicalEntryId === 'string' ? metadata.canonicalEntryId : null;
+    if (entryFileIds.has(file.id as string) || Boolean(canonicalEntryId && entryIdSet.has(canonicalEntryId))) {
+      return true;
+    }
+    const message = messagesById.get(file.message_id as string);
+    const receivedDate = (message?.received_at as string | null | undefined)?.slice(0, 10) ?? '';
+    return receivedDate >= billingWindow.startDate && receivedDate <= billingWindow.endDate;
+  });
   const referenceByEntryId = new Map(
     (referencesResult.data ?? []).map((reference) => [reference.bank_import_entry_id as string, reference])
   );
@@ -242,6 +323,13 @@ export async function readImportAuditView(input?: {
         : transactions.some((transaction) => transaction.matchStatus === 'unmatched')
           ? 'unmatched'
           : 'matched';
+    const parserStatus = (file.parser_status as string) || 'pending';
+    const importStatus = (message?.import_status as string | undefined) ?? 'unknown';
+    const review = classifyImportAuditReview({
+      parserStatus,
+      importStatus,
+      transactionMatchStatuses: transactions.map((transaction) => transaction.matchStatus),
+    });
     return {
       id: file.id as string,
       fileName: file.file_name as string,
@@ -251,11 +339,14 @@ export async function readImportAuditView(input?: {
       sourceUrl,
       importedAt: file.created_at as string,
       receivedAt: (message?.received_at as string | null | undefined) ?? null,
-      parserStatus: (file.parser_status as string) || 'pending',
-      importStatus: (message?.import_status as string | undefined) ?? 'unknown',
+      parserStatus,
+      importStatus,
       driveStatus: source === 'drive-bank' ? 'in-drive' : file.drive_file_id ? 'archived' : 'not-archived',
       databaseStatus,
       matchStatus,
+      reviewStatus: review.status,
+      reviewReason: review.reason,
+      needsOperatorReview: review.needsOperatorReview,
       driveFolderPath: (file.drive_folder_path as string | null) ?? null,
       hashShort: String(file.file_sha256 ?? '').slice(0, 10),
       transactions,
@@ -282,6 +373,7 @@ export async function readImportAuditView(input?: {
       signedOff: transactions.filter((transaction) => transaction.matchStatus === 'signed-off').length,
       unmatched: transactions.filter((transaction) => transaction.matchStatus === 'unmatched').length,
       incomplete: transactions.filter((transaction) => transaction.matchStatus === 'incomplete').length,
+      unprocessed: filteredFiles.filter((file) => file.needsOperatorReview).length,
     },
     reconciliation,
   };
