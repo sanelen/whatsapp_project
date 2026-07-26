@@ -5,7 +5,7 @@ const PUBLIC_ORIGIN = 'https://hambatrading.co.za';
 const PROPERTY_CUSTOMER_SLUGS: Record<PublicProperty['id'], string> = {
   essex: '33-essex',
   westridge: 'westrich',
-  quarry: 'quarry-heights',
+  quarry: 'Quarry-Heights',
 };
 
 const PROPERTY_LEGACY_CODES: Record<PublicProperty['id'], string> = {
@@ -33,7 +33,7 @@ export function resolvePropertyShortLink(slug: string): string | null {
   const normalized = slug.trim().toLowerCase();
 
   for (const property of publicProperties) {
-    const customerSlug = PROPERTY_CUSTOMER_SLUGS[property.id];
+    const customerSlug = PROPERTY_CUSTOMER_SLUGS[property.id].toLowerCase();
     const legacyCode = PROPERTY_LEGACY_CODES[property.id];
     if (normalized === customerSlug || normalized === legacyCode) {
       return publicUrl(property.pagePath);

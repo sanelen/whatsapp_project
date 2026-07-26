@@ -236,7 +236,7 @@ test('converts the guarded free-text prospect journey into valid Meta reply payl
   assert.match(JSON.stringify(requests[1].body), /Quarry Heights/);
   assert.match(
     JSON.stringify(requests[2].body),
-    /hambatrading\.co\.za\/go\/quarry-heights-photos/
+    /hambatrading\.co\.za\/go\/Quarry-Heights-photos/
   );
   assert.doesNotMatch(JSON.stringify(requests[2].body), /photos\.app\.goo\.gl|maps\.app\.goo\.gl/);
   assert.match(JSON.stringify(requests[3].body), /No tenant or guest parking is available/);
