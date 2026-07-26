@@ -1,10 +1,5 @@
 import { publicProperties, type PublicProperty } from '@/lib/public-properties';
-
-const PUBLIC_ORIGIN = 'https://hambatrading.co.za';
-
-function publicUrl(path: string) {
-  return new URL(path, PUBLIC_ORIGIN).toString();
-}
+import { propertyShortLink } from '@/lib/property-short-links';
 
 export type ProspectProperty = PublicProperty & {
   aliases: string[];
@@ -47,9 +42,9 @@ export function propertyMarketingContext() {
   return prospectProperties.map((property) => [
     `${property.name} — ${property.area}`,
     `Address: ${property.address}`,
-    `Property page: ${publicUrl(property.pagePath)}`,
-    `Photos and videos: ${property.portfolioUrl}`,
-    `Pamphlet: ${publicUrl(property.pamphletPath)}`,
+    `Property page: ${propertyShortLink(property)}`,
+    `Photos and videos: ${propertyShortLink(property, 'photos')}`,
+    `Pamphlet: ${propertyShortLink(property, 'flyer')}`,
   ].join('\n')).join('\n\n');
 }
 
@@ -73,10 +68,10 @@ export function buildLocationChoiceReply(intro = 'Great. Where would you like to
 
 export function buildSelectedPropertyReply(property: ProspectProperty) {
   const links = [
-    property.mapsUrl ? `Map: ${property.mapsUrl}` : '',
-    `Photos: ${property.portfolioUrl}`,
-    `Details: ${publicUrl(property.pagePath)}`,
-    `Pamphlet: ${publicUrl(property.pamphletPath)}`,
+    property.mapsUrl ? `Map: ${propertyShortLink(property, 'map')}` : '',
+    `Photos: ${propertyShortLink(property, 'photos')}`,
+    `Details: ${propertyShortLink(property)}`,
+    `Pamphlet: ${propertyShortLink(property, 'flyer')}`,
   ].filter(Boolean);
 
   return [
@@ -123,13 +118,13 @@ export function buildVerifiedPropertyQuestionReply(input: {
   if (/\b(where|location|located|address|map|direction)\b/.test(query)) {
     return [
       `${property.name} is at ${property.address}.`,
-      property.mapsUrl ? `Map: ${property.mapsUrl}` : '',
+      property.mapsUrl ? `Map: ${propertyShortLink(property, 'map')}` : '',
     ].filter(Boolean).join('\n');
   }
   if (/\b(photo|picture|image|video|pamphlet|brochure)\b/.test(query)) {
     return [
-      `Photos: ${property.portfolioUrl}`,
-      `Pamphlet: ${publicUrl(property.pamphletPath)}`,
+      `Photos: ${propertyShortLink(property, 'photos')}`,
+      `Pamphlet: ${propertyShortLink(property, 'flyer')}`,
     ].join('\n');
   }
   if (/\b(occupant|people|person|persons|couple|children|child|family)\b/.test(query)) {
@@ -150,9 +145,9 @@ export function buildPropertyShowcaseReply(intro = 'Hi 👋 Welcome to Hamba Tra
     : intro.trim();
   const cards = prospectProperties.map((property, index) => [
     `${index + 1}. ${property.name} — ${property.area}`,
-    `Property: ${publicUrl(property.pagePath)}`,
-    `Photos: ${property.portfolioUrl}`,
-    `Pamphlet: ${publicUrl(property.pamphletPath)}`,
+    `Property: ${propertyShortLink(property)}`,
+    `Photos: ${propertyShortLink(property, 'photos')}`,
+    `Pamphlet: ${propertyShortLink(property, 'flyer')}`,
   ].join('\n'));
 
   return [

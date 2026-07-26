@@ -55,7 +55,7 @@ test('collects property, budget and move-in date before creating a staff follow-
     locationId: 'quarry-heights',
   });
   assert.match(result.reply, /R2,200 per month/i);
-  assert.match(result.reply, /photos\.app\.goo\.gl/i);
+  assert.match(result.reply, /hambatrading\.co\.za\/go\/qh-photos/i);
   assert.match(result.reply, /staff will confirm/i);
   assert.equal(result.quickReplies?.length, 3);
 
