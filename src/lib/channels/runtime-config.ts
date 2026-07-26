@@ -6,6 +6,12 @@ function isEnabled(value: string | undefined): boolean {
   return value === '1' || value?.toLowerCase() === 'true';
 }
 
+function isPilotAllowlistOnly(env: Environment): boolean {
+  const configured = env.WHATSAPP_PILOT_ALLOWLIST_ONLY?.trim();
+  if (configured) return isEnabled(configured);
+  return env.NODE_ENV === 'production';
+}
+
 function missing(env: Environment, keys: string[]): string[] {
   return keys.filter((key) => !env[key]?.trim());
 }
@@ -43,7 +49,7 @@ export function getChannelRuntimeConfig(env: Environment = process.env) {
     primaryProvider,
     providers,
     dispatchEnabled: isEnabled(env.WHATSAPP_DISPATCH_ENABLED),
-    pilotAllowlistOnly: isEnabled(env.WHATSAPP_PILOT_ALLOWLIST_ONLY),
+    pilotAllowlistOnly: isPilotAllowlistOnly(env),
     metaGraphVersion: env.META_GRAPH_API_VERSION?.trim() || 'v25.0',
   };
 }

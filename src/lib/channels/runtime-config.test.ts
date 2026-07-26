@@ -13,6 +13,17 @@ test('defaults to Meta while keeping every live transport action disabled', () =
   assert.equal(config.providers.twilio.enabled, false);
 });
 
+test('defaults production to the pilot allowlist until explicitly opened', () => {
+  assert.equal(getChannelRuntimeConfig({ NODE_ENV: 'production' }).pilotAllowlistOnly, true);
+  assert.equal(
+    getChannelRuntimeConfig({
+      NODE_ENV: 'production',
+      WHATSAPP_PILOT_ALLOWLIST_ONLY: 'false',
+    }).pilotAllowlistOnly,
+    false
+  );
+});
+
 test('reports readiness without returning any secret values', () => {
   const config = getChannelRuntimeConfig({
     WHATSAPP_PRIMARY_PROVIDER: 'meta',
