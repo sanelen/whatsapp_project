@@ -1,6 +1,6 @@
 # Active Automated Work
 
-Last confirmed by owner conversation: 2026-07-18
+Last confirmed by owner conversation: 2026-07-25
 
 ## Current status
 
@@ -33,16 +33,21 @@ contradict it. This does not authorize a wholesale UI redesign.
 
 ## Active Chat/WhatsApp order
 
-1. Durable server-only Inbox repository.
-2. Audited takeover, manual reply, and resume persistence.
-3. Provider-neutral webhook contracts, idempotency, delivery states, and signature
-   tests.
-4. Guardrailed interested-tenant assistant grounded in verified property truth.
-5. Provider sandbox/test sender.
-6. Production-number cutover only while the owner is present.
+1. **AUT-38:** guarded prospective-renter WhatsApp journey.
+2. **AUT-39:** authoritative property/room model and vector boundaries.
+3. **AUT-40:** admin media plus structured-data ingestion.
+4. **AUT-41:** release and sandbox coverage.
+5. Production-number cutover only while the owner is present.
 
-Items 1–5 are active in order, subject to their dependency and safety gates. Item 6
-is active only as an owner-present operation and must never be performed unattended.
+Local isolated-worktree status on 2026-07-25: AUT-38, AUT-39, and AUT-40 are
+implemented but not delivered; AUT-41 verification is in progress. This is evidence,
+not a production-status claim. Migration, commit, push, deploy, merge, provider
+settings, and real customer sends remain untouched.
+
+The first four items are active in order, subject to their dependency and safety
+gates. Cutover is active only as an owner-present operation and must never be
+performed unattended. The durable Inbox, audited takeover, and provider-neutral
+event contracts remain required foundations and must be preserved by each slice.
 
 ## Not active unless the owner explicitly promotes it
 

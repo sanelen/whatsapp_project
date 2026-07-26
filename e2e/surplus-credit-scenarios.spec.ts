@@ -3,11 +3,10 @@ import { test, expect, type Page } from '@playwright/test';
 /**
  * Flow 05 — Surplus-credit allocation scenarios (FR-2.8, owner rulings 2026-07-03).
  *
- * HARD RULE: these tests may ONLY touch the dedicated fixture rooms
- * ("TEST ROOM 1" / "TEST ROOM 2", property_units.is_test = true — two per
- * location, migration 20260703120000). Real rooms are NEVER edited,
- * matched, or reallocated by automated tests. Every helper below scopes to
- * TEST-ROOM rows and fails loudly if none are found.
+ * HARD RULE: these tests may ONLY touch disposable fixture rooms in a
+ * non-production database. The owner removed all TEST ROOM rows from the
+ * shared live project on 2026-07-26. Real rooms are NEVER edited, matched,
+ * or reallocated by automated tests.
  *
  * Owner wants these runs VISIBLE: use `npm run test:e2e:headed`
  * (non-headless, single worker, slowMo) so the flow can be watched live.
@@ -26,10 +25,13 @@ const TEST_ROOM = /TEST ROOM [12]/;
 
 async function openTestRoomDrawer(page: Page) {
   const row = page.getByText(TEST_ROOM).first();
-  await expect(row, 'No TEST ROOM fixture found — run migration 20260703120000').toBeVisible();
+  await expect(
+    row,
+    'No disposable TEST ROOM fixture found. Seed a non-production test database; never recreate fixtures in production.'
+  ).toBeVisible();
 }
 
-test.describe('Flow 05 — surplus credit allocation (TEST rooms only)', () => {
+test.describe('Flow 05 — surplus credit allocation (non-production fixtures only)', () => {
   test.fixme(
     'FR-2.8 [surplus → arrears within 3 months]: credit allocated to a short month clears its outstanding',
     async ({ page }) => {

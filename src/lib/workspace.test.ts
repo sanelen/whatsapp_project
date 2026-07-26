@@ -74,7 +74,7 @@ test('adding a property links it to the selected organization', () => {
 
   assert.equal(properties[0].name, 'Cape Town Loft');
   assert.equal(properties[0].organizationId, organization.id);
-  assert.equal(properties[0].chatbot.model, 'gpt-5.4');
+  assert.equal(properties[0].chatbot.model, 'gpt-5.6-luna');
   assert.equal(properties[0].chatbot.retrievalMemoryMode, 'hybrid');
 });
 

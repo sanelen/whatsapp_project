@@ -1,3 +1,8 @@
+import {
+  DEFAULT_ASSISTANT_MODEL,
+  DEFAULT_ASSISTANT_PROVIDER,
+} from '@/lib/assistant/model-catalog';
+
 export type ChatbotSettings = {
   provider: string;
   model: string;
@@ -81,8 +86,8 @@ export function createId(prefix: string): string {
 
 export function createDefaultChatbotSettings(propertyName: string): ChatbotSettings {
   return {
-    provider: 'openai',
-    model: 'gpt-5.4',
+    provider: DEFAULT_ASSISTANT_PROVIDER,
+    model: DEFAULT_ASSISTANT_MODEL,
     temperature: 0.4,
     systemPrompt: `You are the property assistant for ${propertyName}. Answer with property-specific context, ask clarifying questions when needed, and offer a human handoff for sensitive issues.`,
     knowledgeSources: ['Property FAQ', 'Operating policies'],

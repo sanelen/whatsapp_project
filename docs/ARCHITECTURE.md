@@ -44,7 +44,7 @@ has no shipped code yet — see [whatsapp-tenant-assistant.md](./roadmap/functio
 | App hosting | Vercel (`whatsapp-project`) | Production **READY**; Supabase, LLM, auth allowlist, Gmail OAuth, and Drive Bank Uploads variables configured (Linear **AUT-14**) |
 | Database | Supabase (`hambatrading`, ref `ddlykzackuehdexldazv`, eu-central-1) | `ACTIVE_HEALTHY` |
 | Auth | Supabase Auth | Google OAuth + server-side email allowlist |
-| File storage | Supabase Storage | `uploads` bucket (private, KB docs); `property-images` bucket planned |
+| File storage | Supabase Storage | Existing private `uploads` bucket for KB sources, reviewed property-content imports, and approved property/room media; signed server delivery |
 | External APIs | OpenAI, Anthropic, DeepSeek (LLM); Gmail API + Google Drive API (bank import) | Key resolution: DB `prompt_settings.llm_api_key` > env var |
 
 `npm run dev` defaults to port 3001. The Hermes WhatsApp bridge may own that port on
@@ -192,15 +192,31 @@ Server-side PDF extraction is centralized in `src/lib/pdf-text.ts`. The helper
 initializes `pdf-parse/worker` before loading PDF.js so Vercel traces the native
 canvas binary and provides `DOMMatrix`, `Path2D`, and `ImageData` at runtime.
 
-## 6. Capability 3 — WhatsApp Tenant Assistant (planning only)
+## 6. Capability 3 — WhatsApp Property Assistant (active, release gated)
 
-No shipped code. Planned to reuse the KB/LLM pipeline above with guardrails and a
-decision-tree router (greet → intent → interested/servicing/leaving → human
-takeover). See [whatsapp-tenant-assistant.md](./roadmap/functionality/whatsapp-tenant-assistant.md)
-and [tenant-conversation-flows.md](./roadmap/functionality/tenant-conversation-flows.md).
-The original Twilio implementation was removed in the 2026-05-30 repo flatten;
-recovery reference: `git show 569efde:SAWhatsApp/platform/<path>`. Direction
-confirmed by the owner: rebuild into `src/` (resolves Linear **AUT-15**).
+The current root application has provider-neutral Meta events, conversation state,
+idempotent dispatch, a guarded prospect journey, and audited pause/handoff
+primitives. Unknown contacts default to prospects. The deterministic router owns
+persona and intake state; the LLM answers bounded property questions only inside
+that journey.
+
+Production pilot releases can set `WHATSAPP_PILOT_ALLOWLIST_ONLY=true`. This keeps
+unknown contacts ingestion-only and permits automatic replies only for persisted
+conversation states with `pilot_enabled=true`; it is the safety boundary for the
+owner's real-phone acceptance test.
+
+AUT-39/AUT-40 add a separate authority boundary:
+
+- `properties`, `property_units`, and `property_media` own decision-critical facts.
+- only explicitly approved descriptions and media captions/alt text enter the
+  descriptive vector source;
+- the assistant post-filters retrieval for approval metadata and composes
+  authoritative structured context separately;
+- model-output validation blocks unconfirmed availability/final-price claims and
+  model-created viewing confirmations.
+
+Existing-tenant servicing, documents/ID, offboarding, and A2UI remain deferred. The
+original Twilio implementation remains historical and is not restored.
 
 ## 7. UI layer
 

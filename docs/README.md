@@ -1,6 +1,6 @@
 # Hamba Customer Service Docs
 
-Last updated: 2026-07-18
+Last updated: 2026-07-25
 
 This folder is the planning and implementation strategy hub for the project.
 
@@ -81,6 +81,7 @@ is now the visual reference, not a separate competing plan.
 
 ## Full flow reviews
 
+- [Guided property assistant and authoritative content — 2026-07-25](./reviews/full-flow-review-2026-07-25-guided-property-assistant.md) — prospect guardrails, structured authority, approved media/vector boundaries, reviewed imports, durable handoff, and local release evidence.
 - [Requirements/UI rebaseline — 2026-07-18](./reviews/full-flow-review-2026-07-18-requirements-rebaseline.md) — current navigation/auth baseline and clean scheduled-job inputs.
 - [Auth security baseline full-flow review — 2026-07-13](./reviews/full-flow-review-2026-07-13-auth-security-baseline.md) — Google-only allowlist enforcement, repository/deployment exposure, QA, and release caveats.
 - [Monthly payments import full-flow review — 2026-07-12](./reviews/full-flow-review-2026-07-12-monthly-payments-import-flow.md) — architecture, QA, UI/accessibility, roadmap fit, tensions, and prioritized follow-ups.

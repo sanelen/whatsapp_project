@@ -1,6 +1,6 @@
 # Chat/WhatsApp Workstream Requirements
 
-Last reviewed with owner direction: 2026-07-18
+Last reviewed with owner direction: 2026-07-25
 Status: **Active**
 
 This is the current executable requirement set for the twice-daily Chat/WhatsApp
@@ -24,9 +24,10 @@ pause the job.
 - **Shipped:** exact public `GET/POST /api/whatsapp/webhook`, Meta challenge and raw
   body signature verification helpers/tests, public WhatsApp CTA, existing
   property-scoped chat/retrieval workspace, and core conversation/message schema.
-- **Not yet evidenced on `main`:** a durable server-only Inbox repository,
-  persisted takeover/manual-reply/resume transitions, provider event idempotency and
-  delivery states, an interested-tenant automation loop, or a provider sandbox.
+- **Built and verified on the isolated release branch:** provider-neutral event
+  persistence, idempotent dispatch, durable conversation state, guarded handoff and
+  opt-out, Meta reply buttons plus typed free text, and the prospective-renter
+  journey. These remain release-gated until reviewed changes reach `main`.
 - Existing roadmap diagrams describe intent, not proof that these capabilities
   exist.
 
@@ -71,20 +72,35 @@ Acceptance:
 - Delivery state cannot regress from a later terminal state.
 - Retries are safe and tests require no network or production credentials.
 
-### CW-4 — Guardrailed interested-tenant path
+### CW-4 / AUT-38 — Guardrailed prospective-renter path
 
-After CW-1–CW-3, implement only the interested/inquiring path: welcome, intent,
-property/location selection, verified property facts, vacancy answer where a trusted
-source exists, lead/follow-up capture, and human escalation.
+Implement only the prospective-renter path: warm welcome, property discovery,
+verified property facts and media, deterministic lead/follow-up capture, and human
+escalation. Unknown contacts are prospects by default. Quick replies are optional
+shortcuts; typed free text must work at every intake step.
 
 Acceptance:
 
-- Answers are property-scoped and cite only verified structured data/KB material.
-- Missing or conflicting truth escalates; it is never invented.
-- Sensitive, unclear, opt-out, or human-request messages pause/escalate.
-- Servicing and offboarding automation remain deferred.
+- The first response is a short welcome with one clear rental-intent action.
+- The location step names 33 Essex, Westrich/Westridge, and Quarry Heights
+  without dumping unrelated property facts or media.
+- After a property is selected, the response shows only that property's approved
+  facts, page, photos, map, and pamphlet.
+- Property buttons and typed property names/areas both select the same deterministic
+  prospect journey.
+- The intake collects property/area, monthly budget, and preferred move-in date.
+- Availability and final terms are always described as staff-confirmed; missing or
+  conflicting truth is never invented.
+- A prospect cannot enter tenant room selection, maintenance, payment, lease,
+  access, or document/ID collection, including after an availability recheck.
+- Existing-tenant, sensitive, opt-out, urgent, and human-request messages pause or
+  escalate to staff.
+- The LLM may answer bounded, property-scoped questions but cannot choose persona,
+  advance intake state, or override deterministic guardrails.
+- Servicing, offboarding, document handling, and A2UI remain deferred. A2UI belongs
+  to a later authenticated internal-portal roadmap.
 
-### CW-5 — Sandbox/test sender
+### CW-5 / AUT-41 — Sandbox/test sender and release coverage
 
 Exercise CW-1–CW-4 with fixtures and a provider sandbox/test sender. Keep provider
 adapters replaceable and credentials server-only.
@@ -101,6 +117,40 @@ Acceptance:
 This item may be prepared but never executed unattended. Cutover requires the owner
 present, a rollback plan, approved greeting/content, verified legal links, and a
 successful sandbox evidence review.
+
+The initial production test must set
+`WHATSAPP_PILOT_ALLOWLIST_ONLY=true`. With this flag enabled, only conversations
+already marked `pilot_enabled=true` may receive automatic replies; unknown contacts
+are still ingested but receive no automated response. The flag may be removed only
+after the owner accepts the real-phone walkthrough.
+
+### AUT-39 — Authoritative content and vector boundaries
+
+Status: **built locally 2026-07-25; migration/release gated**.
+
+- Structured property, room, public-link, contact, price/deposit guidance,
+  availability, viewing, parking, features, and media associations are authoritative.
+- Only separately approved descriptions and approved media caption/alt copy are
+  eligible for property-scoped vector retrieval.
+- The assistant filters retrieval for approval metadata and validates that model
+  output cannot turn stored availability, price, deposit, or viewing data into an
+  unconfirmed promise.
+
+### AUT-40 — Authenticated media and structured-data ingestion
+
+Status: **built locally 2026-07-25; migration/release gated**.
+
+- Property Content adds one authenticated screen for facts/rooms, media, and imports.
+- Media uses the actual existing private `uploads` bucket, property/optional-room
+  paths, signed delivery, and explicit approval.
+- External Google Photos/http(s) links remain supported.
+- CSV/JSON/XLS/XLSX imports show an assisted mapping with confidence/reason, normalized
+  preview, warnings/errors, and disabled Apply until validation passes.
+- Import preview performs no write. An applied import retains its reviewed mapping,
+  preview, source file, actor, and status.
+
+These slices do not broaden the public assistant into tenant servicing, document
+handling, or A2UI.
 
 ## Deferred and stale
 

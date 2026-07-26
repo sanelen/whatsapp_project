@@ -40,7 +40,10 @@ function resolveApiKey(provider: string, storedProvider: string, storedKey: stri
   return process.env.OPENAI_API_KEY ?? '';
 }
 
-export async function loadAssistantRuntimeConfig(admin: SupabaseClient, propertyId?: string): Promise<AssistantRuntimeConfig> {
+export async function loadAssistantRuntimeConfig(
+  admin: SupabaseClient,
+  propertyId?: string
+): Promise<AssistantRuntimeConfig> {
   const query = () => admin
     .from('property_chatbot_settings')
     .select('property_id,provider,model,temperature,system_prompt,whatsapp_templates,retrieval_top_k,retrieval_similarity_threshold,retrieval_memory_mode,retrieval_history_window');
@@ -64,7 +67,7 @@ export async function loadAssistantRuntimeConfig(admin: SupabaseClient, property
   if (provider === 'deepseek' && !baseUrl) baseUrl = 'https://api.deepseek.com/v1';
 
   return {
-    propertyId: property.property_id,
+    propertyId: propertyId || property.property_id,
     provider,
     model,
     temperature: Number(property.temperature ?? credentials.temperature ?? 0.4),

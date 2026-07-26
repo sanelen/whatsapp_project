@@ -3,12 +3,20 @@ import { loadAssistantRuntimeConfig } from '@/lib/assistant/config';
 import { generatePropertyAssistantReply, type AssistantMessage, type PropertyAssistantReply } from '@/lib/assistant/property-assistant';
 import { advanceNaturalHambaFlow } from '@/lib/channels/hamba-harness';
 import { loadHambaCatalog } from '@/lib/channels/hamba-catalog';
-import { resumeHambaFlowState, type HambaFlowCatalog, type HambaFlowState } from '@/lib/channels/hamba-flow';
+import {
+  prospectNextPrompt,
+  resumeHambaFlowState,
+  type HambaFlowAction,
+  type HambaFlowCatalog,
+  type HambaFlowState,
+} from '@/lib/channels/hamba-flow';
 import { persistChannelEvents } from '@/lib/channels/event-store';
-import { sendMetaTextMessage } from '@/lib/channels/meta';
+import { sendMetaReplyMessage } from '@/lib/channels/meta';
+import { buildVerifiedPropertyQuestionReply } from '@/lib/channels/hamba-property-marketing';
+import { getChannelRuntimeConfig } from '@/lib/channels/runtime-config';
 import type { NormalizedChannelEvent } from '@/lib/channels/types';
 
-type ConversationStateRow = {
+export type ConversationStateRow = {
   flow_state: HambaFlowState;
   bot_paused: boolean;
   pilot_enabled: boolean;
@@ -38,16 +46,29 @@ function providerMessageId(response: Record<string, unknown>) {
 export function resolveHambaPilotTurn(state: HambaFlowState, message: string, catalog: HambaFlowCatalog, greeting?: string) {
   const result = advanceNaturalHambaFlow(state, message, catalog, { greeting });
   if (result.action?.type !== 'answer_property_question') return result;
-  const locations = catalog.locations.map((location) => `• ${location.name}${location.area ? ` — ${location.area}` : ''}`);
   return {
     ...result,
     reply: [
-      'I can help with verified property information, but I do not want to guess.',
-      locations.length > 0 ? 'Which property are you asking about?' : 'A Hamba staff member needs to confirm that information.',
-      ...locations,
-      '',
-      'You can also type MENU or HUMAN.',
-    ].join('\n'),
+      buildVerifiedPropertyQuestionReply({
+        locationId: result.action.locationId,
+        propertyInterest: result.action.propertyInterest,
+        query: result.action.query,
+      }),
+      prospectNextPrompt(result.state),
+    ].filter(Boolean).join('\n\n'),
+  };
+}
+
+export function resolveConversationEntry(
+  saved: ConversationStateRow | null,
+  options: { allowUnknownContacts?: boolean } = {}
+) {
+  if (saved?.bot_paused) return { outcome: 'bot-paused' as const };
+  if (saved && !saved.pilot_enabled) return { outcome: 'not-in-pilot' as const };
+  if (!saved && options.allowUnknownContacts === false) return { outcome: 'not-in-pilot' as const };
+  return {
+    outcome: 'active' as const,
+    state: saved ? resumeHambaFlowState(saved.flow_state) : { step: 'prospect.entry' as const },
   };
 }
 
@@ -165,8 +186,10 @@ async function saveConversationState(
   event: NormalizedChannelEvent,
   state: HambaFlowState,
   botPaused: boolean,
-  outboundMessageId: string
+  outboundMessageId: string,
+  action?: HambaFlowAction
 ) {
+  const handoff = handoffPersistencePatch(action);
   const { error } = await admin.from('channel_conversation_states').upsert({
     provider: event.provider,
     channel: event.channel,
@@ -177,9 +200,25 @@ async function saveConversationState(
     pilot_enabled: true,
     last_inbound_event_id: event.eventId,
     last_outbound_message_id: outboundMessageId,
+    ...handoff,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'provider,channel,external_connection_id,external_user_id' });
   if (error) throw new Error(`Conversation state save failed: ${error.message}`);
+}
+
+export function handoffPersistencePatch(action?: HambaFlowAction, now = new Date().toISOString()) {
+  if (action?.type !== 'handoff') {
+    return {
+      handoff_requested_at: null,
+      handoff_reason: '',
+      handoff_status: 'none' as const,
+    };
+  }
+  return {
+    handoff_requested_at: now,
+    handoff_reason: action.reason,
+    handoff_status: 'pending' as const,
+  };
 }
 
 async function recordAction(admin: SupabaseClient, event: NormalizedChannelEvent, action: unknown) {
@@ -236,7 +275,7 @@ async function enhancePilotTurn(
   turn: ReturnType<typeof resolveHambaPilotTurn>,
   catalog: HambaFlowCatalog
 ): Promise<EnhancedPilotTurn> {
-  if (turn.action?.type !== 'answer_property_question') return turn;
+  if (turn.action?.type !== 'answer_property_question' || !turn.action.locationId) return turn;
   try {
     const assistant = await generatePropertyAssistantReply({
       admin,
@@ -244,7 +283,12 @@ async function enhancePilotTurn(
       catalog,
       propertyId: turn.action.locationId,
     });
-    return { ...turn, reply: assistant.reply, assistant };
+    const nextPrompt = prospectNextPrompt(turn.state);
+    return {
+      ...turn,
+      reply: nextPrompt ? `${assistant.reply}\n\n${nextPrompt}` : assistant.reply,
+      assistant,
+    };
   } catch (error) {
     console.error('[whatsapp-dispatch] Property Assistant fallback', error instanceof Error ? error.message : error);
     return turn;
@@ -300,7 +344,11 @@ async function recordAssistantUsage(
 
 export async function dispatchMetaInboundEvent(admin: SupabaseClient, event: NormalizedChannelEvent) {
   if (event.eventType !== 'message.received' || event.direction !== 'inbound') return { outcome: 'not-inbound' as const };
-  if (event.message?.type !== 'text' || !event.message.text.trim()) {
+  if (
+    !event.message
+    || !['text', 'interactive'].includes(event.message.type)
+    || !event.message.text.trim()
+  ) {
     await updateEventStatus(admin, event, 'ignored');
     return { outcome: 'unsupported-message' as const };
   }
@@ -313,11 +361,15 @@ export async function dispatchMetaInboundEvent(admin: SupabaseClient, event: Nor
   }
 
   const saved = await loadConversationState(admin, event);
-  if (!saved?.pilot_enabled) {
+  const config = getChannelRuntimeConfig();
+  const entry = resolveConversationEntry(saved, {
+    allowUnknownContacts: !config.pilotAllowlistOnly,
+  });
+  if (entry.outcome === 'not-in-pilot') {
     await updateEventStatus(admin, event, 'ignored');
     return { outcome: 'not-in-pilot' as const };
   }
-  if (saved.bot_paused) {
+  if (entry.outcome === 'bot-paused') {
     await updateEventStatus(admin, event, 'ignored');
     return { outcome: 'bot-paused' as const };
   }
@@ -333,17 +385,21 @@ export async function dispatchMetaInboundEvent(admin: SupabaseClient, event: Nor
   let outboundAttempted = false;
   try {
     const catalog = await loadHambaCatalog(admin);
-    const resumedState = resumeHambaFlowState(saved.flow_state);
+    const resumedState = entry.state;
     const assistantConfig = await loadAssistantRuntimeConfig(admin, resumedState.locationId);
     const baseTurn = resolveHambaPilotTurn(resumedState, event.message.text, catalog, assistantConfig.greeting);
     const turn = await enhancePilotTurn(admin, event, baseTurn, catalog);
     outboundAttempted = true;
-    const response = await sendMetaTextMessage({ to: event.senderExternalId, body: turn.reply });
+    const response = await sendMetaReplyMessage({
+      to: event.senderExternalId,
+      body: turn.reply,
+      quickReplies: turn.quickReplies,
+    });
     const outboundId = providerMessageId(response);
     if (!outboundId) throw new Error('Meta WhatsApp send did not return a provider message ID.');
 
     const shouldPause = turn.action?.type === 'opt_out' || turn.state.step === 'handoff' || turn.state.step === 'stopped';
-    await saveConversationState(admin, event, turn.state, shouldPause, outboundId);
+    await saveConversationState(admin, event, turn.state, shouldPause, outboundId, turn.action);
     await persistChannelEvents(admin, [{
       provider: 'meta',
       channel: 'whatsapp',
@@ -355,9 +411,10 @@ export async function dispatchMetaInboundEvent(admin: SupabaseClient, event: Nor
       recipientExternalId: event.senderExternalId,
       providerMessageId: outboundId,
       occurredAt: new Date().toISOString(),
-      message: { type: 'text', text: turn.reply },
+      message: { type: turn.quickReplies?.length ? 'interactive' : 'text', text: turn.reply },
       raw: {
         response,
+        quickReplies: turn.quickReplies,
         assistant: turn.assistant ? {
           propertyId: turn.assistant.propertyId,
           provider: turn.assistant.provider,

@@ -1,5 +1,6 @@
 import type { NormalizedChannelEvent } from '@/lib/channels/types';
 import { getChannelRuntimeConfig } from '@/lib/channels/runtime-config';
+import type { PropertyQuickReply } from '@/lib/channels/hamba-property-marketing';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -142,7 +143,52 @@ export function buildMetaTextRequest(input: {
   };
 }
 
-export async function sendMetaTextMessage(input: { to: string; body: string }) {
+export function buildMetaReplyRequest(input: {
+  to: string;
+  body: string;
+  phoneNumberId: string;
+  quickReplies?: PropertyQuickReply[];
+  graphVersion?: string;
+}) {
+  const quickReplies = (input.quickReplies ?? [])
+    .filter((reply) => reply.id.trim() && reply.title.trim())
+    .slice(0, 3)
+    .map((reply) => ({
+      id: reply.id.trim().slice(0, 256),
+      title: reply.title.trim().slice(0, 20),
+    }));
+  if (quickReplies.length === 0) return buildMetaTextRequest(input);
+  if (input.body.length > 1024) {
+    throw new Error('Meta WhatsApp reply-button body must be 1024 characters or fewer.');
+  }
+
+  const graphVersion = input.graphVersion?.trim() || 'v25.0';
+  return {
+    url: `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(input.phoneNumberId)}/messages`,
+    body: {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: input.to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: input.body },
+        action: {
+          buttons: quickReplies.map((reply) => ({
+            type: 'reply',
+            reply,
+          })),
+        },
+      },
+    },
+  };
+}
+
+async function sendMetaRequest(input: {
+  to: string;
+  body: string;
+  quickReplies?: PropertyQuickReply[];
+}) {
   const config = getChannelRuntimeConfig();
   const meta = config.providers.meta;
   if (!meta.enabled || !meta.outboundEnabled) {
@@ -153,7 +199,11 @@ export async function sendMetaTextMessage(input: { to: string; body: string }) {
   const phoneNumberId = process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim() || '';
   if (!accessToken || !phoneNumberId) throw new Error('Meta WhatsApp outbound credentials are incomplete.');
 
-  const request = buildMetaTextRequest({ ...input, phoneNumberId, graphVersion: config.metaGraphVersion });
+  const request = buildMetaReplyRequest({
+    ...input,
+    phoneNumberId,
+    graphVersion: config.metaGraphVersion,
+  });
   const response = await fetch(request.url, {
     method: 'POST',
     headers: {
@@ -165,4 +215,16 @@ export async function sendMetaTextMessage(input: { to: string; body: string }) {
 
   if (!response.ok) throw new Error(`Meta WhatsApp send failed with HTTP ${response.status}.`);
   return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function sendMetaTextMessage(input: { to: string; body: string }) {
+  return sendMetaRequest(input);
+}
+
+export async function sendMetaReplyMessage(input: {
+  to: string;
+  body: string;
+  quickReplies?: PropertyQuickReply[];
+}) {
+  return sendMetaRequest(input);
 }

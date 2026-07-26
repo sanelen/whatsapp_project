@@ -28,6 +28,10 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 | AUT-21, AUT-22 | Backlog | Future work | Offboarding and selective HeroUI adoption remain valid but are not general nightly queues. |
 | AUT-32 | Done | [Requirement tracker](./REQUIREMENT-TRACKER.md) | The tracker is on `main`, two-day reconciliation is active, and implementation jobs now write evidence back to Linear and the register. |
 | AUT-33 | Done | [REQUIREMENTS.md §2](./REQUIREMENTS.md#2-monthly-payments-operations) | PR #3 is merged and production-verified: August shows R8,700 imported and 0% matched in the refreshed blue strip. |
+| AUT-38 | In Progress | [Chat/WhatsApp requirements CW-4](./requirements/CHAT-WHATSAPP.md#cw-4--aut-38--guardrailed-prospective-renter-path) | Prospect-first journey is implemented and locally verified; normal review/delivery remains. |
+| AUT-39 | In Progress | [Authoritative content model](./roadmap/functionality/property-details.md) | Structured authority, approved-description vector boundary, and output validation are implemented locally; migration/delivery remain gated. |
+| AUT-40 | In Progress | [Property media/storage](./roadmap/functionality/storage.md) | Authenticated facts/media/import workspace uses the existing private `uploads` bucket and review-before-apply mapping locally. |
+| AUT-41 | In Progress | [Chat validation ledger](./validation/chat-whatsapp-validation.md) | Focused release coverage exists; full build and safe local browser walkthrough are being completed. |
 
 ## Gaps not yet ticketed
 

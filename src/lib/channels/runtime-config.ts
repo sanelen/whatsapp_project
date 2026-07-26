@@ -43,6 +43,7 @@ export function getChannelRuntimeConfig(env: Environment = process.env) {
     primaryProvider,
     providers,
     dispatchEnabled: isEnabled(env.WHATSAPP_DISPATCH_ENABLED),
+    pilotAllowlistOnly: isEnabled(env.WHATSAPP_PILOT_ALLOWLIST_ONLY),
     metaGraphVersion: env.META_GRAPH_API_VERSION?.trim() || 'v25.0',
   };
 }
