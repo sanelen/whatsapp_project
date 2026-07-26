@@ -83,8 +83,8 @@ test('recognizes property and area aliases then shows only that property', () =>
   assert.equal(westridge.state.step, 'prospect.property_action');
   assert.equal(westridge.state.propertyInterest, 'Westrich');
   assert.match(westridge.reply, /Westrich — Newlands West/i);
-  assert.match(westridge.reply, /hamba-westrich-advert\.pdf/i);
-  assert.doesNotMatch(westridge.reply, /hamba-essex-advert|hamba-quarry-heights-advert/i);
+  assert.match(westridge.reply, /hambatrading\.co\.za\/go\/wr-flyer/i);
+  assert.doesNotMatch(westridge.reply, /\/go\/(?:es|qh)(?:-|$)/i);
   assert.equal(westridge.quickReplies?.length, 3);
 });
 
@@ -164,9 +164,9 @@ test('shares only the selected property page, photos and pamphlet', () => {
   );
 
   assert.equal(result.state.step, 'prospect.property_action');
-  assert.match(result.reply, /quarry-heights/i);
-  assert.match(result.reply, /photos\.app\.goo\.gl\/56RH6eEDm8tBMWxo8/i);
-  assert.match(result.reply, /hamba-quarry-heights-advert\.pdf/i);
-  assert.doesNotMatch(result.reply, /hamba-essex-advert|hamba-westrich-advert/i);
+  assert.match(result.reply, /Quarry Heights/i);
+  assert.match(result.reply, /hambatrading\.co\.za\/go\/qh-photos/i);
+  assert.match(result.reply, /hambatrading\.co\.za\/go\/qh-flyer/i);
+  assert.doesNotMatch(result.reply, /\/go\/(?:es|wr)(?:-|$)/i);
   assert.deepEqual(result.routedSteps, ['intent', 'prospect', 'selected property media']);
 });
