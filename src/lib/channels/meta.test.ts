@@ -234,7 +234,10 @@ test('converts the guarded free-text prospect journey into valid Meta reply payl
   assert.match(JSON.stringify(requests[1].body), /33 Essex/);
   assert.match(JSON.stringify(requests[1].body), /Westrich/);
   assert.match(JSON.stringify(requests[1].body), /Quarry Heights/);
-  assert.match(JSON.stringify(requests[2].body), /hambatrading\.co\.za\/go\/qh-photos/);
+  assert.match(
+    JSON.stringify(requests[2].body),
+    /hambatrading\.co\.za\/go\/quarry-heights-photos/
+  );
   assert.doesNotMatch(JSON.stringify(requests[2].body), /photos\.app\.goo\.gl|maps\.app\.goo\.gl/);
   assert.match(JSON.stringify(requests[3].body), /No tenant or guest parking is available/);
   assert.match(JSON.stringify(requests[4].body), /"title":"33 Essex"/);

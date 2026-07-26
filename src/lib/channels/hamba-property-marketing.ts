@@ -44,7 +44,7 @@ export function propertyMarketingContext() {
     `Address: ${property.address}`,
     `Property page: ${propertyShortLink(property)}`,
     `Photos and videos: ${propertyShortLink(property, 'photos')}`,
-    `Pamphlet: ${propertyShortLink(property, 'flyer')}`,
+    `Pamphlet: ${propertyShortLink(property, 'pamphlet')}`,
   ].join('\n')).join('\n\n');
 }
 
@@ -71,7 +71,7 @@ export function buildSelectedPropertyReply(property: ProspectProperty) {
     property.mapsUrl ? `Map: ${propertyShortLink(property, 'map')}` : '',
     `Photos: ${propertyShortLink(property, 'photos')}`,
     `Details: ${propertyShortLink(property)}`,
-    `Pamphlet: ${propertyShortLink(property, 'flyer')}`,
+    `Pamphlet: ${propertyShortLink(property, 'pamphlet')}`,
   ].filter(Boolean);
 
   return [
@@ -124,7 +124,7 @@ export function buildVerifiedPropertyQuestionReply(input: {
   if (/\b(photo|picture|image|video|pamphlet|brochure)\b/.test(query)) {
     return [
       `Photos: ${propertyShortLink(property, 'photos')}`,
-      `Pamphlet: ${propertyShortLink(property, 'flyer')}`,
+      `Pamphlet: ${propertyShortLink(property, 'pamphlet')}`,
     ].join('\n');
   }
   if (/\b(occupant|people|person|persons|couple|children|child|family)\b/.test(query)) {
@@ -147,7 +147,7 @@ export function buildPropertyShowcaseReply(intro = 'Hi 👋 Welcome to Hamba Tra
     `${index + 1}. ${property.name} — ${property.area}`,
     `Property: ${propertyShortLink(property)}`,
     `Photos: ${propertyShortLink(property, 'photos')}`,
-    `Pamphlet: ${propertyShortLink(property, 'flyer')}`,
+    `Pamphlet: ${propertyShortLink(property, 'pamphlet')}`,
   ].join('\n'));
 
   return [
