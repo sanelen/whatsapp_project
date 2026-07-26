@@ -10,28 +10,28 @@ test('creates stable branded short links for every property resource', () => {
   const quarry = publicProperties.find((property) => property.id === 'quarry');
   assert.ok(quarry);
 
-  assert.equal(propertyShortLink(quarry), 'https://hambatrading.co.za/go/quarry-heights');
+  assert.equal(propertyShortLink(quarry), 'https://hambatrading.co.za/go/Quarry-Heights');
   assert.equal(
     propertyShortLink(quarry, 'photos'),
-    'https://hambatrading.co.za/go/quarry-heights-photos'
+    'https://hambatrading.co.za/go/Quarry-Heights-photos'
   );
   assert.equal(
     propertyShortLink(quarry, 'map'),
-    'https://hambatrading.co.za/go/quarry-heights-map'
+    'https://hambatrading.co.za/go/Quarry-Heights-map'
   );
   assert.equal(
     propertyShortLink(quarry, 'pamphlet'),
-    'https://hambatrading.co.za/go/quarry-heights-pamphlet'
+    'https://hambatrading.co.za/go/Quarry-Heights-pamphlet'
   );
 });
 
 test('resolves only approved static property destinations', () => {
   assert.equal(
-    resolvePropertyShortLink('quarry-heights'),
+    resolvePropertyShortLink('Quarry-Heights'),
     'https://hambatrading.co.za/marketing/quarry-heights'
   );
   assert.equal(
-    resolvePropertyShortLink('quarry-heights-photos'),
+    resolvePropertyShortLink('Quarry-Heights-photos'),
     'https://photos.app.goo.gl/56RH6eEDm8tBMWxo8'
   );
   assert.equal(
@@ -45,6 +45,10 @@ test('resolves only approved static property destinations', () => {
   assert.equal(resolvePropertyShortLink('es-map'), null);
   assert.equal(
     resolvePropertyShortLink('qh-photos'),
+    'https://photos.app.goo.gl/56RH6eEDm8tBMWxo8'
+  );
+  assert.equal(
+    resolvePropertyShortLink('quarry-heights-photos'),
     'https://photos.app.goo.gl/56RH6eEDm8tBMWxo8'
   );
   assert.equal(
