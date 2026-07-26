@@ -1,142 +1,95 @@
-# Property & Unit Details Roadmap
+# Authoritative Property & Room Content
 
-Last updated: 2026-06-14
+Last updated: 2026-07-25
 
-## Why this exists
+Status: built locally under AUT-39/AUT-40; migration and release remain gated.
 
-Today a property carries almost nothing: the live `berea` property has
-`location = "33"` and `image_url = ""`. But the real Hamba Trading rental flow
-(stored as the `berea` text knowledge source) already describes a rich,
-**per-unit** template that the assistant is expected to answer from:
+## Authority boundary
 
-```
-Type of unit: Studio apartment
-Rental price: R2200 per month
-Deposit: R2200 (payable over 2 months with rent)
-Location:
-  Address: 28 Nkunzana Grove, Newlands East, 4037
-  Maps link: https://maps.app.goo.gl/...
-Unit details:
-  • Max occupants: 2
-  • Parking available: No / quantity
-  • Images: [Add image link]      ← currently a placeholder
-Features:
-  • Hot water
-  • Kitchen sink with hot water
-  • Shower, toilet, and sink       ← ensuite bathroom
-  • Tiled unit
-  • Camera monitored
-  • Locked gate
-  • Washing basins
-  • Washing line
-```
+The assistant needs two different kinds of property knowledge:
 
-The chatbot can only answer "what does it look like / where is it / is the
-bathroom ensuite / how much parking" if these fields are **structured data on the
-property/unit**, not just free text buried in a flow document. This roadmap turns
-that template into a first-class data model with images.
+1. **Structured, decision-critical facts** — address, public links, contacts,
+   occupancy, availability marker, available-from date, rent guidance, deposit,
+   viewing instructions, parking, room features, and media associations.
+2. **Approved descriptive copy** — marketing descriptions and approved media
+   captions/alt text that can help natural-language retrieval.
 
-## Vocabulary
+Structured records always win. Availability, final price, deposits, and viewing
+arrangements remain staff-confirmed even when a stored value exists. Vector
+retrieval cannot override them.
 
-- **Organization** — the landlord/agency (e.g. Hamba Trading). Already exists.
-- **Property** — a building/complex at one location (e.g. Query Heights,
-  Westridge, Berea). Already exists, but under-modelled.
-- **Unit** — a single rentable space inside a property (e.g. "Studio apartment,
-  R2200"). **New.** **Decision (confirmed):** a property has **many** units
-  (1-to-many `property_units`); the UI is built for multiple units from the start,
-  even though `berea` currently has one.
-- **Room** — optional sub-detail of a unit. For Hamba's current stock each unit is
-  effectively a single ensuite room, so `rooms` starts as a simple list/flag and
-  can grow later. "Each room is ensuite" is captured as a room/unit attribute, not
-  a free-text note.
+## Data model
 
-## Data model (proposed)
+### `properties`
 
-### `properties` (extend existing table)
+The existing record now carries:
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `location` | text | Keep, but treat as a human label (suburb/area). |
-| `address` | text | Full street address (e.g. "28 Nkunzana Grove, Newlands East, 4037"). |
-| `maps_url` | text | Google Maps share link. |
-| `latitude` / `longitude` | numeric | Optional, for map pins. |
-| `image_url` | text | Keep as the **primary/cover** image (a public Storage URL). |
-| `description` | text | Short blurb. Already present on organizations; add to properties. |
+- `description` plus explicit descriptive approval fields
+- `address`, `maps_url`
+- `public_page_url`, `photos_url`, `pamphlet_url`
+- `contact_primary`, `contact_secondary`
+- `viewing_instructions`
+- `parking`, `features[]`
 
-### `property_units` (new table)
+### `property_units`
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | uuid pk | |
-| `property_id` | uuid fk → properties | |
-| `name` | text | e.g. "Studio A", "Unit 1". |
-| `unit_type` | text | "studio", "bachelor", "1-bed", "room". |
-| `rent_amount` | numeric | Monthly rent (R). |
-| `deposit_amount` | numeric | |
-| `deposit_terms` | text | e.g. "payable over 2 months with rent". |
-| `max_occupants` | integer | |
-| `parking` | text/integer | "none" or a count. |
-| `is_ensuite` | boolean | Captures "each room is ensuite". |
-| `is_available` | boolean | Drives "availability" answers. |
-| `features` | text[] | hot_water, kitchen_sink, tiled, camera_monitored, locked_gate, washing_basins, washing_line, … |
-| `created_at` / `updated_at` | timestamptz | |
+The existing room/unit record now carries:
 
-### `property_media` (new table — images first, video later)
+- `description` plus explicit descriptive approval fields
+- `unit_type`
+- existing `rent_amount`, `deposit_amount`, `occupancy_status`, `is_available`
+- `deposit_terms`, `available_from`, `viewing_instructions`
+- existing contacts, parking, ensuite, maximum occupants, and features
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | uuid pk | |
-| `property_id` | uuid fk | |
-| `unit_id` | uuid fk null | null = property-level image, set = unit-level. |
-| `kind` | text | "image" (future: "floorplan", "video"). |
-| `storage_bucket` | text | `property-images` (see [storage roadmap](./storage.md)). |
-| `storage_path` | text | `{organizationId}/{propertyId}/{unitId?}/{fileName}`. |
-| `public_url` | text | Cached public URL or signed-URL key. |
-| `caption` | text | Used for accessibility + optional retrieval (see [KB photos](./knowledge-base-photos.md)). |
-| `sort_order` | integer | Gallery ordering; `0` is cover. |
-| `width` / `height` / `bytes` | integer | For layout + validation. |
-| `created_at` | timestamptz | |
+### `property_media`
 
-> Migrations are **additive** (`add column if not exists`, `create table if not
-> exists`) and applied through `supabase/migrations/` + the Supabase MCP, matching
-> the existing pattern. Each new table gets RLS mirroring `properties`.
+Each row is property-scoped and optionally room-scoped:
 
-## Reference: how listing sites model this
+- `kind`: photo, floorplan, video, document
+- `source_kind`: private Storage object or external URL
+- `storage_bucket = uploads` plus `storage_path`, or `external_url`
+- caption, alt text, MIME type, byte size, display order
+- explicit approval, approver, and approval time
 
-We are not copying any site; these informed the field list above:
+Google Photos and other external http(s) URLs are valid migration sources. Private
+uploads follow the path contract in [storage.md](./storage.md).
 
-- **Property24 / Private Property (ZA):** price, deposit, property type, bedrooms,
-  bathrooms (ensuite flag), parking/garaging, floor size, features checklist,
-  photo gallery with a cover image, address + map pin, availability date.
-- **Gumtree / Facebook Marketplace rentals:** lighter — price, location, a few
-  photos, free-text features. This matches Hamba's current WhatsApp flow closely.
-- **Airbnb:** amenities as typed tags + a photo-first gallery — the model we follow
-  for `features text[]` and `property_media`.
+### `property_content_imports`
 
-## How this feeds the assistant
+Each applied structured import retains the source file path, format, reviewed
+mapping, preview rows, validation errors, actor, and apply status. Previewing a file
+does not create a row or upload an object; saving happens only after the mapping and
+every row validate.
 
-1. When a unit/property is selected, the workspace composes a **structured
-   knowledge source** from these fields (not just the raw flow doc), so retrieval
-   can ground answers on rent, deposit, occupants, parking, ensuite, address.
-2. Image captions are indexed as text so "do you have photos of the kitchen" can
-   surface the right media (see [KB photos](./knowledge-base-photos.md)).
-3. The maps link/address answers "where is it" deterministically.
+## Assistant composition
 
-## Phasing
+- `buildAuthoritativePropertyContext` supplies structured records separately and
+  labels them as authoritative.
+- `buildApprovedDescriptiveKnowledge` emits only separately approved descriptions
+  and approved media captions/alt text.
+- The descriptive source uses `source_type = database` with
+  `contentClass = approved_descriptive`, `approvalStatus = approved`, and a
+  property ID.
+- Property WhatsApp retrieval rejects all results that do not carry that approval
+  metadata.
+- Model-output validation rejects unguarded availability or price claims and
+  model-created viewing confirmations.
 
-- **P1 — Schema + read path:** add columns/tables, backfill `berea`, surface
-  fields read-only in the property page.
-- **P2 — Editing UI (HeroUI):** forms to edit property/unit details and upload
-  images; see [HeroUI adoption](../ui/heroui.md).
-- **P3 — Assistant grounding:** auto-compose a structured KB source from
-  property/unit data and keep it in sync on save.
-- **P4 — Media retrieval:** caption-based image retrieval and gallery answers.
+## Admin flow
 
-## Open questions (decide before hard-coding)
+The authenticated Property Content workspace has three in-place views:
 
-1. ~~One unit per property vs. many~~ — **Resolved:** many units per property
-   (1-to-many `property_units`), UI built for multiple units from the start.
-2. Whether `features` is a free tag list or a fixed enum (affects validation +
-   filtering).
-3. Image moderation / size limits and whether the images bucket is fully public or
-   signed-URL only (see [storage roadmap](./storage.md)).
+1. Facts & rooms
+2. Media
+3. Structured import (preview → review mapping/errors → apply)
+
+This is one operator surface, not a chain of setup pages. Existing payment-reference
+rules remain in the payments room manager; assistant content does not duplicate
+those controls.
+
+## Deferred
+
+- Live stock synchronization and automatic viewing booking.
+- Vision-generated captions.
+- Public bucket/CDN delivery.
+- Tenant servicing, document/ID handling, and A2UI.

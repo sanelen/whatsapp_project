@@ -1,66 +1,50 @@
-# Supabase Storage Roadmap
+# Supabase Storage
 
-Last updated: 2026-06-14
+Last verified against connected project `hambatrading`
+(`ddlykzackuehdexldazv`): 2026-07-25.
 
-## Current state
+## Current bucket contract
 
-- One bucket exists: **`uploads`** — `public: false`, **0 objects**. It is created
-  on demand by `/api/kb/upload` (`ensureUploadsBucket`) and holds **documents**
-  (PDF/DOCX/CSV/…) under `{organizationId}/{propertyId}/{sourceId}/{fileName}`.
-- No image storage and no public delivery path yet. Property `image_url` is empty.
+The project has one existing bucket:
 
-## What "enable storage" means here
+| Bucket | Access | Size limit | Uses |
+|---|---|---:|---|
+| `uploads` | private | 50 MB | KB sources, reviewed property-content imports, approved property/room media |
 
-Two distinct needs, two buckets:
+AUT-40 deliberately reuses this bucket. A second public `property-images` bucket is
+not required and must not be created from the application. Customer-facing media is
+delivered through authenticated server APIs and short-lived signed URLs. Approved
+external `http(s)` references, including Google Photos, remain supported while media
+is migrated.
 
-| Bucket | Visibility | Holds | Path convention |
-|--------|-----------|-------|-----------------|
-| `uploads` (exists) | private | KB documents for indexing | `{orgId}/{propertyId}/{sourceId}/{file}` |
-| `property-images` (**new**) | public read | property/unit photos shown in UI + chat | `{orgId}/{propertyId}/{unitId?}/{file}` |
+Storage metadata tables are read-only implementation detail. Files are uploaded and
+removed only through the Supabase Storage API.
 
-Documents stay **private** (they can contain IDs, bank statements — see the rental
-flow's application step) and are only ever read server-side with the service role.
-Property images are meant to be displayed, so `property-images` is **public-read**
-with writes restricted to the service role.
+## Path conventions
 
-## Provisioning plan
+| Content | Path |
+|---|---|
+| KB source | `{organizationId}/{propertyId}/{sourceId}/{fileName}` |
+| Property media | `{organizationId}/{propertyId}/media/property/{mediaId}/{fileName}` |
+| Room media | `{organizationId}/{propertyId}/media/rooms/{roomId}/{mediaId}/{fileName}` |
+| Reviewed structured import | `{organizationId}/{propertyId}/imports/{importId}/{fileName}` |
 
-1. **Create the `property-images` bucket** (public read), e.g. via the Supabase MCP
-   or a migration:
-   ```sql
-   insert into storage.buckets (id, name, public)
-   values ('property-images', 'property-images', true)
-   on conflict (id) do nothing;
-   ```
-   This is a **production write** — apply with explicit owner authorization, the
-   same way the retrieval-column migrations were applied.
-2. **RLS / access policies** on `storage.objects`:
-   - `property-images`: `select` allowed to `anon`/`authenticated`; `insert/update/
-     delete` only via service role (server routes).
-   - `uploads`: no public access; server-role only (unchanged).
-3. **Image upload route** (`/api/property/media` or extend `/api/kb/upload`):
-   validate content-type (`image/png|jpeg|webp`), enforce a size cap (e.g. 10 MB),
-   `upsert` to `property-images`, then store a `property_media` row with the public
-   URL (`admin.storage.from('property-images').getPublicUrl(path)`).
-4. **Deletion cascade:** deleting a property/unit/media row removes the matching
-   storage object(s), mirroring the existing document delete flow.
+Paths are server-generated and association-scoped. A caller cannot attach a room
+media object until the server verifies that the room belongs to the property.
 
-## Delivery
+## Authorization and approval
 
-- Public images: use `getPublicUrl` and render directly (cacheable, no signing).
-- If any image must stay private later, switch that path to
-  `createSignedUrl(path, ttl)` and cache the signed URL briefly.
+- Browser clients never receive the service-role key or direct bucket write access.
+- Protected APIs require the existing Google/allowlist authorization.
+- `property_media` records own association, media type, caption, alt text, order,
+  approval, storage path or external URL.
+- Private signed URLs are delivery values only; they are not persisted.
+- Media is excluded from customer-facing answers until `is_approved = true`.
+- Structured import files are retained only after a mapping has been previewed and
+  all normalized rows validate.
 
-## Validation checklist (add to the vector/audit script or a new media audit)
+## Deferred
 
-- Bucket exists and is public.
-- Upload of a small PNG returns a reachable `public_url`.
-- Non-image content-type is rejected (400).
-- Deleting the media row removes the storage object.
-
-## Open questions
-
-1. Fully public `property-images` vs. signed URLs (privacy vs. simplicity/caching).
-2. Image transforms/thumbnails — use Supabase image transformation or store one
-   size and resize client-side.
-3. Per-organization storage quotas / abuse limits.
+- Resumable/TUS upload is still deferred until file sizes justify it.
+- Public bucket/CDN delivery is not part of AUT-39–41. Reconsider only with a
+  privacy, caching, and invalidation design.

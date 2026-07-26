@@ -1,6 +1,6 @@
 # Requirement Tracker
 
-Last reconciled: 2026-07-18
+Last reconciled: 2026-07-25
 
 This is the progress register shared by repository requirements, Linear, and
 scheduled jobs. It answers four questions for every requirement: is it still valid,
@@ -30,10 +30,10 @@ issue can still need its description corrected when the shipped product changed.
 | CHAT-1 / AUT-29 | Valid | Partial | Active, priority 1 | Inbox UI/schema foundation reported off-main; current `main` still needs the durable server-only repository and live loading/error boundaries. |
 | CHAT-2 / AUT-8 | Valid | Partial | Active after CHAT-1 | Persist takeover/manual reply/resume atomically; re-check state before automated send. |
 | CHAT-3 / AUT-15 | Valid | Partial | Active after CHAT-1/2 | Exact Meta webhook signature exists; provider-neutral events, idempotency, delivery states, and sandbox remain. |
-| CHAT-4 / AUT-7 | Valid | Not started | Active after CHAT-1–3 | Configurable first-contact greeting and no-repeat intake; removed nested paths are not current evidence. |
-| CHAT-5 / AUT-11 | Valid | Not started | Active with CHAT-4 | Verified property-scoped business truth and guardrails; generic/sample knowledge is insufficient. |
-| CHAT-6 / AUT-12 | Valid | Not started | Active after CHAT-1–5 | Fixture/sandbox end-to-end validation. Real tenant sends remain prohibited unattended. |
-| CHAT-7 / AUT-10 | Valid | Partial | Deferred | Existing settings/KB UI is reusable; WhatsApp-specific behavior controls wait for durable state contracts. |
+| CHAT-4 / AUT-38 | Valid | Partial | Active, highest priority | Local uncommitted prospect-first implementation covers property buttons plus free text, approved media, interest/budget/move-in capture, staff-confirmed availability, and tenant-flow isolation. Exact remainder: review, browser/sandbox evidence, and delivery through the normal branch process. |
+| CHAT-5 / AUT-39 | Valid | Built locally, release gated | Active after AUT-38 | Additive schema, structured authority composer, approved-description-only indexing/filtering, and output validators are implemented in the isolated worktree. Exact remainder: local browser/full-flow evidence, migration review, and normal delivery. |
+| CHAT-6 / AUT-41 | Valid | In progress | Active after AUT-38–40 | Focused prospect, quick-reply/free-text, media/content, mapping, auth, vector-boundary, and durable handoff tests exist. Exact remainder: full suite/build and safe local browser walkthrough. Real tenant sends remain prohibited unattended. |
+| CHAT-7 / AUT-40 | Valid | Built locally, release gated | Active after AUT-39 | One authenticated Property Content screen manages facts/rooms, approved private/external media, and review-before-apply CSV/JSON/XLS/XLSX ingestion using the actual `uploads` bucket. Exact remainder: browser/full-flow evidence and migration/delivery. |
 | CHAT-8 / AUT-30 | Valid | Not started | Read-only discovery only | Provider/account/number ownership and rollback audit; cutover always owner-present. |
 | DATA-1 / AUT-9 | Valid | Partial | Active only when required by CHAT-1/2 | Current root schemas still need one clean source of truth; legacy nested migration claims are not current proof. |
 | KB-1 / AUT-17 | Valid | Partial | Deferred from Chat nightly | 768-dim vector upload/retrieval is shipped; remaining data-source breadth/race-hardening must be re-scoped rather than rebuilding the core. |

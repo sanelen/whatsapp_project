@@ -17,6 +17,7 @@ type UnitRow = {
   ensuite: boolean;
   features: string[] | null;
   display_order: number;
+  is_test: boolean;
 };
 
 function unitSummary(unit: UnitRow) {
@@ -24,8 +25,8 @@ function unitSummary(unit: UnitRow) {
     .map((value) => value.trim())
     .filter(Boolean);
   return facts.length > 0
-    ? `${facts.join(' · ')}. Availability must be confirmed by Hamba staff.`
-    : 'Availability must be confirmed by Hamba staff.';
+    ? facts.join(' · ')
+    : 'Property details available from Hamba staff';
 }
 
 export function mapHambaCatalog(properties: PropertyRow[], units: UnitRow[]): HambaFlowCatalog {
@@ -36,7 +37,7 @@ export function mapHambaCatalog(properties: PropertyRow[], units: UnitRow[]): Ha
       name: property.name,
       area: property.location,
       units: orderedUnits
-        .filter((unit) => unit.property_id === property.id)
+        .filter((unit) => unit.property_id === property.id && !unit.is_test)
         .map((unit) => ({
           id: unit.id,
           label: unit.label,
@@ -52,7 +53,8 @@ export async function loadHambaCatalog(admin: SupabaseClient): Promise<HambaFlow
     admin.from('properties').select('id,name,location').order('name'),
     admin
       .from('property_units')
-      .select('id,property_id,label,occupancy_status,is_blocked,is_available,ensuite,features,display_order')
+      .select('id,property_id,label,occupancy_status,is_blocked,is_available,ensuite,features,display_order,is_test')
+      .eq('is_test', false)
       .order('display_order'),
   ]);
   if (propertiesResult.error) throw new Error(`Property catalogue load failed: ${propertiesResult.error.message}`);

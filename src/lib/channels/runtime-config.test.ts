@@ -9,7 +9,19 @@ test('defaults to Meta while keeping every live transport action disabled', () =
   assert.equal(config.providers.meta.ingestionEnabled, false);
   assert.equal(config.providers.meta.outboundEnabled, false);
   assert.equal(config.dispatchEnabled, false);
+  assert.equal(config.pilotAllowlistOnly, false);
   assert.equal(config.providers.twilio.enabled, false);
+});
+
+test('defaults production to the pilot allowlist until explicitly opened', () => {
+  assert.equal(getChannelRuntimeConfig({ NODE_ENV: 'production' }).pilotAllowlistOnly, true);
+  assert.equal(
+    getChannelRuntimeConfig({
+      NODE_ENV: 'production',
+      WHATSAPP_PILOT_ALLOWLIST_ONLY: 'false',
+    }).pilotAllowlistOnly,
+    false
+  );
 });
 
 test('reports readiness without returning any secret values', () => {
@@ -19,6 +31,7 @@ test('reports readiness without returning any secret values', () => {
     WHATSAPP_INGESTION_ENABLED: '1',
     WHATSAPP_OUTBOUND_ENABLED: 'false',
     WHATSAPP_DISPATCH_ENABLED: 'true',
+    WHATSAPP_PILOT_ALLOWLIST_ONLY: 'true',
     META_APP_SECRET: 'secret-value',
     WHATSAPP_VERIFY_TOKEN: 'verify-value',
     META_WHATSAPP_ACCESS_TOKEN: 'access-value',
@@ -30,6 +43,7 @@ test('reports readiness without returning any secret values', () => {
   assert.equal(config.providers.meta.ingestionEnabled, true);
   assert.equal(config.providers.meta.outboundEnabled, false);
   assert.equal(config.dispatchEnabled, true);
+  assert.equal(config.pilotAllowlistOnly, true);
   assert.equal(JSON.stringify(config).includes('secret-value'), false);
   assert.equal(JSON.stringify(config).includes('access-value'), false);
 });

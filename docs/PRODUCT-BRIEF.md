@@ -45,7 +45,9 @@ Facilities around the loop: add locations, add rooms/units to locations, set ren
 The e2e suite is already mostly flow-shaped — `flow-00…flow-10`, `reverse-rematch-flow`, `reference-pool-matching`, `units-and-matching`, `navigation-safety`, `surplus-credit-scenarios` — which matches the doctrine. Two caveats:
 
 - **15 of ~24 spec files carry `fixme`/`skip` marks**, mostly because they need a seeded/disposable TEST property so flows can mutate data safely. Un-skipping them (behind a seeded fixture) is standing work — a flow test that doesn't run is an element check in disguise.
-- The nightly sandbox cannot run headed e2e against live data; it uses fixture renders + screenshot comparison instead, clearly labeled `-fixture`. Live flow runs happen on San's machine against a TEST room.
+- The nightly sandbox uses fixture renders and screenshot comparison, clearly
+  labelled `-fixture`. Production contains no TEST rooms; any state-changing
+  headed flow must use a disposable non-production database.
 
 ## What NOT to do
 

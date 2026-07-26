@@ -9,65 +9,139 @@ const catalog: HambaFlowCatalog = {
       id: 'quarry-heights',
       name: 'Quarry Heights',
       area: 'Newlands East',
-      units: [{ id: 'unit-4', label: 'Unit 4', summary: 'Demo unit; staff confirms live facts.', isAvailable: true }],
+      units: [{ id: 'unit-4', label: 'Unit 4', summary: 'Studio · En-suite', isAvailable: true }],
     },
   ],
 };
 
-test('uses the saved shared greeting for natural WhatsApp greetings and MENU', () => {
-  const greeting = 'Welcome to the shared Hamba assistant.';
-  const hello = advanceNaturalHambaFlow(startHambaFlow().state, 'hello', catalog, { greeting });
-  const menu = advanceNaturalHambaFlow({ step: 'tenant.details' }, 'MENU', catalog, { greeting });
-  assert.equal(hello.reply, greeting);
-  assert.equal(menu.reply, greeting);
+test('uses a short prospect greeting rather than a brochure dump or caveat', () => {
+  const result = advanceNaturalHambaFlow(startHambaFlow().state, 'hello', catalog);
+  assert.equal(result.state.step, 'prospect.entry');
+  assert.match(result.reply, /looking for a unit to rent/i);
+  assert.doesNotMatch(result.reply, /33 Essex|Westrich|Quarry Heights|photos|pamphlet/i);
+  assert.equal(result.quickReplies?.length, 1);
+  assert.ok(result.reply.length < 220);
+  assert.doesNotMatch(result.reply.split('\n').slice(0, 5).join(' '), /no verified|not available/i);
 });
 
-test('explains Hamba services without forcing a numbered menu', () => {
-  const result = advanceNaturalHambaFlow(startHambaFlow().state, 'What services do you offer?', catalog);
-  assert.equal(result.interpretation.intent, 'services');
-  assert.match(result.reply, /finding a rental/);
-  assert.equal(result.state.step, 'menu');
+test('treats generic help and property enquiries as prospect discovery', () => {
+  for (const message of ['Can you help me?', 'What properties do you have?', 'I need a room']) {
+    const result = advanceNaturalHambaFlow(startHambaFlow().state, message, catalog);
+    assert.equal(result.state.step, 'prospect.location');
+    assert.match(result.reply, /33 Essex/);
+    assert.equal(result.quickReplies?.length, 3);
+    assert.doesNotMatch(result.reply, /maintenance|payment or statement|lease or notice/i);
+  }
 });
 
-test('uses natural location and unit mentions to reach the viewing step', () => {
+test('understands natural variations asking where properties are located', () => {
+  for (const message of [
+    'Where are the units?',
+    'Where are these units situated?',
+    'What locations do you have?',
+    'Which areas do you cover?',
+    'Do you have anything near Pinetown?',
+  ]) {
+    const result = advanceNaturalHambaFlow(startHambaFlow().state, message, catalog);
+    assert.equal(result.interpretation.intent, 'property_search', message);
+    assert.equal(result.state.step, 'prospect.location', message);
+    assert.match(result.reply, /33 Essex — .*Berea/, message);
+    assert.match(result.reply, /Westrich — Newlands West/, message);
+    assert.match(result.reply, /Quarry Heights — Newlands East/, message);
+    assert.equal(result.quickReplies?.length, 3, message);
+    assert.doesNotMatch(result.reply, /maintenance|choose your unit or room/i, message);
+  }
+});
+
+test('lets a prospect ask for other locations in different words', () => {
+  const selectedState = {
+    step: 'prospect.property_action' as const,
+    propertyInterest: 'Quarry Heights',
+    locationId: 'quarry-heights',
+  };
+
+  for (const message of [
+    'Do you have anything in other locations?',
+    'Anything elsewhere?',
+    'Can you show me another location?',
+    'What other areas do you cover?',
+    'Do you have units somewhere else?',
+  ]) {
+    const result = advanceNaturalHambaFlow(selectedState, message, catalog);
+    assert.equal(result.interpretation.intent, 'property_search', message);
+    assert.equal(result.state.step, 'prospect.location', message);
+    assert.match(result.reply, /33 Essex — .*Berea/, message);
+    assert.match(result.reply, /Westrich — Newlands West/, message);
+    assert.match(result.reply, /Quarry Heights — Newlands East/, message);
+    assert.equal(result.quickReplies?.length, 3, message);
+    assert.doesNotMatch(result.reply, /which unit|maintenance|payment or statement/i, message);
+  }
+});
+
+test('recognizes property and area aliases then shows only that property', () => {
+  const westridge = advanceNaturalHambaFlow(startHambaFlow().state, 'I like Westridge', catalog);
+  assert.equal(westridge.state.step, 'prospect.property_action');
+  assert.equal(westridge.state.propertyInterest, 'Westrich');
+  assert.match(westridge.reply, /Westrich — Newlands West/i);
+  assert.match(westridge.reply, /hamba-westrich-advert\.pdf/i);
+  assert.doesNotMatch(westridge.reply, /hamba-essex-advert|hamba-quarry-heights-advert/i);
+  assert.equal(westridge.quickReplies?.length, 3);
+});
+
+test('switches the screenshot sentence from stale tenant state to prospect intake', () => {
   const result = advanceNaturalHambaFlow(
-    startHambaFlow().state,
-    'I want a viewing for Unit 4 at Quarry Heights',
+    { step: 'tenant.unit', locationId: 'quarry-heights' },
+    'I am not in any unit I am looking for one',
     catalog
   );
-  assert.equal(result.interpretation.intent, 'viewing');
-  assert.equal(result.interpretation.confidence, 'high');
-  assert.deepEqual(result.interpretation.signals, ['viewing', 'Quarry Heights', 'Unit 4']);
-  assert.equal(result.state.step, 'prospect.viewing_time');
-  assert.deepEqual(result.routedSteps, ['intent', 'prospect', 'location', 'unit', 'viewing']);
-});
 
-test('routes a natural maintenance report into the unit-specific support journey', () => {
-  const result = advanceNaturalHambaFlow(
-    startHambaFlow().state,
-    'The tap is leaking in Unit 4 at Quarry Heights',
-    catalog
-  );
-  assert.equal(result.interpretation.intent, 'maintenance');
-  assert.equal(result.state.step, 'tenant.details');
-  assert.equal(result.state.tenantCategory, 'maintenance');
-});
-
-test('keeps document checks advisory and starts from a property choice', () => {
-  const result = advanceNaturalHambaFlow(startHambaFlow().state, 'I only have two payslips to upload', catalog);
-  assert.equal(result.interpretation.intent, 'documents');
-  assert.match(result.reply, /staff member makes the final housing decision/);
+  assert.equal(result.interpretation.intent, 'property_search');
   assert.equal(result.state.step, 'prospect.location');
+  assert.match(result.reply, /Where would you like to stay/);
+  assert.equal(result.quickReplies?.length, 3);
+  assert.doesNotMatch(result.reply, /choose your unit or room|maintenance|payment|lease/i);
 });
 
-test('preserves the global human handoff command', () => {
-  const result = advanceNaturalHambaFlow(startHambaFlow().state, 'human', catalog);
-  assert.equal(result.interpretation.intent, 'human');
+test('rechecking availability never enters tenant room selection', () => {
+  for (const message of ['One more please check', 'Can you recheck availability?', 'Are you check one more time?']) {
+    const result = advanceNaturalHambaFlow(
+      { step: 'tenant.category', locationId: 'quarry-heights' },
+      message,
+      catalog
+    );
+    assert.notEqual(result.state.step, 'tenant.unit');
+    assert.notEqual(result.state.step, 'tenant.category');
+    assert.doesNotMatch(result.reply, /which unit|maintenance or repairs|payment or statement/i);
+    assert.match(result.reply, /staff recheck|staff confirms|staff should.*recheck/i);
+  }
+});
+
+test('keeps the LLM hook inside a prospect question without allowing it to choose state', () => {
+  const state = { step: 'prospect.budget' as const, propertyInterest: 'Quarry Heights', locationId: 'quarry-heights' };
+  const result = advanceNaturalHambaFlow(state, 'Does it have parking?', catalog);
+  assert.equal(result.action?.type, 'answer_property_question');
+  assert.deepEqual(result.state, state);
+  assert.deepEqual(result.routedSteps, ['prospect', 'guardrailed property question']);
+});
+
+test('hands existing-tenant requests to staff instead of implementing servicing automation', () => {
+  for (const message of ['The tap is leaking in my room', 'I need a rent statement', 'I am locked out']) {
+    const result = advanceNaturalHambaFlow(startHambaFlow().state, message, catalog);
+    assert.equal(result.state.step, 'handoff');
+    assert.equal(result.action?.type, 'handoff');
+    assert.match(result.reply, /staff/i);
+    assert.doesNotMatch(result.reply, /choose your unit|reply with a number/i);
+  }
+});
+
+test('hands document and ID requests to staff without collecting sensitive files', () => {
+  const result = advanceNaturalHambaFlow(startHambaFlow().state, 'Where do I upload my ID and payslip?', catalog);
   assert.equal(result.state.step, 'handoff');
   assert.equal(result.action?.type, 'handoff');
+  assert.match(result.reply, /do not send an ID/i);
 });
 
-test('shares approved pamphlets and locations from inside any journey step', () => {
+test('asks which property media is wanted instead of sending every brochure', () => {
   const result = advanceNaturalHambaFlow(
     { step: 'tenant.unit', locationId: 'quarry-heights' },
     'Can you please send me pictures',
@@ -75,11 +149,24 @@ test('shares approved pamphlets and locations from inside any journey step', () 
   );
 
   assert.equal(result.interpretation.intent, 'property_media');
-  assert.equal(result.state.step, 'menu');
-  assert.match(result.reply, /hamba-essex-advert\.pdf/);
-  assert.match(result.reply, /hamba-westrich-advert\.pdf/);
-  assert.match(result.reply, /hamba-quarry-heights-advert\.pdf/);
-  assert.match(result.reply, /33 Essex Road/);
-  assert.match(result.reply, /28 Nkunzana Grove/);
-  assert.deepEqual(result.routedSteps, ['global property media']);
+  assert.equal(result.state.step, 'prospect.location');
+  assert.match(result.reply, /which property/i);
+  assert.doesNotMatch(result.reply, /https?:\/\//i);
+  assert.equal(result.quickReplies?.length, 3);
+  assert.deepEqual(result.routedSteps, ['intent', 'prospect', 'location choice']);
+});
+
+test('shares only the selected property page, photos and pamphlet', () => {
+  const result = advanceNaturalHambaFlow(
+    { step: 'prospect.location' },
+    'Please send me Quarry Heights pictures',
+    catalog
+  );
+
+  assert.equal(result.state.step, 'prospect.property_action');
+  assert.match(result.reply, /quarry-heights/i);
+  assert.match(result.reply, /photos\.app\.goo\.gl\/56RH6eEDm8tBMWxo8/i);
+  assert.match(result.reply, /hamba-quarry-heights-advert\.pdf/i);
+  assert.doesNotMatch(result.reply, /hamba-essex-advert|hamba-westrich-advert/i);
+  assert.deepEqual(result.routedSteps, ['intent', 'prospect', 'selected property media']);
 });

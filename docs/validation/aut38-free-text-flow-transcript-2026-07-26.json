@@ -1,0 +1,38 @@
+{
+  "capturedAt": "2026-07-26T08:14:15.214Z",
+  "origin": "http://127.0.0.1:3012",
+  "mode": "local deterministic flow; verified property fallback when no OpenAI API key is configured",
+  "scenarios": [
+    {
+      "customer": "Hi",
+      "assistant": "Hi 👋 Welcome to Hamba Trading Property Rentals.\nHow can I help you today?\n\nAre you looking for a unit to rent?",
+      "status": "State: prospect.entry · Intent: unclear"
+    },
+    {
+      "customer": "Where are the units?",
+      "assistant": "Great. Where would you like to stay?\n\n• 33 Essex — Bulwer / Berea\n• Westrich — Newlands West\n• Quarry Heights — Newlands East",
+      "status": "State: prospect.location · Intent: property_search"
+    },
+    {
+      "customer": "Quarry Heights",
+      "assistant": "Quarry Heights — Newlands East\nCurrent documented baseline: R2,200 per month\nStudio and en-suite rentals with free Wi-Fi; maximum two occupants\nNo tenant or guest parking is available\nAddress: 28 Nkunzana Grove, Newlands East, 4037\nMap: https://maps.app.goo.gl/i89MQThp1StcQssK7\nPhotos: https://photos.app.goo.gl/56RH6eEDm8tBMWxo8\nDetails: https://hambatrading.co.za/marketing/quarry-heights\nPamphlet: https://hambatrading.co.za/marketing/hamba-quarry-heights-advert.pdf\n\nHamba staff will confirm the available room, current rent, deposit and viewing details.\nWhat would you like to do next?",
+      "status": "State: prospect.property_action · Intent: unclear"
+    },
+    {
+      "customer": "Does it have parking?",
+      "assistant": "No tenant or guest parking is available.\n\nWould you like to apply/check availability, ask another question, or choose another location?",
+      "status": "State: prospect.property_action · Intent: property_question · Answer source: verified property facts"
+    },
+    {
+      "customer": "Do you have anything in other locations?",
+      "assistant": "Great. Where would you like to stay?\n\n• 33 Essex — Bulwer / Berea\n• Westrich — Newlands West\n• Quarry Heights — Newlands East",
+      "status": "State: prospect.location · Intent: property_search"
+    }
+  ],
+  "browserChecks": {
+    "hasContent": true,
+    "errorOverlay": false,
+    "consoleErrors": [],
+    "pageErrors": []
+  }
+}

@@ -48,11 +48,15 @@ Approved product boundary after the 2026-07-17 production review:
 - FR-1.5 **Planned** — `summary_memory` mode needs a defined lifecycle (per
   conversation vs. per property; transient vs. persisted) before it can diverge from
   `hybrid`.
-- FR-1.6 **Planned** — Structured property/unit details (address, maps link, rent,
-  deposit, max occupants, parking, ensuite, feature tags) so the assistant can answer
-  factual property questions instead of relying only on free-text KB entries. See
+- FR-1.6 **Built locally; release gated 2026-07-25** — Structured property/unit
+  details (address, public links, contacts, rent/deposit guidance, occupancy,
+  available-from, viewing, parking, ensuite, and features) are authoritative and
+  composed separately from retrieval. Final price, deposit, availability and
+  viewing remain staff-confirmed. See
   [property-details.md](./roadmap/functionality/property-details.md).
-- FR-1.7 **Planned** — Photo galleries in the KB with caption-based retrieval. See
+- FR-1.7 **Built locally; release gated 2026-07-25** — Authenticated property/room
+  media uses explicit approval, private signed delivery, and approved
+  caption/alt-text retrieval; external Google Photos links remain supported. See
   [knowledge-base-photos.md](./roadmap/functionality/knowledge-base-photos.md).
 
 ### Non-functional
@@ -61,8 +65,10 @@ Approved product boundary after the 2026-07-17 production review:
   flagged, not embedded) instead of 500ing the upload route.
 - NFR-1.2 **Partial** — Large-document strategy: standard multipart upload only;
   resumable/TUS upload not yet decided as needed.
-- NFR-1.3 **Planned** — Public `property-images` Storage bucket alongside the
-  private `uploads` bucket. See [storage.md](./roadmap/functionality/storage.md).
+- NFR-1.3 **Revised; built locally 2026-07-25** — Reuse the existing private
+  `uploads` bucket for assistant media and reviewed structured imports. Deliver
+  storage media through short-lived signed URLs; do not create a public image
+  bucket. See [storage.md](./roadmap/functionality/storage.md).
 
 ## 2. Monthly Payments (operator loop)
 

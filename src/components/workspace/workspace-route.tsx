@@ -6,6 +6,7 @@ import {
   BriefcaseBusiness,
   Check,
   ChevronDown,
+  Database,
   Gauge,
   LayoutDashboard,
   LoaderCircle,
@@ -39,6 +40,8 @@ import {
 } from '@/lib/workspace';
 import { organizationPath, propertyPath } from '@/lib/workspace-routes';
 import { createClient } from '@/lib/supabase/client';
+import { PropertyContentManager } from '@/components/workspace/property-content-manager';
+import { ASSISTANT_PROVIDERS } from '@/lib/assistant/model-catalog';
 
 type RouteView = 'organizations' | 'organization' | 'property' | 'chatbot';
 type SettingsTab = 'llm' | 'instructions' | 'retrieval' | 'knowledge' | 'templates';
@@ -47,6 +50,7 @@ type WorkspaceSection =
   | 'Chatbot'
   | 'Agents'
   | 'Conversations'
+  | 'Property Content'
   | 'Knowledge Base'
   | 'Analytics'
   | 'Usage'
@@ -57,6 +61,7 @@ const workspaceSectionIcons: Record<WorkspaceSection, LucideIcon> = {
   Chatbot: Bot,
   Agents: Users,
   Conversations: MessageSquareText,
+  'Property Content': Database,
   'Knowledge Base': BriefcaseBusiness,
   Analytics: BarChart3,
   Usage: Gauge,
@@ -140,41 +145,7 @@ const defaultChunkSettings: ChunkSettings = {
   chunkOverlap: 250,
 };
 
-const llmProviders = [
-  {
-    value: 'openai',
-    label: 'OpenAI GPT',
-    models: [
-      { value: 'gpt-5.5', label: 'GPT-5.5 (Flagship)' },
-      { value: 'gpt-5.5-instant', label: 'GPT-5.5 Instant' },
-      { value: 'gpt-5.5-mini', label: 'GPT-5.5 Mini' },
-      { value: 'gpt-5.4', label: 'GPT-5.4' },
-      { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
-    ],
-  },
-  {
-    value: 'gemini',
-    label: 'Google Gemini',
-    models: [
-      { value: 'gemini-3.5-pro', label: 'Gemini 3.5 Pro' },
-      { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-      { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
-      { value: 'gemini-3.5-mini', label: 'Gemini 3.5 Mini' },
-      { value: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
-      { value: 'gemini-3.1-flash', label: 'Gemini 3.1 Flash' },
-      { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
-      { value: 'gemini-3.1-mini', label: 'Gemini 3.1 Mini' },
-    ],
-  },
-  {
-    value: 'deepseek',
-    label: 'DeepSeek',
-    models: [
-      { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-      { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
-    ],
-  },
-] as const;
+const llmProviders = ASSISTANT_PROVIDERS;
 
 function getProviderOption(provider: string) {
   return llmProviders.find((option) => option.value === provider) ?? llmProviders[0];
@@ -1618,7 +1589,7 @@ function PropertyChatbotWorkspaceView({
   const [isThreadsCollapsed, setIsThreadsCollapsed] = useState(false);
   const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(false);
   const [activeWorkspaceSection, setActiveWorkspaceSection] = useState<WorkspaceSection>('Chatbot');
-  const workspaceNavItems: WorkspaceSection[] = ['Overview', 'Chatbot', 'Agents', 'Conversations', 'Knowledge Base', 'Analytics', 'Usage', 'Settings'];
+  const workspaceNavItems: WorkspaceSection[] = ['Overview', 'Chatbot', 'Property Content', 'Agents', 'Conversations', 'Knowledge Base', 'Analytics', 'Usage', 'Settings'];
   const providerOption = getProviderOption(property.chatbot.provider);
   const selectedModel = getModelValue(providerOption.value, property.chatbot.model);
 
@@ -1734,7 +1705,9 @@ function PropertyChatbotWorkspaceView({
           </div>
         </header>
 
-        {activeWorkspaceSection === 'Knowledge Base' ? (
+        {activeWorkspaceSection === 'Property Content' ? (
+          <PropertyContentManager key={property.id} propertyId={property.id} />
+        ) : activeWorkspaceSection === 'Knowledge Base' ? (
           <KnowledgeBaseWorkspaceView
             key={property.id}
             organization={organization}

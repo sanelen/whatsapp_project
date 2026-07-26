@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildMetaTextRequest, normalizeMetaWebhook, summarizeMetaWebhook } from '@/lib/channels/meta';
+import {
+  buildMetaReplyRequest,
+  buildMetaTextRequest,
+  normalizeMetaWebhook,
+  summarizeMetaWebhook,
+} from '@/lib/channels/meta';
+import { resolveHambaPilotTurn } from '@/lib/channels/channel-dispatch';
+import { mapHambaCatalog } from '@/lib/channels/hamba-catalog';
+import { startHambaFlow } from '@/lib/channels/hamba-flow';
 
 test('normalizes Meta WhatsApp text messages into provider-neutral events', () => {
   const events = normalizeMetaWebhook({
@@ -76,6 +84,36 @@ test('normalizes delivery statuses with status-specific idempotency keys', () =>
   assert.equal(events[0].deliveryStatus, 'delivered');
 });
 
+test('normalizes inbound interactive property reply buttons', () => {
+  const events = normalizeMetaWebhook({
+    object: 'whatsapp_business_account',
+    entry: [{
+      changes: [{
+        field: 'messages',
+        value: {
+          metadata: { phone_number_id: 'phone-123' },
+          messages: [{
+            from: '27820000000',
+            id: 'wamid.button-1',
+            timestamp: '1784368800',
+            type: 'interactive',
+            interactive: {
+              type: 'button_reply',
+              button_reply: { id: 'property:quarry', title: 'Quarry Heights' },
+            },
+          }],
+        },
+      }],
+    }],
+  });
+
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].message, {
+    type: 'interactive',
+    text: 'Quarry Heights',
+  });
+});
+
 test('ignores unsupported Meta objects and malformed message identifiers', () => {
   assert.deepEqual(normalizeMetaWebhook({ object: 'page', entry: [] }), []);
   assert.deepEqual(normalizeMetaWebhook({
@@ -114,4 +152,89 @@ test('builds a Meta Graph API text request without sending it', () => {
     type: 'text',
     text: { preview_url: false, body: 'Hello from Hamba' },
   });
+});
+
+test('builds a Meta reply-button request while retaining free-text input', () => {
+  const request = buildMetaReplyRequest({
+    to: '27820000000',
+    body: 'Choose a property, or type its name.',
+    phoneNumberId: 'phone-123',
+    graphVersion: 'v25.0',
+    quickReplies: [
+      { id: 'property:essex', title: '33 Essex' },
+      { id: 'property:westridge', title: 'Westrich' },
+      { id: 'property:quarry', title: 'Quarry Heights' },
+    ],
+  });
+
+  assert.deepEqual(request.body, {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: '27820000000',
+    type: 'interactive',
+    interactive: {
+      type: 'button',
+      body: { text: 'Choose a property, or type its name.' },
+      action: {
+        buttons: [
+          { type: 'reply', reply: { id: 'property:essex', title: '33 Essex' } },
+          { type: 'reply', reply: { id: 'property:westridge', title: 'Westrich' } },
+          { type: 'reply', reply: { id: 'property:quarry', title: 'Quarry Heights' } },
+        ],
+      },
+    },
+  });
+});
+
+test('rejects an oversized Meta reply-button body before any send attempt', () => {
+  assert.throws(
+    () => buildMetaReplyRequest({
+      to: '27820000000',
+      body: 'x'.repeat(1025),
+      phoneNumberId: 'phone-123',
+      quickReplies: [{ id: 'property:essex', title: '33 Essex' }],
+    }),
+    /1024 characters or fewer/
+  );
+});
+
+test('converts the guarded free-text prospect journey into valid Meta reply payloads', () => {
+  const catalog = mapHambaCatalog(
+    [
+      { id: 'property-quarry', name: 'Quarry Heights', location: 'Newlands East' },
+      { id: 'property-westrich', name: 'West Rich', location: 'Newlands West' },
+      { id: 'property-berea', name: 'berea', location: '33' },
+    ],
+    []
+  );
+
+  const greeting = resolveHambaPilotTurn(startHambaFlow().state, 'Hi', catalog);
+  const locations = resolveHambaPilotTurn(greeting.state, 'Where are the units?', catalog);
+  const selected = resolveHambaPilotTurn(locations.state, 'Quarry Heights', catalog);
+  const parking = resolveHambaPilotTurn(selected.state, 'Does it have parking?', catalog);
+  const elsewhere = resolveHambaPilotTurn(parking.state, 'Do you have anything in other locations?', catalog);
+
+  const turns = [greeting, locations, selected, parking, elsewhere];
+  const requests = turns.map((turn) => buildMetaReplyRequest({
+    to: '27820000000',
+    body: turn.reply,
+    phoneNumberId: '1175570092310287',
+    graphVersion: 'v25.0',
+    quickReplies: turn.quickReplies,
+  }));
+
+  for (const [index, request] of requests.entries()) {
+    const payload = JSON.stringify(request.body);
+    assert.match(request.url, /graph\.facebook\.com\/v25\.0\/1175570092310287\/messages/);
+    assert.match(payload, /"type":"interactive"/, `turn ${index + 1}`);
+    assert.ok(turns[index].reply.length <= 1024, `turn ${index + 1} exceeds Meta's button-body limit`);
+    assert.doesNotMatch(payload, /choose your unit or room|maintenance or repairs|payment or statement/i);
+  }
+
+  assert.match(JSON.stringify(requests[1].body), /33 Essex/);
+  assert.match(JSON.stringify(requests[1].body), /Westrich/);
+  assert.match(JSON.stringify(requests[1].body), /Quarry Heights/);
+  assert.match(JSON.stringify(requests[2].body), /photos\.app\.goo\.gl/);
+  assert.match(JSON.stringify(requests[3].body), /No tenant or guest parking is available/);
+  assert.match(JSON.stringify(requests[4].body), /"title":"33 Essex"/);
 });

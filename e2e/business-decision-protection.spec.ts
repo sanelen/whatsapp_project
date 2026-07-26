@@ -220,54 +220,15 @@ test('Ruling 4: Surplus = operator-allocated, never auto-apply — credit not au
   }
 });
 
-test('Ruling 5: TEST rooms count like normal — is_test not filtered out', async ({ page }) => {
+test('Ruling 5: production inventory excludes disposable TEST rooms', async ({ page }) => {
   /**
-   * RULING: Rooms marked with is_test=true are counted in dashboard totals,
-   * occupancy counts, and property summaries. They are NOT filtered out.
-   * Owner accepts ~R6,000/month fake expected in the numbers.
-   *
-   * IMPACT: Test data doesn't need separate reconciliation rules. Simpler
-   * testing and automation — uses the same code path as production data.
-   *
-   * FAILURE MESSAGE: "TEST rooms excluded from totals — breaks reconciliation
-   * and hides test data handling bugs. Fix: remove is_test filter from counts"
+   * OWNER RULING 2026-07-26: the shared production project contains real
+   * inventory only. Disposable TEST ROOM fixtures belong in an isolated
+   * non-production database and must never affect production totals.
    */
-  
-  await goToDashboard(page);
-  
-  // Get total "expected" from dashboard
-  const totalExpectedText = await page.getByText(/expected|total.*R/i).textContent();
-  let dashboardTotal = 0;
-  
-  if (totalExpectedText) {
-    const match = totalExpectedText.match(/(\d+)/);
-    if (match) dashboardTotal = parseInt(match[1], 10);
-  }
-  
-  // Navigate to units and count all rows
+
   if (!await goToUnits(page)) return;
-  
-  let unitsTotal = 0;
-  const rows = page.locator('tr, div[role="row"]');
-  
-  for (let i = 0; i < await rows.count(); i++) {
-    const row = rows.nth(i);
-    const text = await row.textContent();
-    
-    // Look for rent amounts and add them up
-    const rentMatch = text?.match(/R[\s,]*([\d,]+)/);
-    if (rentMatch) {
-      const amount = parseInt(rentMatch[1].replace(/,/g, ''), 10);
-      unitsTotal += amount;
-    }
-  }
-  
-  // Totals should roughly align (allowing for rounding)
-  // If they don't, TEST rooms might be filtered out
-  const tolerance = 100000; // Rounding tolerance
-  const diff = Math.abs(dashboardTotal - unitsTotal);
-  
-  expect(diff).toBeLessThan(tolerance);
-  
-  console.log(`Ruling 5: Dashboard total ≈ Units sum (diff=${diff})`);
+
+  await expect(page.getByText(/TEST ROOM [12]/)).toHaveCount(0);
+  console.log('Ruling 5: ✓ Production inventory contains no disposable TEST rooms');
 });

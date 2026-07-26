@@ -11,6 +11,8 @@ export type PublicProperty = {
   featureLine: string;
   parkingLine: string;
   portfolioUrl: string;
+  pagePath: string;
+  pamphletPath: string;
   mapsUrl?: string;
 };
 
@@ -28,6 +30,8 @@ export const publicProperties: PublicProperty[] = [
     featureLine: 'Studio and en-suite rentals with free Wi-Fi',
     parkingLine: 'Parking is very limited and must be allocated in writing',
     portfolioUrl: 'https://photos.app.goo.gl/kMR2VEfBo4EXLZJQA',
+    pagePath: '/marketing/33-essex',
+    pamphletPath: '/marketing/hamba-essex-advert.pdf',
   },
   {
     id: 'westridge',
@@ -42,6 +46,8 @@ export const publicProperties: PublicProperty[] = [
     featureLine: 'Studio and en-suite rentals for one or two, depending on the room',
     parkingLine: 'Parking is very limited and is never guaranteed',
     portfolioUrl: 'https://photos.app.goo.gl/xwUqocDcoAvnMpmW8',
+    pagePath: '/marketing/westrich',
+    pamphletPath: '/marketing/hamba-westrich-advert.pdf',
     mapsUrl: 'https://maps.app.goo.gl/9YEjHEE2p724LUYh8?g_st=aw',
   },
   {
@@ -57,6 +63,8 @@ export const publicProperties: PublicProperty[] = [
     featureLine: 'Studio and en-suite rentals with free Wi-Fi; maximum two occupants',
     parkingLine: 'No tenant or guest parking is available',
     portfolioUrl: 'https://photos.app.goo.gl/56RH6eEDm8tBMWxo8',
+    pagePath: '/marketing/quarry-heights',
+    pamphletPath: '/marketing/hamba-quarry-heights-advert.pdf',
     mapsUrl: 'https://maps.app.goo.gl/i89MQThp1StcQssK7',
   },
 ];
