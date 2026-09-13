@@ -23,6 +23,7 @@ coverage/
 *.pem
 
 # local logs and scratch output
+.runtime/
 logs/
 *.log
 supabase/.temp/
@@ -41,3 +42,4 @@ e2e/results.json
 blob-report/
 .vercel
 .env*
+/.swc

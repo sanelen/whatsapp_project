@@ -20,7 +20,7 @@ export function MonthlyPaymentsShell({
   active,
   children,
   operationsHref = '/monthly-payments/locations',
-  referencePoolHref = '/monthly-payments/reference-pool',
+  referencePoolHref = '/monthly-payments/reconcile',
   importAuditHref = '/monthly-payments/import-audit',
 }: MonthlyPaymentsShellProps) {
   return (

@@ -22,6 +22,7 @@
     "test:release:contract": "node --import tsx --test 'release-tests/contracts/**/*.test.mjs'",
     "test:release:artifact": "node --test 'release-tests/artifacts/**/*.test.mjs'",
     "test:release:browser": "playwright test --config=playwright.release.config.ts",
+    "test:payments:workspace": "node scripts/test-payment-workspace.mjs",
     "postbuild": "npm run test:release:artifact",
     "audit:vector-pipeline": "node scripts/audit-vector-pipeline.mjs",
     "transcribe": "node scripts/transcribe.mjs",
@@ -46,6 +47,7 @@
     "pdf-parse": "^2.4.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "workflow": "^4.6.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -54,6 +56,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "0.25.12",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",

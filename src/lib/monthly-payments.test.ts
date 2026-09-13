@@ -131,6 +131,10 @@ test('buildMonthlyPaymentsDashboardSnapshot summarizes rolling totals and unmatc
   assert.equal(snapshot.rollingTotal.blockedCount, 1);
   assert.equal(snapshot.rollingTotal.overdueCount, 0);
   assert.equal(snapshot.unmatchedReferenceCount, 1);
+  assert.deepEqual(
+    snapshot.recentMonths.map((month) => month.key),
+    ['2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08']
+  );
   assert.equal(snapshot.recentMonths.find((month) => month.key === '2026-06')?.collectedAmount, 4500);
   assert.equal(snapshot.locations[0].name, 'Query Heights');
   assert.equal(snapshot.locations[0].paidCount, 1);
@@ -147,6 +151,10 @@ test('dashboard selects the next billing period after the 9th and keeps unmatche
   const july = snapshot.recentMonths.find((month) => month.key === '2026-07');
   assert.ok(july);
   assert.equal(snapshot.monthLabel, 'July 2026');
+  assert.deepEqual(
+    snapshot.recentMonths.map((month) => month.key),
+    ['2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08']
+  );
   assert.equal(july.isCurrent, true);
   assert.equal(july.collectedAmount, 6700);
   assert.equal(july.rollingTotal.matchedCollectedAmount, 4500);
@@ -453,7 +461,11 @@ test('computeDepositSplitSuggestion rounds portions to cents', () => {
 
 // ─── FR-2.8 surplus credit (owner rulings 2026-07-03) ────────────────────────
 
-import { computeCreditAllocationOptions, computeOverpaymentAllocation } from './payment-allocation';
+import {
+  computeCreditAllocationOptions,
+  computeOverpaymentAllocation,
+  computePeriodReferenceCreditSources,
+} from './payment-allocation';
 
 test('FR-2.8 [decision: surplus never blocks — rent, then deposit headroom, remainder held as credit]', () => {
   const split = computeOverpaymentAllocation({ receivedAmount: 9067, expectedAmount: 3800, depositHeadroom: 2533 });
@@ -472,6 +484,57 @@ test('FR-2.8 [decision: deposit fully funded — entire overage becomes credit]'
   assert.ok(split);
   assert.equal(split.depositPortion, 0);
   assert.equal(split.creditAmount, 1267, 'With no headroom, everything above rent is credit');
+});
+
+test('FR-2.8 [regression: two ordinary references can create one period-level overpayment]', () => {
+  const sources = computePeriodReferenceCreditSources({
+    expectedAmount: 1900,
+    references: [
+      { id: 'first-payment', amount: 1900, receivedAt: '2026-05-15T00:00:00Z' },
+      { id: 'second-payment', amount: 1900, receivedAt: '2026-05-30T00:00:00Z' },
+    ],
+  });
+
+  assert.deepEqual(sources, [
+    {
+      id: 'second-payment',
+      amount: 1900,
+      receivedAt: '2026-05-30T00:00:00Z',
+      creditAmount: 1900,
+    },
+  ]);
+});
+
+test('FR-2.8 [audit: partial references preserve the exact source of the period surplus]', () => {
+  const sources = computePeriodReferenceCreditSources({
+    expectedAmount: 1900,
+    references: [
+      { id: 'early-partial', amount: 1000, receivedAt: '2026-05-10T00:00:00Z' },
+      { id: 'later-payment', amount: 1400, receivedAt: '2026-05-20T00:00:00Z' },
+    ],
+  });
+
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].id, 'later-payment');
+  assert.equal(sources[0].creditAmount, 500);
+});
+
+test('FR-2.8 [decision: vacant deposit hold treats the full matched payment as allocatable credit]', () => {
+  const sources = computePeriodReferenceCreditSources({
+    expectedAmount: 0,
+    references: [
+      { id: 'deposit-hold', amount: 1100, receivedAt: '2026-07-18T00:00:00Z' },
+    ],
+  });
+
+  assert.deepEqual(sources, [
+    {
+      id: 'deposit-hold',
+      amount: 1100,
+      receivedAt: '2026-07-18T00:00:00Z',
+      creditAmount: 1100,
+    },
+  ]);
 });
 
 test('FR-2.8 [decision: arrears offered only within the last 3 months]', () => {
@@ -502,6 +565,7 @@ test('FR-2.8 [decision: allocation caps — arrears by outstanding, deposit by h
     depositHeadroom: 5000,
   });
   assert.ok(options);
+  assert.equal(options.current.maxAmount, 500, 'Current-month absorption can use the full extra amount');
   assert.equal(options.arrears[0].maxAmount, 500, 'Arrears allocation capped at credit balance');
   assert.equal(options.advance.maxAmount, 500);
   assert.equal(options.deposit?.maxAmount, 500, 'Deposit allocation capped at credit balance');
@@ -525,8 +589,35 @@ test('FR-2.8 [decision: advance is exactly one month ahead; fully-funded deposit
     depositHeadroom: 0,
   });
   assert.ok(options);
+  assert.equal(options.current.periodStart, '2026-07-01', 'Current-month destination stays on the selected period');
   assert.equal(options.advance.periodStart, '2026-08-01', 'Advance target is the NEXT month only');
   assert.equal(options.deposit, null, 'No deposit destination once fully funded');
+});
+
+test('FR-2.8 [decision: an explicitly allocated overpayment settles the rent portion without hiding the full bank amount]', () => {
+  const pending = computeUnitStatus({
+    occupancyStatus: 'occupied',
+    isBlocked: false,
+    expectedAmount: 1900,
+    creditFromMatchedReferencesAmount: 50,
+    matchedReferences: [{ amount: 1950, signed_off: false }],
+    dueDate: '2026-07-08',
+    now: new Date('2026-07-01T00:00:00Z'),
+  });
+  assert.equal(pending.status, 'pending', 'The R1,950 bank amount stays visible, while R50 allocated away leaves R1,900 rent awaiting sign-off');
+  assert.equal(pending.receivedAmount, 1950);
+
+  const signed = computeUnitStatus({
+    occupancyStatus: 'occupied',
+    isBlocked: false,
+    expectedAmount: 1900,
+    creditFromMatchedReferencesAmount: 50,
+    matchedReferences: [{ amount: 1950, signed_off: true }],
+    dueDate: '2026-07-08',
+    now: new Date('2026-07-01T00:00:00Z'),
+  });
+  assert.equal(signed.status, 'paid', 'After the operator assigns the extra R50, the covered month must settle as paid');
+  assert.equal(signed.signedOffAmount, 1950, 'The collected-money audit keeps the full signed-off bank amount');
 });
 
 test('FR-2.8 [decision: no credit, no options — allocation UI must not render]', () => {

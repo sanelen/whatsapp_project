@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { RefreshCw } from 'lucide-react';
+import { ArrowRight, RefreshCw } from 'lucide-react';
 import type { MonthlyPaymentsDashboardSnapshot } from '@/lib/monthly-payments';
 import { BankImportControls } from './bank-import-controls';
 import { MonthlyPaymentsNavigation } from './monthly-payments-navigation';
@@ -21,6 +21,26 @@ function formatCurrency(amount: number): string {
 
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+function formatBillingWindow(periodKey: string): string {
+  const end = new Date(`${periodKey}-08T00:00:00Z`);
+  const start = new Date(end);
+  start.setUTCMonth(start.getUTCMonth() - 1);
+  start.setUTCDate(9);
+  const formatter = new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+  return `${formatter.format(start)} - ${formatter.format(end)}`;
+}
+
+function coverageLabel(month: MonthlyPaymentsDashboardSnapshot['recentMonths'][number]): string {
+  if (month.expectedAmount > 0 && month.rollingTotal.matchedCollectedAmount > month.expectedAmount) {
+    return `${formatCompactCurrency(month.rollingTotal.matchedCollectedAmount - month.expectedAmount)} above rent`;
+  }
+  return `${formatPercent(month.coverageRate)} matched`;
 }
 
 function progressWidth(value: number): string {
@@ -61,6 +81,11 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
   const selectedLocations = selectedMonth?.locations ?? dashboard.locations;
   const selectedUnmatchedReferenceCount =
     selectedMonth?.unmatchedReferenceCount ?? dashboard.unmatchedReferenceCount;
+  const billingWindowLabel = formatBillingWindow(selectedPeriod);
+  const openWorkCount =
+    selectedUnmatchedReferenceCount
+    + selectedRollingTotal.pendingCount
+    + selectedRollingTotal.dueCount;
   const selectedMonthIndex = dashboard.recentMonths.findIndex((month) => month.key === selectedPeriod);
   const maxMonthCollected = Math.max(0, ...dashboard.recentMonths.map((month) => month.collectedAmount));
   const primaryLocationLink = useMemo(() => {
@@ -106,7 +131,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
         <MonthlyPaymentsNavigation
           active="dashboard"
           operationsHref={primaryLocationLink}
-          referencePoolHref={`/monthly-payments/reference-pool?period=${selectedPeriod}`}
+          referencePoolHref={`/monthly-payments/reconcile?period=${selectedPeriod}`}
           importAuditHref={`/monthly-payments/import-audit?period=${selectedPeriod}`}
         />
 
@@ -122,11 +147,14 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
 
             <div className="mt-2.5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h1 className="hamba-display m-0 text-[34px] leading-tight text-[#09263a]">
-                  This month, at a glance
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#52758a]">
+                  Billing cycle
+                </p>
+                <h1 className="hamba-display mt-1 text-[32px] leading-tight text-[#09263a]">
+                  {selectedMonth ? `${selectedMonth.label} rent cycle` : dashboard.monthLabel}
                 </h1>
-                <p className="mt-1 text-[13px] text-[#8a8578]">
-                  {selectedMonth ? `${selectedMonth.label} ${selectedPeriod.slice(0, 4)}` : dashboard.monthLabel} summary across all locations.
+                <p className="mt-1 text-[12px] text-[#6f6a5f]">
+                  Bank transactions {billingWindowLabel} · all locations
                 </p>
               </div>
 
@@ -169,6 +197,38 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
               />
             ) : null}
 
+            <section className="mt-4 overflow-hidden rounded-[14px] border border-[#cfe3ed] bg-white shadow-[0_10px_28px_rgba(29,78,101,0.05)]">
+              <div className="flex flex-col gap-3 border-b border-[#e5edf1] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#52758a]">Work queue</p>
+                  <p className="mt-0.5 text-[18px] font-bold text-[#142f3f]">
+                    {openWorkCount} open items
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`/monthly-payments/reconcile?period=${selectedPeriod}`}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[#142f3f] px-3.5 text-[11.5px] font-bold text-white"
+                  >
+                    Reconcile payments
+                    <ArrowRight size={14} />
+                  </Link>
+                  <Link
+                    href="/monthly-payments/locations"
+                    className="inline-flex h-9 items-center rounded-full border border-[#cfdde4] bg-white px-3.5 text-[11.5px] font-bold text-[#29495b]"
+                  >
+                    View properties
+                  </Link>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4">
+                <QueueStat label="Unmatched" value={selectedUnmatchedReferenceCount} tone="amber" />
+                <QueueStat label="Awaiting sign-off" value={selectedRollingTotal.pendingCount} tone="blue" />
+                <QueueStat label="Rent due" value={selectedRollingTotal.dueCount} tone="neutral" />
+                <QueueStat label="Overdue" value={selectedRollingTotal.overdueCount} tone="red" isLast />
+              </div>
+            </section>
+
             <section className="mt-3 rounded-[14px] border border-[#cfe3ed] bg-gradient-to-br from-white to-[#f3f9fc] px-3 py-2.5 shadow-[0_10px_28px_rgba(29,78,101,0.06)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -194,13 +254,13 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                 {dashboard.recentMonths.map((month) => {
                   const active = month.key === selectedPeriod;
                   const importedMetric = formatCompactCurrency(month.collectedAmount);
-                  const matchedMetric = formatPercent(month.coverageRate);
+                  const matchedMetric = coverageLabel(month);
                   return (
                     <button
                       key={month.key}
                       type="button"
                       onClick={() => setSelectedPeriod(month.key)}
-                      aria-label={`${month.label} ${month.key.slice(0, 4)}: ${importedMetric} imported, ${matchedMetric} matched`}
+                      aria-label={`${month.label} ${month.key.slice(0, 4)}: ${importedMetric} imported, ${matchedMetric}`}
                       className={`min-w-[70px] flex-1 rounded-xl border p-2 text-left transition ${
                         active
                           ? 'border-[#2386b2] bg-[#eaf6fb] shadow-[0_5px_14px_rgba(11,120,168,0.12)]'
@@ -221,7 +281,7 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
                         {month.label}
                       </p>
                       <p className="mt-0.5 text-[9.5px] font-semibold text-[#3e718b]">{importedMetric} in</p>
-                      <p className="mt-0.5 text-[9px] text-[#708f9f]">{matchedMetric} matched</p>
+                      <p className="mt-0.5 text-[9px] text-[#708f9f]">{matchedMetric}</p>
                     </button>
                   );
                 })}
@@ -369,23 +429,50 @@ export function MonthlyPaymentsHub({ dashboard }: MonthlyPaymentsHubProps) {
             <section className="mt-3 flex flex-wrap items-center justify-between gap-2.5 rounded-[14px] border border-[#e7e3d6] bg-white px-4 py-3">
               <div>
                 <p className="text-[12px] font-bold text-[#1c1a17]">
-                  Reference pool · {selectedUnmatchedReferenceCount} unmatched deposits
+                  Continue reconciliation
                 </p>
                 <p className="mt-0.5 text-[11px] text-[#8a8578]">
-                  Match and sign-off happens inside the property unit table.
+                  {selectedUnmatchedReferenceCount} unmatched payments are waiting for review.
                 </p>
               </div>
               <Link
-                href={primaryLocationLink}
+                href={`/monthly-payments/reconcile?period=${selectedPeriod}`}
                 className="rounded-full bg-[#0369a1] px-4 py-2 text-[12px] font-bold text-white"
               >
-                Open unit table →
+                Open queue →
               </Link>
             </section>
+
           </div>
         </div>
       </div>
     </main>
+  );
+}
+
+function QueueStat({
+  label,
+  value,
+  tone,
+  isLast = false,
+}: {
+  label: string;
+  value: number;
+  tone: 'amber' | 'blue' | 'neutral' | 'red';
+  isLast?: boolean;
+}) {
+  const toneClass = {
+    amber: 'text-[#b45309]',
+    blue: 'text-[#0369a1]',
+    neutral: 'text-[#57534e]',
+    red: 'text-[#b91c1c]',
+  }[tone];
+
+  return (
+    <div className={`border-b border-[#e5edf1] px-4 py-3 sm:border-b-0 ${isLast ? '' : 'sm:border-r'}`}>
+      <p className="text-[9.5px] font-bold uppercase tracking-[0.05em] text-[#8a8578]">{label}</p>
+      <p className={`mt-0.5 text-[18px] font-bold ${toneClass}`}>{value}</p>
+    </div>
   );
 }
 

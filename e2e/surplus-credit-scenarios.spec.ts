@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
- * Flow 05 — Surplus-credit allocation scenarios (FR-2.8, owner rulings 2026-07-03).
+ * Flow 05 — Overpayment allocation scenarios (FR-2.8, owner rulings 2026-07-03/20).
  *
  * HARD RULE: these tests may ONLY touch disposable fixture rooms in a
  * non-production database. The owner removed all TEST ROOM rows from the
@@ -11,14 +11,15 @@ import { test, expect, type Page } from '@playwright/test';
  * Owner wants these runs VISIBLE: use `npm run test:e2e:headed`
  * (non-headless, single worker, slowMo) so the flow can be watched live.
  *
- * The three destinations a surplus credit can be allocated to — always
+ * The four destinations an overpayment can be allocated to — always
  * operator-clicked, never automatic:
- *   1. A short/unpaid month within the LAST 3 MONTHS (arrears).
- *   2. NEXT month's rent (advance, one month ahead).
- *   3. DEPOSIT, only while remaining headroom > 0.
+ *   1. The selected/CURRENT month's rent.
+ *   2. A short/unpaid month within the LAST 3 MONTHS (arrears).
+ *   3. NEXT month's rent (advance, one month ahead).
+ *   4. DEPOSIT, only while remaining headroom > 0.
  *
- * All three are test.fixme until the credit ledger + allocate action ship
- * (queued for the 2026-07-03 nightly build).
+ * All four remain test.fixme until isolated fixture setup and cleanup cover
+ * the real API/ledger mutations without touching tenant records.
  */
 
 const TEST_ROOM = /TEST ROOM [12]/;
@@ -32,6 +33,16 @@ async function openTestRoomDrawer(page: Page) {
 }
 
 test.describe('Flow 05 — surplus credit allocation (non-production fixtures only)', () => {
+  test.fixme(
+    'FR-2.8 [overpayment → current month]: operator can absorb the extra into the selected month',
+    async ({ page }) => {
+      // EXPECT: full bank reference context remains visible; choosing this
+      // month records the allocation and settles the rent row as paid.
+      await openTestRoomDrawer(page);
+      await expect(page.getByText(/This month.*rent/i)).toBeVisible();
+    }
+  );
+
   test.fixme(
     'FR-2.8 [surplus → arrears within 3 months]: credit allocated to a short month clears its outstanding',
     async ({ page }) => {

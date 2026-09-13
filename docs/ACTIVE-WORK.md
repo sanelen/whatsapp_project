@@ -23,6 +23,12 @@ contradict it. This does not authorize a wholesale UI redesign.
 
 ## Approved production baseline
 
+Owner-directed payment release (2026-09-13): full UI/backend deployment requested
+with the known acceptance gaps explicitly retained. See
+[payment release requirements](./requirements/PAYMENT-WORKSPACE-RELEASE.md).
+This does not authorize unattended allocation repair or mark PAY-3 through PAY-6
+complete. Existing Chat requirements and priority remain unchanged.
+
 - Public `/` with Hamba branding, WhatsApp tenant contact, and public legal links.
 - Public `/privacy`, `/terms`, and `/data-deletion`.
 - Google-only staff authentication restricted by `AUTH_ALLOWED_EMAILS`.

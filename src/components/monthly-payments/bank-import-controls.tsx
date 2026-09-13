@@ -26,6 +26,7 @@ type ImportResponse = {
   error?: string;
   data?: Array<{
     mailboxEmail: string;
+    errorMessage?: string;
     billingPeriod: string | null;
     billingWindowStart: string | null;
     billingWindowEnd: string | null;
@@ -49,6 +50,8 @@ type GoogleCloudIntegrationResponse = {
     preferredAuthMode: 'oauth_refresh_token' | 'service_account' | null;
     hasOAuthClient: boolean;
     hasOAuthRefreshToken: boolean;
+    sourceMailboxEmail?: string | null;
+    hasSourceOAuthRefreshToken?: boolean;
     hasServiceAccount: boolean;
   };
 };
@@ -188,6 +191,10 @@ export function BankImportControls({
   const importedPeriodCount = new Set(
     (result?.data ?? []).flatMap((mailbox) => mailbox.importedPeriods ?? [])
   ).size;
+  const mailboxWarnings = (result?.data ?? []).filter((mailbox) => mailbox.errorMessage);
+  const sourceMailboxNeedsReconnect = Boolean(
+    googleCloudStatus?.status?.sourceMailboxEmail && !googleCloudStatus.status.hasSourceOAuthRefreshToken
+  );
 
   return (
     <section className="mt-3 rounded-[14px] border border-[#e7e3d6] bg-white px-3.5 py-3">
@@ -199,6 +206,7 @@ export function BankImportControls({
           <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <select
+                aria-label="Import billing period"
                 value={activePeriod}
                 onChange={(event) => updateSelectedPeriod(event.target.value)}
                 disabled={pullAll || source === 'bank' || isPending}
@@ -277,6 +285,11 @@ export function BankImportControls({
           <MailCheck size={13} />
           {googleCloudStatus?.status?.configured ? 'Google Cloud ready' : 'Google Cloud not configured'}
         </span>
+        {sourceMailboxNeedsReconnect ? (
+          <span className="inline-flex h-7 items-center rounded-full border border-[#f3c56f] bg-[#fff7df] px-2.5 text-[11px] font-bold text-[#9a5b00]">
+            Source Gmail needs reconnect
+          </span>
+        ) : null}
         {!googleCloudStatus?.status?.configured ? (
           <button
             type="button"
@@ -306,19 +319,33 @@ export function BankImportControls({
       {result ? (
         <div
           className={`mt-2 rounded-[10px] border px-3 py-2 text-[11px] ${
-            result.success
+            result.success && mailboxWarnings.length === 0
               ? 'border-[#a7d8c0] bg-[#e8f6ee] text-[#0f7b53]'
+              : result.success
+                ? 'border-[#f3c56f] bg-[#fff7df] text-[#9a5b00]'
               : 'border-[#f3b0b0] bg-[#fbe7e7] text-[#b91c1c]'
           }`}
         >
           {result.success && totals ? (
-            <p>
-              Imported {totals.paymentReferencesCreated} references from {totals.messagesScanned} messages.
-              {totals.ignoredEntries ? ` ${totals.ignoredEntries} entries were ignored.` : ''}
-              {totals.duplicateFiles ? ` ${totals.duplicateFiles} duplicate files were skipped.` : ''}
-              {totals.filesArchivedToDrive ? ` ${totals.filesArchivedToDrive} files archived to Drive.` : ''}
-              {importedPeriodCount ? ` ${importedPeriodCount} billing period${importedPeriodCount === 1 ? '' : 's'} touched.` : ''}
-            </p>
+            <div className="space-y-1">
+              <p>
+                {mailboxWarnings.length ? 'Import completed with mailbox warnings. ' : ''}
+                Imported {totals.paymentReferencesCreated} references from {totals.messagesScanned} messages.
+                {totals.ignoredEntries ? ` ${totals.ignoredEntries} entries were ignored.` : ''}
+                {totals.duplicateFiles ? ` ${totals.duplicateFiles} duplicate files were skipped.` : ''}
+                {totals.filesArchivedToDrive ? ` ${totals.filesArchivedToDrive} files archived to Drive.` : ''}
+                {importedPeriodCount ? ` ${importedPeriodCount} billing period${importedPeriodCount === 1 ? '' : 's'} touched.` : ''}
+              </p>
+              {mailboxWarnings.length ? (
+                <ul className="space-y-0.5">
+                  {mailboxWarnings.map((mailbox) => (
+                    <li key={mailbox.mailboxEmail}>
+                      {mailbox.mailboxEmail}: {mailbox.errorMessage}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
           ) : (
             <p>{result.error ?? 'Import failed'}</p>
           )}

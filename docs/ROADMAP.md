@@ -28,6 +28,11 @@ remain reference material until the owner promotes a specific slice.
 
 ## Execution Status
 
+- Payment workspace release (2026-09-13): owner requested full UI/backend
+  deployment with open financial and security acceptance work retained. See
+  [release requirements](./requirements/PAYMENT-WORKSPACE-RELEASE.md). Next priority
+  is atomic, stay-owned allocation with failure/concurrency tests, not new UI scope.
+
 - Shipped and verified (2026-06-14): property-scoped vector retrieval, real Supabase
   Storage uploads, retrieval metadata plumbing, KB source management, retrieval memory
   modes (`hybrid`/`rolling_window`/`retrieval_only`), graceful handling of corrupt/

@@ -12,7 +12,9 @@ type RoomRuleInput = {
 };
 
 type UpdateRoomPayload = {
+  action?: 'save_current_stay' | 'add_past_stay' | 'save_past_stay' | 'end_current_stay';
   unitId?: string;
+  stayId?: string;
   propertyId: string;
   create?: boolean;
   label: string;
@@ -30,6 +32,10 @@ type UpdateRoomPayload = {
   maxOccupants?: number;
   isAvailable?: boolean;
   features?: string[];
+  tenantDisplayName?: string;
+  startsOn?: string;
+  endsOn?: string;
+  closeReason?: string;
 };
 
 function isMissingRelation(error: { code?: string } | null | undefined) {
@@ -50,6 +56,11 @@ function cleanStringArray(value: unknown) {
   return value
     .map((item) => (typeof item === 'string' ? item.trim() : ''))
     .filter(Boolean);
+}
+
+function cleanDate(value: unknown) {
+  const text = cleanText(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
 }
 
 export async function POST(request: Request) {
@@ -73,7 +84,9 @@ export async function POST(request: Request) {
   }
 
   const payload = {
+    action: body.action,
     unitId: cleanText(body.unitId),
+    stayId: cleanText(body.stayId),
     propertyId: cleanText(body.propertyId),
     create: Boolean(body.create),
     label: cleanText(body.label),
@@ -91,11 +104,11 @@ export async function POST(request: Request) {
     maxOccupants: Math.max(0, Math.round(cleanMoney(body.maxOccupants, 1))),
     isAvailable: Boolean(body.isAvailable),
     features: cleanStringArray(body.features),
+    tenantDisplayName: cleanText(body.tenantDisplayName),
+    startsOn: cleanDate(body.startsOn),
+    endsOn: cleanDate(body.endsOn),
+    closeReason: cleanText(body.closeReason),
   };
-
-  if (!payload.label) {
-    return NextResponse.json({ error: 'Room label is required' }, { status: 400 });
-  }
 
   const admin = getSupabaseAdmin();
   const { data: property, error: propertyError } = await admin
@@ -106,6 +119,210 @@ export async function POST(request: Request) {
 
   if (propertyError || !property) {
     return NextResponse.json({ error: propertyError?.message ?? 'Property not found' }, { status: 404 });
+  }
+
+  if (payload.action) {
+    if (!payload.unitId) {
+      return NextResponse.json({ error: 'unitId is required for stay actions' }, { status: 400 });
+    }
+
+    const { data: unit, error: unitError } = await admin
+      .from('property_units')
+      .select('id,deposit_amount')
+      .eq('id', payload.unitId)
+      .eq('property_id', payload.propertyId)
+      .maybeSingle<{ id: string; deposit_amount: number | string | null }>();
+    if (unitError) {
+      return NextResponse.json({ error: `Failed to load room for stay action: ${unitError.message}` }, { status: 500 });
+    }
+    if (!unit) {
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+    }
+
+    const actor = user.email ?? user.id;
+    const depositTargetAmount = payload.depositAmount || cleanMoney(unit.deposit_amount, 0);
+
+    if (payload.action === 'add_past_stay') {
+      if (!payload.endsOn) {
+        return NextResponse.json({ error: 'Past stay end date is required' }, { status: 400 });
+      }
+      if (payload.startsOn && payload.startsOn > payload.endsOn) {
+        return NextResponse.json(
+          { error: 'Past stay start date must be on or before its end date' },
+          { status: 422 }
+        );
+      }
+      const { error: insertError } = await admin.from('unit_occupancies').insert({
+        organization_id: property.organization_id,
+        property_id: payload.propertyId,
+        unit_id: payload.unitId,
+        status: 'ended',
+        tenant_display_name: payload.tenantDisplayName || 'Previous tenant',
+        contact_primary: payload.contactPrimary,
+        contact_secondary: payload.contactSecondary,
+        starts_on: payload.startsOn,
+        ends_on: payload.endsOn,
+        deposit_target_amount: depositTargetAmount,
+        close_reason: payload.closeReason || 'retrospective stay version',
+        actor,
+        closed_at: new Date().toISOString(),
+      });
+      if (insertError) {
+        if (isMissingRelation(insertError)) {
+          return NextResponse.json({ error: 'Tenant stay versioning is not available in this database yet' }, { status: 409 });
+        }
+        return NextResponse.json({ error: `Failed to add past stay: ${insertError.message}` }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, updatedBy: actor, unitId: payload.unitId });
+    }
+
+    if (payload.action === 'save_past_stay') {
+      if (!payload.stayId) {
+        return NextResponse.json({ error: 'stayId is required to edit a past stay' }, { status: 400 });
+      }
+      if (!payload.endsOn) {
+        return NextResponse.json({ error: 'Past stay end date is required' }, { status: 400 });
+      }
+      if (payload.startsOn && payload.startsOn > payload.endsOn) {
+        return NextResponse.json(
+          { error: 'Past stay start date must be on or before its end date' },
+          { status: 422 }
+        );
+      }
+      const { data: pastStay, error: pastStayError } = await admin
+        .from('unit_occupancies')
+        .select('id,closed_at')
+        .eq('id', payload.stayId)
+        .eq('unit_id', payload.unitId)
+        .eq('property_id', payload.propertyId)
+        .eq('status', 'ended')
+        .maybeSingle<{ id: string; closed_at: string | null }>();
+      if (pastStayError) {
+        return NextResponse.json({ error: `Failed to load past stay: ${pastStayError.message}` }, { status: 500 });
+      }
+      if (!pastStay) {
+        return NextResponse.json({ error: 'Past stay not found for this room' }, { status: 404 });
+      }
+      const { error: updateError } = await admin
+        .from('unit_occupancies')
+        .update({
+          tenant_display_name: payload.tenantDisplayName || 'Previous tenant',
+          contact_primary: payload.contactPrimary,
+          contact_secondary: payload.contactSecondary,
+          starts_on: payload.startsOn,
+          ends_on: payload.endsOn,
+          deposit_target_amount: depositTargetAmount,
+          close_reason: payload.closeReason || 'retrospective stay correction',
+          actor,
+          closed_at: pastStay.closed_at ?? new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', pastStay.id);
+      if (updateError) {
+        return NextResponse.json({ error: `Failed to update past stay: ${updateError.message}` }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, updatedBy: actor, unitId: payload.unitId, stayId: pastStay.id });
+    }
+
+    const { data: currentStay, error: currentError } = await admin
+      .from('unit_occupancies')
+      .select('id')
+      .eq('unit_id', payload.unitId)
+      .is('closed_at', null)
+      .in('status', ['holding', 'active', 'notice'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    if (currentError) {
+      if (isMissingRelation(currentError)) {
+        return NextResponse.json({ error: 'Tenant stay versioning is not available in this database yet' }, { status: 409 });
+      }
+      return NextResponse.json({ error: `Failed to load current stay: ${currentError.message}` }, { status: 500 });
+    }
+
+    if (payload.action === 'save_current_stay') {
+      if (currentStay) {
+        const { error: updateError } = await admin
+          .from('unit_occupancies')
+          .update({
+            status: 'active',
+            tenant_display_name: payload.tenantDisplayName,
+            contact_primary: payload.contactPrimary,
+            contact_secondary: payload.contactSecondary,
+            starts_on: payload.startsOn,
+            ends_on: null,
+            deposit_target_amount: depositTargetAmount,
+            actor,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentStay.id);
+        if (updateError) {
+          return NextResponse.json({ error: `Failed to update current stay: ${updateError.message}` }, { status: 500 });
+        }
+      } else {
+        const { error: insertError } = await admin.from('unit_occupancies').insert({
+          organization_id: property.organization_id,
+          property_id: payload.propertyId,
+          unit_id: payload.unitId,
+          status: 'active',
+          tenant_display_name: payload.tenantDisplayName,
+          contact_primary: payload.contactPrimary,
+          contact_secondary: payload.contactSecondary,
+          starts_on: payload.startsOn,
+          deposit_target_amount: depositTargetAmount,
+          actor,
+        });
+        if (insertError) {
+          return NextResponse.json({ error: `Failed to start current stay: ${insertError.message}` }, { status: 500 });
+        }
+      }
+      return NextResponse.json({ success: true, updatedBy: actor, unitId: payload.unitId });
+    }
+
+    if (payload.action === 'end_current_stay') {
+      if (!payload.endsOn) {
+        return NextResponse.json({ error: 'Current stay end date is required' }, { status: 400 });
+      }
+      if (!currentStay) {
+        return NextResponse.json({ error: 'No current stay is open for this room' }, { status: 404 });
+      }
+      const { data: currentStayDates, error: currentStayDatesError } = await admin
+        .from('unit_occupancies')
+        .select('starts_on')
+        .eq('id', currentStay.id)
+        .maybeSingle<{ starts_on: string | null }>();
+      if (currentStayDatesError) {
+        return NextResponse.json(
+          { error: `Failed to validate current stay dates: ${currentStayDatesError.message}` },
+          { status: 500 }
+        );
+      }
+      if (currentStayDates?.starts_on && currentStayDates.starts_on > payload.endsOn) {
+        return NextResponse.json(
+          { error: 'Tenant version end date must be on or after its billing start date' },
+          { status: 422 }
+        );
+      }
+      const { error: updateError } = await admin
+        .from('unit_occupancies')
+        .update({
+          status: 'ended',
+          ends_on: payload.endsOn,
+          close_reason: payload.closeReason || 'tenant moved out',
+          actor,
+          closed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', currentStay.id);
+      if (updateError) {
+        return NextResponse.json({ error: `Failed to end current stay: ${updateError.message}` }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, updatedBy: actor, unitId: payload.unitId });
+    }
+  }
+
+  if (!payload.label) {
+    return NextResponse.json({ error: 'Room label is required' }, { status: 400 });
   }
 
   const richUpdate = {

@@ -9,6 +9,7 @@ import {
   getBillingPeriodForDate,
   getBillingWindowForPeriod,
   getGmailIntegrationStatus,
+  gmailUserIdForRequest,
   isExcludedBankAccount,
   isExcludedNonRentCredit,
   parseBankStatementCsv,
@@ -60,6 +61,13 @@ test('reserved merchant notifications expose their account before import', () =>
   );
 });
 
+test('cash deposit notifications expose their destination account before import', () => {
+  assert.deepEqual(
+    parseCapitecAccountMovementText('Account : ****7904\nDeposit : R 5,300.00\nATM Details : ATM'),
+    { direction: 'incoming', accountSuffix: '7904' }
+  );
+});
+
 function withGmailEnv<T>(values: Record<string, string | undefined>, run: () => T) {
   const previous = new Map<string, string | undefined>();
   for (const key of Object.keys(values)) {
@@ -105,6 +113,27 @@ test('parseCapitecTransactionText extracts incoming-funds fields from a Capitec 
   assert.equal(parsed?.amount, 2200);
   assert.equal(parsed?.reference, 'S LUTHULI');
   assert.equal(parsed?.availableBalance, 24461.14);
+});
+
+test('parseCapitecTransactionText extracts ATM cash deposits as incoming evidence', () => {
+  const parsed = parseCapitecTransactionText(`
+    Date Time Actioned : 27/03/2026 10:17:49
+    Transaction ID : 001468616
+    Account : ****7904
+    Deposit : R 5,300.00
+    Reference : Cash deposit branch reference
+    Available Balance : R 5,430.03
+    ATM Details : ATM
+  `);
+
+  assert.ok(parsed);
+  assert.equal(parsed?.transactionType, 'Cash Deposit');
+  assert.equal(parsed?.transactionDate, '2026-03-27');
+  assert.equal(parsed?.transactionTime, '10:17:49');
+  assert.equal(parsed?.transactionId, '001468616');
+  assert.equal(parsed?.destinationAccountSuffix, '7904');
+  assert.equal(parsed?.amount, 5300);
+  assert.equal(parsed?.reference, 'Cash deposit branch reference');
 });
 
 test('parseCapitecTransactionText preserves non-incoming transaction types for filtering', () => {
@@ -202,6 +231,25 @@ test('buildGmailSearchQuery combines attachment, subject, label, and after filte
   assert.match(query, /after:2026\/06\/29/);
 });
 
+test('buildGmailSearchQuery defaults blank payment mailboxes to Capitec subjects', () => {
+  const query = buildGmailSearchQuery({ subject_filter: '', label_filter: '', last_synced_at: null });
+  assert.equal(query, 'has:attachment subject:Capitec');
+});
+
+test('Gmail OAuth imports address the granted mailbox as users/me', () => {
+  assert.equal(
+    gmailUserIdForRequest({ authMode: 'oauth_refresh_token' }, 'Source@example.com'),
+    'me'
+  );
+});
+
+test('Gmail service-account imports address the delegated mailbox explicitly', () => {
+  assert.equal(
+    gmailUserIdForRequest({ authMode: 'service_account' }, 'info.hambatrading@gmail.com'),
+    'info.hambatrading%40gmail.com'
+  );
+});
+
 test('getBillingWindowForPeriod maps a month to the 9th-through-8th working window', () => {
   const window = getBillingWindowForPeriod('2026-06');
 
@@ -251,6 +299,44 @@ test('getGmailIntegrationStatus prefers OAuth refresh-token credentials', () => 
   );
 });
 
+test('getGmailIntegrationStatus exposes separate source mailbox readiness', () => {
+  withGmailEnv(
+    {
+      GMAIL_OAUTH_CLIENT_ID: 'client-id',
+      GMAIL_OAUTH_CLIENT_SECRET: 'client-secret',
+      GMAIL_OAUTH_REFRESH_TOKEN: 'destination-refresh-token',
+      BANK_IMPORT_SOURCE_MAILBOX_EMAIL: 'Source@example.com',
+      GMAIL_SOURCE_OAUTH_REFRESH_TOKEN: undefined,
+    },
+    () => {
+      const status = getGmailIntegrationStatus();
+
+      assert.equal(status.configured, true);
+      assert.equal(status.sourceMailboxEmail, 'source@example.com');
+      assert.equal(status.hasSourceOAuthRefreshToken, false);
+    }
+  );
+});
+
+test('getGmailIntegrationStatus suppresses inactive source mailbox warnings', () => {
+  withGmailEnv(
+    {
+      GMAIL_OAUTH_CLIENT_ID: 'client-id',
+      GMAIL_OAUTH_CLIENT_SECRET: 'client-secret',
+      GMAIL_OAUTH_REFRESH_TOKEN: 'destination-refresh-token',
+      BANK_IMPORT_SOURCE_MAILBOX_EMAIL: 'Source@example.com',
+      GMAIL_SOURCE_OAUTH_REFRESH_TOKEN: undefined,
+    },
+    () => {
+      const status = getGmailIntegrationStatus({ activeSourceMailboxEmail: null });
+
+      assert.equal(status.configured, true);
+      assert.equal(status.sourceMailboxEmail, null);
+      assert.equal(status.hasSourceOAuthRefreshToken, false);
+    }
+  );
+});
+
 test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => {
   withGmailEnv(
     {
@@ -261,6 +347,7 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
         buildGmailOAuthConsentUrl({
           redirectUri: 'http://localhost:3001/api/monthly-payments/import/google-cloud',
           state: 'monthly-payments-bank-import',
+          loginHint: 'info.hambatrading@gmail.com',
         })
       );
 
@@ -272,7 +359,8 @@ test('buildGmailOAuthConsentUrl requests Gmail readonly offline consent', () => 
         'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly'
       );
       assert.equal(url.searchParams.get('access_type'), 'offline');
-      assert.equal(url.searchParams.get('prompt'), 'consent');
+      assert.equal(url.searchParams.get('prompt'), 'consent select_account');
+      assert.equal(url.searchParams.get('login_hint'), 'info.hambatrading@gmail.com');
       assert.equal(url.searchParams.get('state'), 'monthly-payments-bank-import');
     }
   );
@@ -576,6 +664,59 @@ test('a property-locked old account ignores generic hints from other properties'
   });
   assert.equal(resolved.propertyId, 'west-rich');
   assert.deepEqual(resolved.unitHints.map((hint) => hint.unitId), ['wr-room-11']);
+});
+
+test('Quarry Heights 6088 account ignores generic Room 6 hints from other properties', () => {
+  const entry = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 18/07/2026 15:56:51
+    Transaction ID : quarry-room-6
+    Account Paid To : ****6088
+    Amount Received : R 1,100.00
+    Reference : QHROOM6 BLOSE
+  `);
+  assert.ok(entry);
+
+  const resolved = resolveImportContext({
+    entry,
+    organizationId: 'org-1',
+    propertyMappings: [{
+      id: 'qh-current', organization_id: 'org-1', property_id: 'quarry',
+      account_number_suffix: '6088', property_name: 'Quarry Heights', is_active: true,
+    }],
+    unitMatchHints: [
+      { id: 'qh-room-6', property_id: 'quarry', unit_id: 'qh-room-6', matcher_type: 'reference_contains', matcher_value: 'Room6,QHROOM6 ,06 QH06', amount_value: null, priority: 10, is_active: true },
+      { id: 'wr-room-6', property_id: 'west-rich', unit_id: 'wr-room-6', matcher_type: 'reference_contains', matcher_value: 'Room6,WRROOM6 ,06 WR06', amount_value: null, priority: 10, is_active: true },
+    ],
+  });
+
+  assert.equal(resolved.propertyId, 'quarry');
+  assert.equal(resolved.matchedBy, 'account_suffix:6088');
+  assert.deepEqual(resolved.unitHints.map((hint) => hint.unitId), ['qh-room-6']);
+});
+
+test('dedicated account resolves plain ROOM 2 without a property prefix despite competing hints', () => {
+  const entry = parseCapitecTransactionText(`
+    Transaction Type : Incoming Funds
+    Date Time Actioned : 01/08/2026 12:00:00
+    Transaction ID : dedicated-generic-room-fixture
+    Account Paid To : ****6088
+    Amount Received : R 2,200.00
+    Reference : ROOM 2
+  `);
+  assert.ok(entry);
+  const common = { matcher_type: 'reference_contains' as const, matcher_value: 'ROOM 2', amount_value: null, priority: 10, is_active: true };
+  const resolved = resolveImportContext({
+    entry, organizationId: 'org-1',
+    propertyMappings: [{ id: 'dedicated-map', organization_id: 'org-1', property_id: 'property-a', account_number_suffix: '6088', property_name: 'Property A', is_active: true }],
+    unitMatchHints: [
+      { ...common, id: 'a-room-2', property_id: 'property-a', unit_id: 'a-room-2' },
+      { ...common, id: 'b-room-2', property_id: 'property-b', unit_id: 'b-room-2' },
+    ],
+  });
+  assert.equal(resolved.propertyId, 'property-a');
+  assert.equal(resolved.matchedBy, 'account_suffix:6088');
+  assert.deepEqual(resolved.unitHints.map((hint) => hint.unitId), ['a-room-2']);
 });
 
 test('mixed legacy account uses an account-scoped amount rule to resolve generic room conflicts', () => {

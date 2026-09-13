@@ -190,7 +190,7 @@ body {
 
 @media (min-width: 1024px) {
   .hamba-payments-nav {
-    width: 248px;
+    width: 224px;
   }
 }
 
@@ -394,7 +394,7 @@ body {
   .hamba-ops__nav {
     display: grid;
     gap: 0.4rem !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     margin-top: 0.75rem !important;
   }
 
@@ -417,6 +417,10 @@ body {
   .hamba-ops__nav > a p {
     font-size: 0.72rem !important;
     line-height: 1rem !important;
+  }
+
+  .hamba-payments-admin {
+    margin-top: 0.5rem !important;
   }
 
   .hamba-ops__quick-links {

@@ -2,6 +2,11 @@ Last updated: 2026-07-18
 
 # Requirements
 
+Payment workspace release update (2026-09-13): see
+[payment requirements and open acceptance gates](./requirements/PAYMENT-WORKSPACE-RELEASE.md).
+The owner requested production deployment; unresolved financial and security
+requirements remain Partial, not Met.
+
 This turns the roadmap phases and the owner's voice-note vision into concrete,
 testable requirements per capability. Pair with [ARCHITECTURE.md](./ARCHITECTURE.md)
 (how it's built) and [ROADMAP.md](./ROADMAP.md) (build order and status). Status

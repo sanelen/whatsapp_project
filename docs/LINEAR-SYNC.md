@@ -2,6 +2,15 @@ Last updated: 2026-07-18
 
 # Linear Sync
 
+## Payment release follow-up (2026-09-13)
+
+Owner requested production deployment of the full payment workspace/backend
+branch after review of unresolved findings. PAY-3 through PAY-6 remain Partial;
+deployment does not prove transactional allocation or import completeness.
+See [public payment release requirements](./requirements/PAYMENT-WORKSPACE-RELEASE.md).
+The Linear connector requires reauthentication; no live issue status was changed.
+Historical operator evidence is retained locally rather than published.
+
 **Live audit completed 2026-07-18.** Requirement validity and nightly eligibility
 are tracked in [`REQUIREMENT-TRACKER.md`](./REQUIREMENT-TRACKER.md). Linear remains
 the work-management view, but its workflow status does not override the product

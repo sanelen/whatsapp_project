@@ -28,7 +28,7 @@ export function LocationsAdmin({ view }: { view: MonthlyPaymentsLocationsView })
     <MonthlyPaymentsShell
       active="locations"
       operationsHref={operationsHref}
-      referencePoolHref={`/monthly-payments/reference-pool?period=${view.periodKey}`}
+      referencePoolHref={`/monthly-payments/reconcile?period=${view.periodKey}`}
     >
       <div className="rounded-[20px] border border-white/80 bg-white/88 p-4 shadow-[0_24px_80px_rgba(15,23,42,0.12)] backdrop-blur sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
