@@ -84,3 +84,11 @@ all Linear issues in the project. It reports and corrects:
 
 Any ambiguous product decision becomes `Needs decision`; the review job must not
 invent the answer.
+
+## Owner-Promoted Import Follow-Up (2026-09-14)
+
+BANK-DRIVE-01 through BANK-DRIVE-06 are **Partial**, local branch only. See
+[Drive-first evidence requirements](requirements/BANK-DRIVE-FIRST.md) for acceptance
+scenarios, remaining checks, dependencies and review date. Linear mapping pending;
+not eligible for unattended financial execution. Do not mark these Met from local
+mock tests or treat the archive change as deployed.

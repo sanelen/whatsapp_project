@@ -7,6 +7,8 @@ import {
   DRIVE_ARCHIVE_ROOT_FOLDER,
   downloadFile as downloadDriveFile,
   ensureFolderPath,
+  generateFileId,
+  findFileByAppProperty,
   listFilesUnder,
   listPdfFilesUnder,
   uploadFile as uploadDriveFile,
@@ -216,8 +218,12 @@ export function canonicalizeBankReference(value: string) {
   ).replace(/[^A-Z0-9]/g, '');
 }
 
-export function isExcludedNonRentCredit(entry: Pick<ParsedCapitecEntry, 'reference'>) {
-  return canonicalizeBankReference(entry.reference) === 'INTERESTRECEIVED';
+export function isExcludedNonRentCredit(entry: Pick<ParsedCapitecEntry, 'reference'> & Partial<Pick<ParsedCapitecEntry, 'transactionType'>>) {
+  const reference = entry.reference.trim();
+  return canonicalizeBankReference(reference) === 'INTERESTRECEIVED'
+    || /\btransfers?\b/i.test(entry.transactionType ?? '')
+    || /^(?:banking\s+app\s+)?transfer(?:\s+(?:received|from|to)\b|$)/i.test(reference)
+    || /:\s*transfer\s*$/i.test(reference);
 }
 
 function escapeRegExp(value: string) {
@@ -438,6 +444,7 @@ export function parseBankStatementCsv(text: string): ParsedCapitecEntry[] {
   const amountHeader = pickHeader(headers, ['amount']);
   const balanceHeader = pickHeader(headers, ['balance']);
   const accountHeader = pickHeader(headers, ['accountpaidto', 'accountnumber', 'account']);
+  const typeHeader = pickHeader(headers, ['transactiontype', 'type']);
 
   if (!dateHeader || !referenceHeader || (!moneyInHeader && !amountHeader)) return [];
 
@@ -463,6 +470,7 @@ export function parseBankStatementCsv(text: string): ParsedCapitecEntry[] {
 
     if (!transactionDate || !normalizeReference(reference) || balanceOnly) continue;
     if (moneyOut > 0 || amount <= 0) continue;
+    if (isExcludedNonRentCredit({ reference, transactionType: value(typeHeader) })) continue;
     if (
       MIXED_LEGACY_BANK_ACCOUNT_SUFFIXES.has(destinationAccountSuffix) &&
       (!/payment\s+received/i.test(reference) || /transfer/i.test(reference) || amount < 1900)
@@ -514,7 +522,7 @@ export function parseBankStatementText(text: string): ParsedCapitecEntry[] {
       .replace(/\s+/g, ' ')
       .trim();
 
-    if (!normalizeReference(reference)) continue;
+    if (!normalizeReference(reference) || isExcludedNonRentCredit({ reference })) continue;
     entries.push(
       buildManualStatementEntry({
         transactionDate,
@@ -1625,9 +1633,8 @@ async function upsertPaymentReferenceFromImport(input: {
   }
 
   if (existingReference) {
-    const { error } = await admin.from('payment_references').update(payload).eq('id', existingReference.id);
-    if (error) throw new Error(`Failed to update payment reference from import: ${error.message}`);
-    return 'updated' as const;
+    // Import retries must not overwrite an operator's property or money decisions.
+    return 'unchanged' as const;
   }
 
   const { error } = await admin.from('payment_references').insert({
@@ -1712,6 +1719,59 @@ async function syncEntryForExistingFile(input: {
   return existingEntry.id;
 }
 
+export async function saveImportEvidenceToDrive(input: {
+  fileId: string;
+  mailboxEmail: string;
+  attachment: ImportedAttachment;
+  propertyMappings: BankImportPropertyMappingRow[];
+  sourceDriveId?: string;
+}): Promise<{ bytes: Buffer; newlyArchived: boolean }> {
+  const admin = getSupabaseAdmin();
+  const { accessToken } = await getGoogleAccessToken(input.mailboxEmail);
+  const readState = async () => {
+    const { data, error } = await admin.from('bank_import_files')
+      .select('drive_file_id,drive_archived_at,drive_folder_path').eq('id', input.fileId).single();
+    if (error || !data) throw new Error('Could not read Drive archive checkpoint');
+    return data;
+  };
+  let state = await readState();
+  let folderPath = state.drive_folder_path as string | null;
+  if (!state.drive_file_id) {
+    const existing = await findFileByAppProperty(accessToken, 'hambaFileId', input.fileId);
+    const proposedId = input.sourceDriveId ?? existing?.id ?? await generateFileId(accessToken);
+    // Compare-and-set: concurrent workers must use the same reserved Drive ID.
+    const { error } = await admin.from('bank_import_files').update({ drive_file_id: proposedId })
+      .eq('id', input.fileId).is('drive_file_id', null);
+    if (error) throw new Error('Could not reserve Drive archive identity');
+    state = await readState();
+  }
+  const driveId = state.drive_file_id as string;
+  if (!driveId) throw new Error('Drive archive identity is missing');
+  if (!state.drive_archived_at && driveId !== input.sourceDriveId) {
+    let parsed: ParsedCapitecEntry | null = null;
+    try { parsed = parseCapitecTransactionText(await extractPdfText(input.attachment.data)); } catch { /* Retain unreadable evidence. */ }
+    const period = parsed?.transactionDate ? getBillingPeriodForDate(parsed.transactionDate) : 'Needs review';
+    const building = parsed?.destinationAccountSuffix
+      ? sanitizeDriveFolderName(input.propertyMappings.find((mapping) => mapping.account_number_suffix === parsed.destinationAccountSuffix)?.property_name ?? 'Unassigned property')
+      : 'Unassigned property';
+    const segments = [DRIVE_ARCHIVE_ROOT_FOLDER, period, building];
+    folderPath = segments.join('/');
+    const parentId = await ensureFolderPath(accessToken, segments);
+    await uploadDriveFile({ accessToken, fileId: driveId, parentId,
+      name: `${parsed?.transactionDate ?? 'date-unknown'}_${input.attachment.fileName}`,
+      mimeType: input.attachment.mimeType || 'application/pdf', data: input.attachment.data,
+      appProperties: { hambaFileId: input.fileId } });
+  }
+  const bytes = await downloadDriveFile(accessToken, driveId);
+  if (!bytes.equals(input.attachment.data)) throw new Error('Drive source does not match the imported attachment');
+  const { error } = await admin.from('bank_import_files').update({
+    drive_archived_at: state.drive_archived_at ?? new Date().toISOString(),
+    drive_folder_path: folderPath,
+  }).eq('id', input.fileId).eq('drive_file_id', driveId);
+  if (error) throw new Error('Drive file saved, but archive checkpoint could not be completed; retry required');
+  return { bytes, newlyArchived: !state.drive_archived_at };
+}
+
 async function processImportedAttachment(input: {
   mailbox: BankImportMailboxRow;
   messageRowId: string;
@@ -1732,25 +1792,7 @@ async function processImportedAttachment(input: {
       entryCreated: false,
       paymentReferenceCreated: false,
       ignored: true,
-    };
-  }
-
-  const extractedText = await extractPdfText(input.attachment.data);
-  const parsedEntry = parseCapitecTransactionText(extractedText);
-  if (
-    !parsedEntry ||
-    !isImportableIncomingCredit(parsedEntry) ||
-    isExcludedBankAccount(parsedEntry) ||
-    isExcludedNonRentCredit(parsedEntry) ||
-    !isEntryInsideBillingWindow(parsedEntry, input.billingWindow) ||
-    !isEntryOnOrBeforeToday(parsedEntry)
-  ) {
-    return {
-      duplicate: false,
-      fileStored: false,
-      entryCreated: false,
-      paymentReferenceCreated: false,
-      ignored: true,
+      fileArchivedToDrive: false,
     };
   }
 
@@ -1774,6 +1816,32 @@ async function processImportedAttachment(input: {
     storagePath,
   });
 
+  // Store evidence before classification, including unsupported and excluded PDFs.
+  // No payment entry is written until its Drive copy has been verified.
+  await uploadImportFile(storagePath, input.attachment.data, input.attachment.mimeType);
+  const archive = await saveImportEvidenceToDrive({
+    fileId: file.id,
+    mailboxEmail: input.mailbox.email_address,
+    attachment: input.attachment,
+    propertyMappings: input.propertyMappings,
+    sourceDriveId: input.sourceFolder === 'drive' ? input.attachment.sourceId : undefined,
+  });
+  let parsedEntry: ParsedCapitecEntry | null = null;
+  try {
+    parsedEntry = parseCapitecTransactionText(await extractPdfText(archive.bytes));
+  } catch {
+    // The retained file remains available for an operator even when parsing fails.
+  }
+  if (!parsedEntry || !isImportableIncomingCredit(parsedEntry)
+    || isExcludedBankAccount(parsedEntry) || isExcludedNonRentCredit(parsedEntry)) {
+    await markBankImportFile({ fileId: file.id, parserStatus: parsedEntry ? 'parsed' : 'unsupported',
+      parserError: parsedEntry ? 'Excluded non-rent transaction; source retained in Drive' : 'Source saved in Drive; payment could not be read' });
+    return { duplicate, fileStored: !duplicate, entryCreated: false, paymentReferenceCreated: false, ignored: true, fileArchivedToDrive: archive.newlyArchived };
+  }
+  if (!isEntryInsideBillingWindow(parsedEntry, input.billingWindow) || !isEntryOnOrBeforeToday(parsedEntry)) {
+    return { duplicate, fileStored: !duplicate, entryCreated: false, paymentReferenceCreated: false, ignored: true, fileArchivedToDrive: archive.newlyArchived };
+  }
+
   if (duplicate) {
     let paymentReferenceCreated = false;
     const integrityError = validateParsedImportEntry(parsedEntry);
@@ -1792,13 +1860,13 @@ async function processImportedAttachment(input: {
         resolved,
       });
 
-      await upsertPaymentReferenceFromImport({
+      const referenceResult = await upsertPaymentReferenceFromImport({
         organizationId: input.organizationId,
         propertyId: resolved.propertyId,
         bankImportEntryId: entryId,
         entry: parsedEntry,
       });
-      paymentReferenceCreated = true;
+      paymentReferenceCreated = referenceResult === 'inserted';
     }
 
     return {
@@ -1807,10 +1875,9 @@ async function processImportedAttachment(input: {
       entryCreated: false,
       paymentReferenceCreated: paymentReferenceCreated || (await backfillPaymentReferenceForExistingFile(file.id)),
       ignored: false,
+      fileArchivedToDrive: archive.newlyArchived,
     };
   }
-
-  await uploadImportFile(storagePath, input.attachment.data, input.attachment.mimeType);
 
   try {
     const integrityError = validateParsedImportEntry(parsedEntry);
@@ -1826,6 +1893,7 @@ async function processImportedAttachment(input: {
         entryCreated: false,
         paymentReferenceCreated: false,
         ignored: true,
+        fileArchivedToDrive: archive.newlyArchived,
       };
     }
 
@@ -1844,13 +1912,13 @@ async function processImportedAttachment(input: {
 
     let paymentReferenceCreated = false;
     if (isImportableIncomingCredit(parsedEntry)) {
-      await upsertPaymentReferenceFromImport({
+      const referenceResult = await upsertPaymentReferenceFromImport({
         organizationId: input.organizationId,
         propertyId: resolved.propertyId,
         bankImportEntryId: entryId,
         entry: parsedEntry,
       });
-      paymentReferenceCreated = true;
+      paymentReferenceCreated = referenceResult === 'inserted';
     }
 
     await markBankImportFile({ fileId: file.id, parserStatus: 'parsed' });
@@ -1861,6 +1929,7 @@ async function processImportedAttachment(input: {
       entryCreated: true,
       paymentReferenceCreated,
       ignored: !paymentReferenceCreated,
+      fileArchivedToDrive: archive.newlyArchived,
     };
   } catch (error) {
     await markBankImportFile({
@@ -1888,7 +1957,7 @@ async function backfillPaymentReferenceForExistingFile(fileId: string) {
   if (isExcludedNonRentCredit(entry)) return false;
   if (EXCLUDED_BANK_ACCOUNT_SUFFIXES.has((entry as BankImportEntryRow & { destination_account_suffix: string }).destination_account_suffix)) return false;
 
-  await upsertPaymentReferenceFromImport({
+  const referenceResult = await upsertPaymentReferenceFromImport({
     organizationId: entry.organization_id,
     propertyId: entry.property_id,
     bankImportEntryId: entry.id,
@@ -1899,7 +1968,7 @@ async function backfillPaymentReferenceForExistingFile(fileId: string) {
       amount: Number(entry.amount),
     },
   });
-  return true;
+  return referenceResult === 'inserted';
 }
 
 async function markBankImportMessageStatus(messageId: string, status: 'processed' | 'failed' | 'ignored', errorMessage = '') {
@@ -2158,49 +2227,8 @@ export async function importMailboxPayments(
         }
       )).messages ?? [];
 
-  // Pre-load message IDs that are safe to skip. A message is only safe to skip
-  // when it is marked "processed" AND its files have produced at least one entry.
-  // Messages processed under a different billing window may have parsed files but
-  // no entries for the current window — those must be re-processed.
-  const admin = getSupabaseAdmin();
-  const { data: processedMessages } = await admin
-    .from('bank_import_messages')
-    .select('id,gmail_message_id,import_status')
-    .eq('mailbox_id', mailbox.id)
-    .in('import_status', ['processed', 'ignored']);
-  const processedRows = processedMessages ?? [];
-  const processedMessageIds = new Set<string>();
-
-  if (processedRows.length > 0) {
-    const msgDbIds = processedRows.map((m) => m.id);
-
-    // Get all files belonging to these messages
-    const { data: msgFiles } = await admin
-      .from('bank_import_files')
-      .select('id, message_id')
-      .in('message_id', msgDbIds);
-
-    // Get all file IDs that have entries
-    const { data: entryRows } = await admin
-      .from('bank_import_entries')
-      .select('file_id');
-    const fileIdsWithEntries = new Set(
-      (entryRows ?? []).map((e: { file_id: string }) => e.file_id)
-    );
-
-    // A message is safe to skip if ANY of its files has an entry
-    const msgDbIdsWithEntries = new Set<string>();
-    for (const f of msgFiles ?? []) {
-      if (fileIdsWithEntries.has(f.id)) {
-        msgDbIdsWithEntries.add(f.message_id);
-      }
-    }
-    for (const row of processedRows) {
-      if (row.import_status === 'ignored' || msgDbIdsWithEntries.has(row.id)) {
-        processedMessageIds.add(row.gmail_message_id);
-      }
-    }
-  }
+  // Inspect every attachment in the bounded Gmail result. Message-level success
+  // cannot prove that every attachment was saved; file hashes handle duplicates.
 
   const summary: BankImportRunSummary = {
     mailboxEmail: mailbox.email_address,
@@ -2226,12 +2254,6 @@ export async function importMailboxPayments(
   for (let offset = 0; offset < listedMessages.length; offset += messageBatchSize) {
     await Promise.all(listedMessages.slice(offset, offset + messageBatchSize).map(async (listedMessage) => {
       summary.messagesScanned += 1;
-
-      // Fix 1: Skip messages already fully processed — no Gmail API fetch needed
-      if (processedMessageIds.has(listedMessage.id)) {
-        summary.messagesSkipped += 1;
-        return;
-      }
 
       let messageRowId: string | null = null;
       try {
@@ -2275,6 +2297,7 @@ export async function importMailboxPayments(
             if (result.entryCreated) summary.entriesCreated += 1;
             if (result.paymentReferenceCreated) summary.paymentReferencesCreated += 1;
             if (result.ignored) summary.ignoredEntries += 1;
+            if (result.fileArchivedToDrive) summary.filesArchivedToDrive += 1;
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             attachmentErrors.push(errorMessage);
@@ -2283,10 +2306,9 @@ export async function importMailboxPayments(
         }
 
         if (attachmentErrors.length > 0) summary.failedMessages += 1;
-        const allAttachmentsFailed = attachments.length > 0 && attachmentErrors.length === attachments.length;
         await markBankImportMessageStatus(
           messageRow.id,
-          allAttachmentsFailed ? 'ignored' : 'processed',
+          attachmentErrors.length > 0 ? 'failed' : 'processed',
           attachmentErrors.join(' | ')
         );
       } catch (error) {
@@ -2302,7 +2324,7 @@ export async function importMailboxPayments(
     }));
   }
 
-  await updateMailboxSyncState(mailbox.id);
+  if (summary.failedMessages === 0) await updateMailboxSyncState(mailbox.id);
   return summary;
 }
 
@@ -2353,14 +2375,8 @@ export async function importDrivePayments(
   };
 
   for (const driveFile of driveFiles) {
-    // Fix 2: Skip files archived by our own app — they're already in the DB
-    if (driveFile.appProperties?.hambaFileId) {
-      summary.messagesSkipped += 1;
-      continue;
-    }
-
     // Fix 3: Skip Drive files already fully processed
-    if (processedDriveIds.has(`drive:${driveFile.id}`)) {
+    if (!driveFile.appProperties?.hambaFileId && processedDriveIds.has(`drive:${driveFile.id}`)) {
       summary.messagesSkipped += 1;
       continue;
     }
@@ -2395,8 +2411,9 @@ export async function importDrivePayments(
       if (result.entryCreated) summary.entriesCreated += 1;
       if (result.paymentReferenceCreated) summary.paymentReferencesCreated += 1;
       if (result.ignored) summary.ignoredEntries += 1;
+      if (result.fileArchivedToDrive) summary.filesArchivedToDrive += 1;
 
-      await markBankImportMessageStatus(messageRow.id, 'processed');
+      await markBankImportMessageStatus(messageRow.id, result.ignored ? 'ignored' : 'processed');
     } catch (error) {
       summary.failedMessages += 1;
       console.error(
@@ -2574,11 +2591,8 @@ export type DriveArchiveSummary = {
   foldersTouched: string[];
 };
 
-// Mirror every stored bank-import PDF that is not yet on Drive into
-// `Hamba Trading Bank Files / <billing-period> / <building>`. Each file is
-// re-parsed for its own transaction date + account (the entry↔file link is
-// lossy), so foldering is robust. Idempotent: a file with drive_file_id set is
-// skipped, so re-running never re-uploads.
+// Replay incomplete archive checkpoints, including unsupported evidence, into
+// Hamba Trading Bank Files / <billing-period> / <building>.
 export async function archiveStoredFilesToDrive(options?: {
   mailboxEmail?: string;
 }): Promise<DriveArchiveSummary> {
@@ -2586,28 +2600,26 @@ export async function archiveStoredFilesToDrive(options?: {
   const mailbox =
     mailboxes.find((m) =>
       options?.mailboxEmail ? m.email_address.toLowerCase() === options.mailboxEmail.toLowerCase() : true
-    ) ?? mailboxes[0];
+    );
   if (!mailbox?.organization_id) {
     return { filesArchived: 0, filesSkipped: 0, foldersTouched: [] };
   }
 
-  const { accessToken } = await getGoogleAccessToken(mailbox.email_address);
   const { propertyMappings } = await loadImportLookups(mailbox.organization_id);
-  const suffixToBuilding = new Map<string, string>();
-  for (const mapping of propertyMappings) {
-    suffixToBuilding.set(mapping.account_number_suffix, mapping.property_name);
-  }
 
   const admin = getSupabaseAdmin();
+  const { data: archiveMessages, error: archiveMessagesError } = await admin.from('bank_import_messages')
+    .select('id').eq('mailbox_id', mailbox.id);
+  if (archiveMessagesError) throw new Error('Failed to load mailbox archive scope');
+  if (!archiveMessages?.length) return { filesArchived: 0, filesSkipped: 0, foldersTouched: [] };
   const { data: files, error } = await admin
     .from('bank_import_files')
     .select('id,file_name,mime_type,storage_path,parser_status,raw_metadata')
-    .eq('parser_status', 'parsed')
-    .is('drive_file_id', null);
+    .in('message_id', archiveMessages.map((message) => message.id))
+    .in('parser_status', ['pending', 'parsed', 'unsupported', 'failed'])
+    .is('drive_archived_at', null);
   if (error) throw new Error(`Failed to load files for Drive archive: ${error.message}`);
 
-  await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER]);
-  const folderCache = new Map<string, string>();
   const foldersTouched = new Set<string>();
   let filesArchived = 0;
   let filesSkipped = 0;
@@ -2643,75 +2655,13 @@ export async function archiveStoredFilesToDrive(options?: {
         continue;
       }
 
-      let period = 'Uncategorized';
-      let building = 'Uncategorized';
-      const isUnsupported = file.parser_status === 'unsupported' || file.parser_status === 'failed';
-      const isPdf =
-        file.mime_type === 'application/pdf' || file.file_name.toLowerCase().endsWith('.pdf');
-      if (isPdf) {
-        try {
-          const extractedText = await extractPdfText(bytes);
-          const parsed = parseCapitecTransactionText(extractedText);
-          if (file.raw_metadata?.source === 'bank' && (!parsed || !isImportableIncomingCredit(parsed))) {
-            filesSkipped += 1;
-            continue;
-          }
-          if (parsed && isExcludedBankAccount(parsed)) {
-            filesSkipped += 1;
-            continue;
-          }
-          if (parsed?.transactionDate) period = getBillingPeriodForDate(parsed.transactionDate);
-          if (isUnsupported) {
-            // Unsupported/failed files go to a dedicated folder for human review.
-            // We still try to extract a date for period grouping, but the building
-            // is always "Unsupported" so they're easy to find.
-            building = 'Unsupported';
-            // If the parser couldn't get a date, try a raw date extraction as fallback
-            if (period === 'Uncategorized' && !parsed?.transactionDate) {
-              const rawDate = extractedText.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-              if (rawDate) {
-                const { transactionDate } = parseSouthAfricanDateTime(`${rawDate[0]} 00:00:00`);
-                if (transactionDate) period = getBillingPeriodForDate(transactionDate);
-              }
-            }
-          } else if (parsed?.destinationAccountSuffix) {
-            building = sanitizeDriveFolderName(
-              suffixToBuilding.get(parsed.destinationAccountSuffix) ?? 'Uncategorized'
-            );
-          }
-        } catch {
-          // unparseable -> use Unsupported if status says so, otherwise Uncategorized
-          if (isUnsupported) building = 'Unsupported';
-        }
-      } else if (isUnsupported) {
-        building = 'Unsupported';
-      }
-
-      const folderPath = `${DRIVE_ARCHIVE_ROOT_FOLDER}/${period}/${building}`;
-      let folderId = folderCache.get(folderPath);
-      if (!folderId) {
-        folderId = await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER, period, building]);
-        folderCache.set(folderPath, folderId);
-      }
-      foldersTouched.add(`${period}/${building}`);
-
-      const driveFileId = await uploadDriveFile({
-        accessToken,
-        parentId: folderId,
-        name: file.file_name,
-        mimeType: file.mime_type || 'application/pdf',
-        data: bytes,
-        appProperties: { hambaFileId: file.id },
-      });
-
-      await admin
-        .from('bank_import_files')
-        .update({
-          drive_file_id: driveFileId,
-          drive_folder_path: folderPath,
-          drive_archived_at: new Date().toISOString(),
-        })
-        .eq('id', file.id);
+      await saveImportEvidenceToDrive({ fileId: file.id, mailboxEmail: mailbox.email_address,
+        propertyMappings, attachment: { fileName: file.file_name, mimeType: file.mime_type || 'application/pdf',
+          data: bytes, source: 'gmail', sourceId: file.id } });
+      const { data: saved, error: savedError } = await admin.from('bank_import_files')
+        .select('drive_folder_path').eq('id', file.id).single();
+      if (savedError) throw new Error('Could not verify archive folder checkpoint');
+      if (saved?.drive_folder_path) foldersTouched.add(saved.drive_folder_path);
       filesArchived += 1;
     } catch (archiveError) {
       filesSkipped += 1;
@@ -2800,7 +2750,9 @@ export async function runBankImport(input?: {
 
   // Drive can import archived PDFs back into the canonical bank-import pipeline,
   // then mirror any newly stored files into the same folder tree.
-  if (source === 'drive' || source === 'both') {
+  const needsDriveFallback = source === 'gmail' && !input?.gmailMessageIds?.length
+    && results.every((result) => result.paymentReferencesCreated === 0);
+  if (source === 'drive' || source === 'both' || needsDriveFallback) {
     for (const mailbox of targetMailboxes) {
       results.push(await importDrivePayments(mailbox, { billingWindow }));
     }

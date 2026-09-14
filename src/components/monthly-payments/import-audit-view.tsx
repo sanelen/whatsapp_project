@@ -211,9 +211,9 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
                     {file.driveFolderPath ? <span className="truncate">Folder: {file.driveFolderPath}</span> : null}
                     {file.sourceUrl ? (
                       <a href={file.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-sky-700">
-                        Open source <ExternalLink size={12} />
+                        View source file in Drive <ExternalLink size={12} />
                       </a>
-                    ) : null}
+                    ) : <span className="font-semibold text-amber-800">Not yet saved to Drive</span>}
                   </div>
 
                   {file.transactions.length === 0 ? (

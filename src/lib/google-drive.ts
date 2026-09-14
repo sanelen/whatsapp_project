@@ -104,6 +104,7 @@ export async function findFileByAppProperty(
 }
 
 export async function uploadFile(input: {
+  fileId?: string;
   accessToken: string;
   parentId: string;
   name: string;
@@ -113,6 +114,7 @@ export async function uploadFile(input: {
 }): Promise<string> {
   const boundary = `hamba-${Math.random().toString(36).slice(2)}`;
   const metadata = {
+    ...(input.fileId ? { id: input.fileId } : {}),
     name: input.name,
     parents: [input.parentId],
     appProperties: input.appProperties ?? {},
@@ -135,11 +137,25 @@ export async function uploadFile(input: {
     body,
   });
   if (!response.ok) {
+    // A reserved ID makes retries safe after a timeout or concurrent upload.
+    if (response.status === 409 && input.fileId) {
+      const existing = await downloadFile(input.accessToken, input.fileId);
+      if (!existing.equals(input.data)) throw new Error('Drive retry found different file contents');
+      return input.fileId;
+    }
     const detail = await response.text().catch(() => '');
     throw new Error(`Drive upload failed (${response.status}): ${detail.slice(0, 300)}`);
   }
   const created = (await response.json()) as { id: string };
   return created.id;
+}
+
+export async function generateFileId(accessToken: string): Promise<string> {
+  const result = await driveRequest<{ ids: string[] }>(accessToken, 'files/generateIds', {
+    searchParams: { count: '1', space: 'drive', type: 'files' },
+  });
+  if (!result.ids?.[0]) throw new Error('Drive did not return a file ID');
+  return result.ids[0];
 }
 
 export async function listFilesUnder(

@@ -120,6 +120,12 @@ function sourceDriveFileId(messageRaw: unknown) {
   return typeof id === 'string' && id ? id : null;
 }
 
+export function importAuditDriveUrl(archivedFileId: unknown, messageRaw: unknown): string | null {
+  const id = typeof archivedFileId === 'string' && archivedFileId.trim()
+    ? archivedFileId.trim() : sourceDriveFileId(messageRaw);
+  return id ? `https://drive.google.com/file/d/${encodeURIComponent(id)}/view` : null;
+}
+
 export function classifyImportAuditReview(input: {
   parserStatus: string;
   importStatus: string;
@@ -285,13 +291,7 @@ export async function readImportAuditView(input?: {
   const auditFiles: ImportAuditFile[] = files.map((file) => {
     const message = messagesById.get(file.message_id as string);
     const source = classifySource(file.raw_metadata, message?.raw_metadata);
-    const messageDriveId = sourceDriveFileId(message?.raw_metadata);
-    const gmailMessageId = message?.gmail_message_id as string | undefined;
-    const sourceUrl = messageDriveId
-      ? `https://drive.google.com/open?id=${encodeURIComponent(messageDriveId)}`
-      : source === 'gmail' && gmailMessageId
-        ? `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(gmailMessageId)}`
-        : null;
+    const sourceUrl = importAuditDriveUrl(file.drive_archived_at ? file.drive_file_id : null, message?.raw_metadata);
     const transactions: ImportAuditTransaction[] = (entriesByFile.get(file.id as string) ?? []).map((entry) => {
       const reference = referenceByEntryId.get(entry.id as string);
       const unitId = reference?.unit_id as string | null | undefined;
@@ -341,7 +341,7 @@ export async function readImportAuditView(input?: {
       receivedAt: (message?.received_at as string | null | undefined) ?? null,
       parserStatus,
       importStatus,
-      driveStatus: source === 'drive-bank' ? 'in-drive' : file.drive_file_id ? 'archived' : 'not-archived',
+      driveStatus: file.drive_file_id && file.drive_archived_at ? 'archived' : sourceUrl ? 'in-drive' : 'not-archived',
       databaseStatus,
       matchStatus,
       reviewStatus: review.status,

@@ -1,13 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ReferencePoolViewRow, UnitTableRow } from './monthly-payments';
-import { filterUnitRows, filterUnmatchedRows, summarizeUnmatchedLocations } from './reconciliation-workspace';
+import { filterUnitRows, filterUnmatchedRows, summarizeUnmatchedLocations, summarizeUnmatchedAccounts } from './reconciliation-workspace';
 
 const reference = (overrides: Partial<ReferencePoolViewRow> = {}): ReferencePoolViewRow => ({
   id: 'ref-1', reference: 'ROOM 2', amount: 2200, transactionDate: '2026-08-01',
   billingPeriodKey: '2026-08', billingPeriodLabel: 'August 2026', isCarryover: false,
   accountSuffix: '6088', payerName: null, propertyId: null, propertyName: 'Property A',
   signedOff: false, ...overrides,
+});
+
+test('account filters retain individual receipts, unknown accounts and older periods', () => {
+  const rows = [reference(), reference({ id: 'old', isCarryover: true, billingPeriodKey: '2026-02' }), reference({ id: 'other', accountSuffix: '7904' }), reference({ id: 'unknown', accountSuffix: null })];
+  assert.deepEqual(filterUnmatchedRows(rows, '', 'all', '6088').map((row) => row.id), ['ref-1', 'old']);
+  assert.equal(filterUnmatchedRows(rows, '', 'all', 'unknown')[0].id, 'unknown');
+  assert.equal(filterUnmatchedRows(rows, '2026-02', 'unassigned', '6088')[0].id, 'old');
+  assert.equal(filterUnmatchedRows(rows, '', 'all').length, 4);
+  assert.equal(summarizeUnmatchedAccounts(rows).find((account) => account.id === '6088')?.count, 2);
+  assert.equal(summarizeUnmatchedAccounts(rows).reduce((sum, account) => sum + account.amount, 0), 8800);
+  assert.equal(rows[1].billingPeriodKey, '2026-02');
 });
 
 test('unassigned import metadata never becomes a confirmed property bucket', () => {
