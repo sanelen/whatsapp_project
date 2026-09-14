@@ -15,6 +15,8 @@ test('Meta can reach only the exact WhatsApp webhook API without a user session'
   assert.equal(isPublicPath('/go/quarry-heights-photos'), true);
   assert.equal(isPublicPath('/staff'), false);
   assert.equal(isPublicPath('/api/whatsapp/webhook'), true);
+  assert.equal(isPublicPath('/api/whatsapp/flows/waiting-list'), true);
+  assert.equal(isPublicPath('/api/whatsapp/flows/waiting-list/anything'), false);
   assert.equal(isPublicPath('/api/whatsapp/webhook/anything'), false);
   assert.equal(isPublicPath('/api/chat'), false);
 });
