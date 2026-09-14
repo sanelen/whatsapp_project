@@ -229,6 +229,7 @@ Approved product boundary after the 2026-07-17 production review:
 
 ## 3. WhatsApp Tenant Assistant (active foundation)
 
+- FR-3.8 **Owner-directed release in progress (2026-09-15)** — Native property waiting-list form with name, surname, property and WhatsApp number; approved exterior photos/areas and no prices. Write interest to the existing Waiting list Sheet before confirming. Normalize phone and deduplicate active interest by phone plus property, independently of names; retries must be idempotent. Preserve input on failure. Publication requires verified primary-number app/key/endpoint configuration and an actual native submission. No phone migration, unrelated bot changes or unsolicited customer messages. See the [review](./reviews/full-flow-review-2026-09-15-property-waiting-list.md) and [connection runbook](./flows/README.md).
 - FR-3.1 **Active** — Build the provider-neutral assistant into the current `src/`
   application. Do not restore the removed nested Twilio platform as the production
   architecture.

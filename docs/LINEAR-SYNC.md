@@ -44,6 +44,7 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 
 ## Gaps not yet ticketed
 
+- Native property waiting-list connection (FR-3.8), promoted by the owner on 2026-09-15. Backend Sheet persistence and retry/business dedupe verified; deployment and actual native launch acceptance are tracked in [the flow review](./reviews/full-flow-review-2026-09-15-property-waiting-list.md). No live Linear ticket has been created for this slice.
 These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ticket:
 
 - Security baseline and recurring exposure review — **shipped 2026-07-13, no known

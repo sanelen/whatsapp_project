@@ -20,7 +20,8 @@ export function isPublicPath(pathname: string): boolean {
     pathname.startsWith('/go/') ||
     pathname.startsWith('/marketing/') ||
     pathname.startsWith('/auth/') ||
-    pathname === '/api/whatsapp/webhook'
+    pathname === '/api/whatsapp/webhook' ||
+    pathname === '/api/whatsapp/flows/waiting-list'
   );
 }
 
