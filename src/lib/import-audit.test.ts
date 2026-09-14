@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyImportAuditReview } from './import-audit';
+import { classifyImportAuditReview, importAuditDriveUrl } from './import-audit';
+
+test('source links open the archived Drive file, never Gmail', () => {
+  assert.equal(importAuditDriveUrl('archive-id', { driveFileId: 'original-id' }), 'https://drive.google.com/file/d/archive-id/view');
+  assert.equal(importAuditDriveUrl(null, { driveFileId: 'original-id' }), 'https://drive.google.com/file/d/original-id/view');
+  assert.equal(importAuditDriveUrl(null, { gmail_message_id: 'email-id' }), null);
+  assert.equal(importAuditDriveUrl(null, null), null);
+});
 
 test('retains unsupported Capitec PDFs for operator review', () => {
   assert.deepEqual(

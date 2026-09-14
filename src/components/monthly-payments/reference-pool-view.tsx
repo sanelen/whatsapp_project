@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, ArrowRight, Search } from 'lucide-react';
 import type { ReferencePoolView, ReferencePoolViewRow } from '@/lib/monthly-payments';
-import { filterUnmatchedRows } from '@/lib/reconciliation-workspace';
+import { filterUnmatchedRows, summarizeUnmatchedAccounts, summarizeUnmatchedLocations } from '@/lib/reconciliation-workspace';
 import { MonthlyPaymentsShell } from './monthly-payments-shell';
 
 const tableColumns =
@@ -115,7 +115,11 @@ function ReferenceRows({
 export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
   const [query, setQuery] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('all');
-  const filteredRows = filterUnmatchedRows(view.rows, query, propertyFilter);
+  const [accountFilter, setAccountFilter] = useState('all');
+  const accounts = summarizeUnmatchedAccounts(view.rows);
+  const filteredRows = filterUnmatchedRows(view.rows, query, propertyFilter, accountFilter);
+  const filteredLocations = summarizeUnmatchedLocations(filteredRows);
+  const hasFilters = Boolean(query || propertyFilter !== 'all' || accountFilter !== 'all');
   const previousHref = `/monthly-payments/reconcile?period=${shiftPeriod(view.periodKey, -1)}`;
   const nextHref = `/monthly-payments/reconcile?period=${shiftPeriod(view.periodKey, 1)}`;
   const currentRows = filteredRows.filter((row) => !row.isCarryover);
@@ -175,6 +179,13 @@ export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
+            <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold text-slate-600">
+              Bank account
+              <select aria-label="Bank account" value={accountFilter} onChange={(event) => { setAccountFilter(event.target.value); setPropertyFilter('all'); }} className="max-w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                <option value="all">All accounts ({view.rows.length})</option>
+                {accounts.map((account) => <option key={account.id} value={account.id}>{account.id === 'unknown' ? 'Unknown account' : `Ending ${account.id}`} ({account.count})</option>)}
+              </select>
+            </label>
             <label className="flex min-w-0 grow basis-[240px] items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2">
               <Search size={16} aria-hidden="true" />
               <input aria-label="Search unmatched payments" placeholder="Reference, payer, account or period" value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm" />
@@ -213,14 +224,14 @@ export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
                     <span>Location</span>
                     <span className="text-right">Review</span>
                   </div>
-                  <ReferenceRows rows={currentRows} emptyMessage={query || propertyFilter !== 'all' ? 'No current payments match these filters.' : 'No unmatched deposits in this billing window.'} />
+                  <ReferenceRows rows={currentRows} emptyMessage={hasFilters ? 'No current payments match these filters.' : 'No unmatched deposits in this billing window.'} />
                 </div>
               </section>
 
               <section className="overflow-hidden rounded-[16px] border border-amber-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                 <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-3.5 py-3">
                   <div>
-                    <p className="text-[12px] font-semibold text-amber-950">Previous unmatched</p>
+                    <p className="text-[12px] font-semibold text-amber-950">Still waiting from earlier months</p>
                     <p className="mt-0.5 text-[11.5px] text-amber-800">
                       Review in the original billing period.
                     </p>
@@ -230,26 +241,26 @@ export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
                   </span>
                 </div>
                 <div className="overflow-x-auto">
-                  <ReferenceRows rows={carryoverRows} emptyMessage={query || propertyFilter !== 'all' ? 'No older payments match these filters.' : 'No older unmatched deposits.'} />
+                  <ReferenceRows rows={carryoverRows} emptyMessage={hasFilters ? 'No older payments match these filters.' : 'No older unmatched deposits.'} />
                 </div>
               </section>
             </div>
 
             <aside className="rounded-[16px] border border-slate-200 bg-white p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                All unmatched payments
+                {hasFilters ? 'Filtered unmatched payments' : 'All unmatched payments'}
               </p>
-              <p className="mt-2 text-[22px] font-semibold text-slate-950">{view.totals.unmatchedCount}</p>
+              <p className="mt-2 text-[22px] font-semibold text-slate-950">{filteredRows.length}</p>
               <p className="mt-0.5 text-[12.5px] leading-5 text-slate-500">
                 payments needing review
               </p>
-              <p className="mt-2.5 text-[15px] font-semibold text-slate-800">{formatRand(view.totals.totalAmount)}</p>
+              <p className="mt-2.5 text-[15px] font-semibold text-slate-800">{formatRand(filteredRows.reduce((sum, row) => sum + row.amount, 0))}</p>
 
               <div className="mt-3 space-y-2">
-                {view.locations.length === 0 ? (
+                {filteredLocations.length === 0 ? (
                   <p className="text-[13px] text-slate-500">No location buckets yet.</p>
                 ) : (
-                  view.locations.map((location) => (
+                  filteredLocations.map((location) => (
                     <div key={location.id} className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
                       <div className="flex items-start justify-between gap-3">
                         <div>

@@ -206,6 +206,27 @@ test('mixed legacy account accepts payment receipts but rejects transfers and sm
   assert.equal(rows[0].reference, 'Payment Received: Qhroom10');
 });
 
+test('transfer exclusion applies across accounts and preserves tenant EFT payments', () => {
+  assert.equal(isExcludedNonRentCredit({ reference: 'ROOM 1', transactionType: 'Transfer' }), true);
+  assert.equal(isExcludedNonRentCredit({ reference: 'Banking App Transfer Received from Property B: Transfer' }), true);
+  assert.equal(isExcludedNonRentCredit({ reference: 'Payment Received: ROOM 1' }), false);
+  assert.equal(isExcludedNonRentCredit({ reference: 'EFT rent transfer Room 1' }), false);
+  const csv = parseBankStatementCsv([
+    'Account,Transaction Date,Description,Amount,Transaction Type',
+    '0000002815,2026-07-22,Banking App Transfer Received from Property B: Transfer,2000.00,',
+    '0000009613,2026-07-22,Property A,200.00,Transfer',
+    '0000002815,2026-07-22,Payment Received: Room 1,2200.00,Incoming Funds',
+  ].join('\n'));
+  assert.equal(csv.length, 1);
+  assert.equal(csv[0].amount, 2200);
+  const text = parseBankStatementText([
+    '22/07/2026 Banking App Transfer Received from Property B: Transfer R 2,000.00 R 10,000.00',
+    '22/07/2026 EFT CREDIT Room 1 R 2,200.00 R 12,200.00',
+  ].join('\n'));
+  assert.equal(text.length, 1);
+  assert.equal(text[0].reference, 'Room 1');
+});
+
 test('parseBankStatementText extracts statement-like PDF credit lines', () => {
   const parsed = parseBankStatementText(`
     22/07/2026 EFT CREDIT QHRoom14 R 2,200.00 R 10,000.00

@@ -54,6 +54,13 @@ try {
     });
     await page.goto(`${origin}/reconcile`);
     await page.getByRole('heading', { name: 'Payments needing a unit' }).waitFor();
+    await page.getByLabel('Bank account', { exact: true }).selectOption('0000');
+    await page.getByRole('status').filter({ hasText: '2 of 3 payments' }).waitFor();
+    await page.getByText('Still waiting from earlier months', { exact: true }).waitFor();
+    assert.equal(await page.getByText('OTHER ROOM', { exact: true }).count(), 0);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: `${output}/account-filter-${viewport.width}.png`, fullPage: true });
+    await page.getByLabel('Bank account', { exact: true }).selectOption('all');
     await page.getByLabel('Search unmatched payments').fill('room 2');
     await page.getByRole('status').filter({ hasText: '2 of 3 payments' }).waitFor();
     await page.getByLabel('Payment property').selectOption('unassigned');
@@ -105,8 +112,18 @@ try {
     assert.deepEqual(imports.at(-1), { billingPeriod: '2026-07', pullAll: true, source: 'both', maxMessages: 100 });
     await page.screenshot({ path: `${output}/dashboard-imports-${viewport.width}.png`, fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.goto(`${origin}/audit`);
+    await page.getByRole('heading', { name: 'Source-to-database validation' }).waitFor();
+    for (const details of await page.locator('details').all()) {
+      if (await details.getAttribute('open') === null) await details.locator('summary').click();
+    }
+    assert.equal(await page.getByRole('link', { name: 'View source file in Drive' }).getAttribute('href'), 'https://drive.google.com/file/d/test-file/view');
+    await page.getByText('Not yet saved to Drive', { exact: true }).waitFor();
+    assert.equal(await page.locator('a[href*="mail.google.com"]').count(), 0);
+    await page.screenshot({ path: `${output}/drive-source-${viewport.width}.png`, fullPage: true });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.deepEqual(errors, []);
-    results.push({ viewport, passed: ['unassigned search', 'original-period carryover', 'unit filters and history navigation', 'top-of-dashboard import controls and request contract'], browserErrors: errors });
+    results.push({ viewport, passed: ['account filter and carryover', 'unassigned search', 'original-period carryover', 'unit filters and history navigation', 'top-of-dashboard import controls and request contract', 'Drive source and pending archive states'], browserErrors: errors });
     await page.close();
   }
   await writeFile(`${output}/results.json`, JSON.stringify(results, null, 2));

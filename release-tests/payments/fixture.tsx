@@ -4,6 +4,8 @@ import { UnitsTable } from '../../src/components/monthly-payments/units-table';
 import { MonthlyPaymentsHub } from '../../src/components/monthly-payments/monthly-payments-hub';
 import type { MonthlyPaymentsDashboardSnapshot, PropertyUnitsTable, ReferencePoolView, UnitTableRow } from '../../src/lib/monthly-payments';
 import { summarizeUnmatchedLocations } from '../../src/lib/reconciliation-workspace';
+import { ImportAuditViewPanel } from '../../src/components/monthly-payments/import-audit-view';
+import type { ImportAuditView } from '../../src/lib/import-audit';
 
 const makeRoom = (overrides: Partial<UnitTableRow>): UnitTableRow => ({
   unitId: 'room-1', label: 'Room 1', occupancy: 'occupied', contacts: ['Test tenant'],
@@ -61,7 +63,21 @@ const dashboard: MonthlyPaymentsDashboardSnapshot = {
   })),
 };
 
+const audit: ImportAuditView = {
+  periodKey: '2026-07', periodLabel: 'July 2026', billingWindowLabel: '09 Jun - 08 Jul', sourceFilter: 'all', reconciliation: null,
+  totals: { files: 2, parsedFiles: 0, transactions: 0, amount: 0, stored: 0, matched: 0, signedOff: 0, unmatched: 0, incomplete: 0, unprocessed: 2 },
+  files: [true, false].map((saved, index) => ({
+    id: `test-source-${index}`, fileName: saved ? 'saved-evidence.pdf' : 'pending-evidence.pdf', mimeType: 'application/pdf',
+    source: 'gmail', sourceLabel: 'Gmail PDF', sourceUrl: saved ? 'https://drive.google.com/file/d/test-file/view' : null,
+    importedAt: '2026-09-01T10:00:00Z', receivedAt: null, parserStatus: 'unsupported', importStatus: 'processed',
+    driveStatus: saved ? 'archived' : 'not-archived', databaseStatus: 'missing', matchStatus: 'not-applicable',
+    reviewStatus: 'unsupported', reviewReason: 'Source requires review', needsOperatorReview: true,
+    driveFolderPath: saved ? 'Hamba Trading Bank Files/2026-07/Test property' : null, hashShort: 'test-hash', transactions: [],
+  })),
+};
+
 createRoot(document.getElementById('root')!).render(
+  location.pathname === '/audit' ? <ImportAuditViewPanel view={audit} /> :
   location.pathname === '/dashboard' ? <MonthlyPaymentsHub dashboard={dashboard} /> :
   location.pathname === '/units'
     ? <UnitsTable table={table} initialUnitId="room-1" />

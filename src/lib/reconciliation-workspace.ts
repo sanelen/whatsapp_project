@@ -21,14 +21,28 @@ export function filterUnitRows<T extends SearchableUnit>(rows: T[], query: strin
   });
 }
 
-export function filterUnmatchedRows(rows: ReferencePoolViewRow[], query: string, propertyId: string): ReferencePoolViewRow[] {
+export function filterUnmatchedRows(rows: ReferencePoolViewRow[], query: string, propertyId: string, account = 'all'): ReferencePoolViewRow[] {
   const needle = searchable(query);
   return rows.filter((row) => {
     const propertyMatches = propertyId === 'all'
       || (propertyId === 'unassigned' ? !row.propertyId : row.propertyId === propertyId);
     const text = [row.reference, row.payerName, row.accountSuffix, row.propertyName, row.billingPeriodKey].filter(Boolean).join(' ');
-    return propertyMatches && searchable(text).includes(needle);
+    const accountMatches = account === 'all' || (row.accountSuffix?.trim() || 'unknown') === account;
+    return accountMatches && propertyMatches && searchable(text).includes(needle);
   });
+}
+
+export function summarizeUnmatchedAccounts(rows: ReferencePoolViewRow[]) {
+  const accounts = new Map<string, { id: string; count: number; amount: number }>();
+  for (const row of rows) {
+    // Suffixes are review filters, never proof of property or tenant ownership.
+    const id = row.accountSuffix?.trim() || 'unknown';
+    const summary = accounts.get(id) ?? { id, count: 0, amount: 0 };
+    summary.count += 1;
+    summary.amount = Math.round((summary.amount + row.amount) * 100) / 100;
+    accounts.set(id, summary);
+  }
+  return [...accounts.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export function summarizeUnmatchedLocations(rows: ReferencePoolViewRow[]) {
