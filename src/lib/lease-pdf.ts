@@ -232,6 +232,37 @@ export function extractLeaseText(leaseElement: HTMLElement): string {
     .join('\n');
 }
 
+// Slices are cut a couple of CSS pixels above each section, inside the white
+// margin between sections, so a section's own top border can never land on the
+// bottom edge of the slice above it (which showed up as a stray hairline).
+const SLICE_CUT_OFFSET_PX = 2;
+
+export type CanvasSlice = { startY: number; height: number };
+
+/**
+ * Converts section breakpoints (CSS px) into canvas pixel slices. Adjacent
+ * slices share exactly one integer boundary, so no pixel row is drawn twice.
+ */
+export function computeCanvasSlices(
+  breakpoints: number[],
+  canvasScaleY: number,
+  canvasHeight: number
+): CanvasSlice[] {
+  const lastIndex = breakpoints.length - 1;
+  const bounds = breakpoints.map((breakpoint, index) => {
+    if (index === 0) return 0;
+    if (index === lastIndex) return canvasHeight;
+    return Math.min(canvasHeight, Math.max(0, Math.round((breakpoint - SLICE_CUT_OFFSET_PX) * canvasScaleY)));
+  });
+
+  const slices: CanvasSlice[] = [];
+  for (let index = 0; index < lastIndex; index += 1) {
+    const height = bounds[index + 1] - bounds[index];
+    if (height > 2) slices.push({ startY: bounds[index], height });
+  }
+  return slices;
+}
+
 async function createStyledLeasePdfBytes(leaseElement: HTMLElement): Promise<Uint8Array> {
   const { default: html2canvas } = await import('html2canvas');
   const captureLease = leaseElement.cloneNode(true) as HTMLElement;
@@ -257,7 +288,9 @@ async function createStyledLeasePdfBytes(leaseElement: HTMLElement): Promise<Uin
     const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))];
     for (const element of elements) {
       const classes = element.className;
-      element.style.color = '#44403c';
+      // Inherit from the (already normalised) parent so text without its own
+      // colour class keeps the colour it has on screen, e.g. white on the badge.
+      element.style.color = element === root ? '#44403c' : element.parentElement?.style.color || '#44403c';
       element.style.backgroundColor = 'transparent';
       element.style.borderColor = '#e7e5e4';
       element.style.outlineColor = '#a8a29e';
@@ -346,12 +379,7 @@ async function createStyledLeasePdfBytes(leaseElement: HTMLElement): Promise<Uin
 
   nextPage();
 
-  for (let index = 0; index < breakpoints.length - 1; index += 1) {
-    const startY = Math.max(0, Math.floor(breakpoints[index] * canvasScaleY));
-    const endY = Math.min(canvas.height, Math.ceil(breakpoints[index + 1] * canvasScaleY));
-    const segmentHeight = endY - startY;
-    if (segmentHeight <= 2) continue;
-
+  for (const { startY, height: segmentHeight } of computeCanvasSlices(breakpoints, canvasScaleY, canvas.height)) {
     const segmentCanvas = window.document.createElement('canvas');
     segmentCanvas.width = canvas.width;
     segmentCanvas.height = segmentHeight;
