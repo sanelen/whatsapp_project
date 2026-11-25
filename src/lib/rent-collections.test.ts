@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildMonthlyPaymentsDashboardSnapshot, type MonthlyPaymentsPeriodRow, type MonthlyPaymentsReferenceRow } from './monthly-payments';
-import { calculateRentBalance, sumRentBalances, buildManagementSummary, managementWhatsAppUrl } from './rent-collections';
+import { calculateRentBalance, sumRentBalances, buildManagementSummary, managementWhatsAppUrl, rentToReceive, overdueRentToReceive } from './rent-collections';
 import { readAllRows } from './read-all-rows';
 
 const now = new Date('2026-11-25T12:00:00Z');
@@ -32,6 +32,31 @@ test('due dates are inclusive calendar dates in South Africa; unknown due date i
   assert.equal(onDueDay.overdueAmount, 0);
   assert.equal(nextDay.overdueAmount, 2200);
   assert.equal(calculateRentBalance({ period: { ...period, due_date: null }, references: [], now }).overdueAmount, 0);
+});
+test('follow-up excludes received pending rent without confirming it, including partial receipts and credit', () => {
+  const full = calculateRentBalance({ period, references: [ref('full', 2200, false)], now });
+  const partial = calculateRentBalance({ period, references: [ref('part', 700, false)], creditApplied: 200, now });
+  assert.equal(full.confirmedAmount, 0);
+  assert.equal(full.outstandingAmount, 2200);
+  assert.equal(rentToReceive(full), 0);
+  assert.equal(overdueRentToReceive(full), 0);
+  assert.equal(rentToReceive(partial), 1300);
+  assert.equal(overdueRentToReceive(partial), 1300);
+  const total = sumRentBalances([full, partial]);
+  assert.equal(total.unreceivedAmount, 1300);
+  assert.equal(total.overdueUnreceivedAmount, 1300);
+  assert.equal(total.expectedAmount, total.confirmedAmount + total.pendingAmount + total.unreceivedAmount);
+  assert.equal(total.expectedAmount, total.confirmedAmount + total.outstandingAmount);
+  const withDeposit = calculateRentBalance({ period, references: [ref('deposit', 2200, false)], depositByReference: { deposit: 500 }, now });
+  assert.equal(rentToReceive(withDeposit), 500, 'A deposit cannot cover rent');
+  const message = buildManagementSummary({ building: 'Test', period: '2026-11', rooms: [
+    { ...full, unitId: 'full', propertyId: 'p', propertyName: 'Test', label: 'Full pending', periodId: 'nov' },
+    { ...partial, unitId: 'part', propertyId: 'p', propertyName: 'Test', label: 'Part pending', periodId: 'nov' },
+  ], dashboardUrl: 'https://example.com', asOf: '2026-11-25', unmatchedCount: 0, unmatchedAmount: 0 });
+  assert.doesNotMatch(message, /Full pending:/);
+  assert.match(message, /Part pending:.*1[\s\u00a0]300/);
+  assert.match(message, /Overdue:.*1 room/);
+  assert.match(message, /Awaiting sign-off:.*2[\s\u00a0]900/);
 });
 test('credit-only settlement is confirmed, missing charges are flagged and vacant/blocked charges stay zero', () => {
   assert.equal(calculateRentBalance({ period, references: [], creditApplied: 200, now }).outstandingAmount, 2000);

@@ -53,7 +53,7 @@ const collectionRooms: CollectionRoom[] = [
   { unitId: 'room-1', label: 'Room 1', propertyId: 'test-property', propertyName: 'Test property', periodId: 'period-1',
     ...calculateRentBalance({ period: { expected_amount: 2200, is_blocked: false, due_date: '2026-08-08' }, references: [{ id: 'ref-1', amount: 1000, signed_off: true }], now: new Date('2026-08-20') }) },
   { unitId: 'room-2', label: 'Room 2', propertyId: 'test-property', propertyName: 'Test property', periodId: 'period-2',
-    ...calculateRentBalance({ period: { expected_amount: 2200, is_blocked: false, due_date: '2026-08-25' }, references: [{ id: 'ref-2', amount: 2200, signed_off: false }], now: new Date('2026-08-20') }) },
+    ...calculateRentBalance({ period: { expected_amount: 2200, is_blocked: false, due_date: '2026-08-08' }, references: [{ id: 'ref-2', amount: 2200, signed_off: false }], now: new Date('2026-08-20') }) },
   { unitId: 'room-3', label: 'Room 3', propertyId: 'other-property', propertyName: 'Other property', periodId: 'period-3',
     ...calculateRentBalance({ period: { expected_amount: 1800, is_blocked: false, due_date: '2026-08-08' }, references: [{ id: 'ref-3', amount: 3000, signed_off: true }], now: new Date('2026-08-20') }) },
 ];
