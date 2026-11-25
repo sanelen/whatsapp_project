@@ -10,6 +10,13 @@ export type AlertImportRun = {
   id: string; organization_id: string; status: string; trigger: string; completed_at: string | null;
   reconciliation_summary: { failedOrPendingFiles?: number; entriesMissingPaymentReference?: number; periodsChecked?: string[] } | null;
 };
+/** Dedicated credentials prevent management alerts from using another channel's sender. */
+export function managementAlertTransportConfig(env: Record<string, string | undefined>) {
+  const token = env.RENT_MANAGEMENT_ALERT_META_ACCESS_TOKEN?.trim();
+  const phoneId = env.RENT_MANAGEMENT_ALERT_META_PHONE_NUMBER_ID?.trim();
+  return token && phoneId ? { token, phoneId } : null;
+}
+
 export function managementAlertConfig(env: Record<string, string | undefined>): ManagementAlertConfig | null {
   if (env.RENT_MANAGEMENT_ALERTS_ENABLED !== 'true' || env.RENT_MANAGEMENT_ALERT_OPT_IN !== 'true') return null;
   const recipient = env.RENT_MANAGEMENT_ALERT_RECIPIENT?.trim() ?? '';

@@ -1,10 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { managementAlertConfig, deliverManagementAlert, type AlertDependencies, type AlertImportRun } from './rent-management-alerts';
+import { managementAlertConfig, managementAlertTransportConfig, deliverManagementAlert, type AlertDependencies, type AlertImportRun } from './rent-management-alerts';
 import { buildMonthlyPaymentsDashboardSnapshot } from './monthly-payments';
 
 const env = { RENT_MANAGEMENT_ALERTS_ENABLED: 'true', RENT_MANAGEMENT_ALERT_OPT_IN: 'true', RENT_MANAGEMENT_ALERT_RECIPIENT: '27820000000', RENT_MANAGEMENT_ALERT_ORGANIZATION_ID: 'org', RENT_MANAGEMENT_ALERT_PROPERTY_ID: 'p', RENT_MANAGEMENT_ALERT_TEMPLATE: 'rent_collections', APP_URL: 'https://example.com' };
 const now = new Date('2026-11-07T12:00:00Z');
+test('alerts require their own complete credential pair and never borrow shared chat credentials', () => {
+  const shared = { META_WHATSAPP_ACCESS_TOKEN: 'chat-token', META_WHATSAPP_PHONE_NUMBER_ID: 'chat-sender' };
+  assert.equal(managementAlertTransportConfig(shared), null);
+  assert.equal(managementAlertTransportConfig({ ...shared, RENT_MANAGEMENT_ALERT_META_ACCESS_TOKEN: 'alert-token' }), null);
+  assert.equal(managementAlertTransportConfig({ ...shared, RENT_MANAGEMENT_ALERT_META_PHONE_NUMBER_ID: 'alert-sender' }), null);
+  assert.deepEqual(managementAlertTransportConfig({ ...shared, RENT_MANAGEMENT_ALERT_META_ACCESS_TOKEN: ' alert-token ', RENT_MANAGEMENT_ALERT_META_PHONE_NUMBER_ID: ' alert-sender ' }), { token: 'alert-token', phoneId: 'alert-sender' });
+});
 const run: AlertImportRun = { id: 'run-1', organization_id: 'org', status: 'completed', trigger: 'scheduled', completed_at: now.toISOString(), reconciliation_summary: { failedOrPendingFiles: 0, entriesMissingPaymentReference: 0, periodsChecked: ['2026-11'] } };
 function harness(count = 2) {
   let reads = 0;

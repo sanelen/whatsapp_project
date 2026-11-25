@@ -201,7 +201,7 @@ management template. The template has the expected four body parameters.
 
 The owner's updated storage requirement supersedes earlier local-token plans:
 **persist the new Meta token only in Vercel**, as the server-only
-`META_WHATSAPP_ACCESS_TOKEN` Secret/sensitive production variable for the existing
+`RENT_MANAGEMENT_ALERT_META_ACCESS_TOKEN` Secret/sensitive production variable for the existing
 `whatsapp-project`. A transient local copy made before that correction was removed
 while preserving other routing settings. An exact-token scan found zero matches
 in tracked working files, task artifacts and all 2,398 Git objects (including
@@ -231,3 +231,19 @@ account. The immediate remaining action is the owner's personal sign-in to the
 Vercel account that owns `whatsapp-project`, followed by saving the token as the
 production Secret. The Meta page remains available for direct private transfer;
 no secret should be pasted into chat. No new local credential file is retained.
+
+
+### Production credential and authorized release follow-up
+
+The correct signed-in Vercel account now exposes `whatsapp-project`; its project
+ID matches the local Vercel link and its repository is `sanelen/whatsapp_project`.
+The tested token is saved as a Production **Secret** named
+`RENT_MANAGEMENT_ALERT_META_ACCESS_TOKEN`. Only name/type/scope were verified.
+The existing shared `META_WHATSAPP_ACCESS_TOKEN` was preserved for other integrations.
+The alert transport now requires its own complete token/sender pair, including
+`RENT_MANAGEMENT_ALERT_META_PHONE_NUMBER_ID`, with no shared-credential fallback.
+The token is not retained in local config or Git. The setup test must not be repeated.
+
+The owner subsequently authorized releasing Rent Follow-up and redeploying
+production. That supersedes the earlier branch-only/no-deployment instruction.
+Automatic financial alerts remain disabled until ledger/import prerequisites pass.

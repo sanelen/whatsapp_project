@@ -172,3 +172,20 @@ storage is still blocked: connector project access is 403, team authorization is
 404, and the browser's previous account had no project/team access. GitHub sign-in
 to Vercel is prepared for the owner to authenticate. Automatic delivery remains
 disabled, and no reviewed dashboard code has been deployed.
+
+
+## Authorized production release follow-up
+
+The owner explicitly authorized production release after the delivered setup test.
+Vercel account access is resolved: the matching project now holds the tested token
+as Production Secret `RENT_MANAGEMENT_ALERT_META_ACCESS_TOKEN`. The shared chat
+credential was not replaced. The alert service uses dedicated token/sender keys
+and fails closed when either is missing. Automatic alerts remain disabled while
+the ledger and clean scheduled import are outstanding. No duplicate test is sent.
+The prior full-flow review covers the unchanged UI; the release delta is isolated
+transport configuration and the tested duplicate-file checkpoint repair.
+
+Release validation: 295 tests pass, type checking and focused lint pass, production
+build and all six generated-artifact checks pass. Vercel Production now explicitly
+sets `RENT_MANAGEMENT_ALERTS_ENABLED=false`. Token metadata was verified without
+revealing its value. This releases the dashboard independently of alert activation.

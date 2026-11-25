@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from './supabase';
 import { readMonthlyPaymentsDashboard } from './monthly-payments';
 import { getChannelRuntimeConfig } from './channels/runtime-config';
-import { deliverManagementAlert, managementAlertConfig, type AlertImportRun } from './rent-management-alerts';
+import { deliverManagementAlert, managementAlertConfig, managementAlertTransportConfig, type AlertImportRun } from './rent-management-alerts';
 
 export async function sendPostImportManagementAlert(runId: string) {
   const config = managementAlertConfig(process.env);
@@ -9,9 +9,9 @@ export async function sendPostImportManagementAlert(runId: string) {
   const runtime = getChannelRuntimeConfig();
   const meta = runtime.providers.meta;
   if (!meta.enabled || !meta.outboundEnabled) return { state: 'transport_disabled', sent: 0 };
-  const token = process.env.META_WHATSAPP_ACCESS_TOKEN?.trim();
-  const phoneId = process.env.META_WHATSAPP_PHONE_NUMBER_ID?.trim();
-  if (!token || !phoneId) return { state: 'transport_unconfigured', sent: 0 };
+  const transport = managementAlertTransportConfig(process.env);
+  if (!transport) return { state: 'transport_unconfigured', sent: 0 };
+  const { token, phoneId } = transport;
   const admin = getSupabaseAdmin();
   const { data: run, error } = await admin.from('bank_import_reconciliation_runs')
     .select('id,organization_id,status,trigger,completed_at,reconciliation_summary').eq('id', runId).single();
