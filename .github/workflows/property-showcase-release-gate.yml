@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: property-showcase-${{ github.event_name }}-${{ github.ref || github.event.deployment.id }}
-  cancel-in-progress: true
+  group: property-showcase-${{ github.event_name }}-${{ github.event.deployment.id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'deployment_status' }}
 
 jobs:
   contract-and-build:
@@ -70,7 +70,6 @@ jobs:
           RELEASE_BASE_URL: ${{ github.event.deployment_status.environment_url }}
           RELEASE_EXPECTED_SHA: ${{ github.event.deployment.sha }}
           RELEASE_CHECK_SECRET: ${{ secrets.RELEASE_CHECK_SECRET }}
-          RELEASE_PROPERTY_ID: ${{ vars.RELEASE_PROPERTY_ID }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
