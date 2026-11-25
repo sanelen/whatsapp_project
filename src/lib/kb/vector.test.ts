@@ -33,3 +33,32 @@ test('chunkKnowledgeText supports markdown heading chunking', () => {
   assert.match(chunks[0], /Title/);
   assert.match(chunks.join('\n'), /Next/);
 });
+
+test('empty vector matches remain healthy, while an RPC failure is reported despite text fallback', async (t) => {
+  const { createClient } = await import('@supabase/supabase-js');
+  const { retrieveKnowledge } = await import('./vector');
+  let failRpc = false;
+  let embeddingCalls = 0;
+  let rpcCalls = 0;
+  t.mock.method(console, 'error', () => {});
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.hostname === 'api.openai.com') {
+      embeddingCalls++;
+      return Response.json({ data: [{ embedding: Array(768).fill(0) }] });
+    }
+    if (url.pathname.endsWith('/rpc/match_knowledge_vectors')) {
+      rpcCalls++;
+      return failRpc ? Response.json({ message: 'RPC unavailable' }, { status: 503 }) : Response.json([]);
+    }
+    if (url.pathname.endsWith('/knowledge_base')) return Response.json([]);
+    throw new Error(`Unexpected test request ${url.pathname}`);
+  });
+  const admin = createClient('https://vector-test.invalid', 'test-key');
+  const input = { admin, apiKey: 'test-key', query: 'No matching evidence', propertyId: 'property-1' };
+  assert.deepEqual(await retrieveKnowledge(input), { retrieval: 'text', vectorStatus: 'available', results: [] });
+  failRpc = true;
+  assert.deepEqual(await retrieveKnowledge(input), { retrieval: 'text', vectorStatus: 'unavailable', results: [] });
+  assert.equal(embeddingCalls, 2);
+  assert.equal(rpcCalls, 2);
+});

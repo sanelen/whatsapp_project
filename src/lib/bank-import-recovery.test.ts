@@ -60,6 +60,7 @@ test('duplicate recovery completes a pending checkpoint only after receipt verif
         if (method === 'PATCH') { Object.assign(file, JSON.parse(String(init?.body))); return new Response(null, { status: 204 }); }
         assert.equal(method, 'GET');
         if (url.searchParams.get('select')?.includes('bank_import_entries')) {
+          assert.ok(url.searchParams.get('select')?.includes('payment_references!payment_references_bank_import_entry_id_fkey(id)'), 'Disambiguate the receipt backlink from the entry pointer');
           const checkpoint = { ...file, gmail_attachment_id: 'attachment-known', bank_import_entries: [{ id: entry.id, payment_references: failReferenceRead ? [] : [{ id: reference.id }] }] };
           return Response.json(url.searchParams.has('message_id') ? (directAttachment && file.parser_status === 'parsed' ? [checkpoint] : []) : checkpoint);
         }

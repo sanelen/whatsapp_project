@@ -32,7 +32,10 @@ async function request(item, extra = {}) {
   const response = await fetch(url, { method: item.method, headers, body, redirect: 'manual', signal: AbortSignal.timeout(item.budgetMs) });
   const text = await response.text();
   const durationMs = Math.round(performance.now() - start);
-  if (response.status !== item.status) throw new Error(`HTTP ${response.status}; expected ${item.status}; ${durationMs}ms`);
+  if (response.status !== item.status) {
+    const detail = item.route === '/api/release-check' ? JSON.parse(text).error : undefined;
+    throw new Error(`HTTP ${response.status}; expected ${item.status}; ${durationMs}ms${detail ? `; ${detail}` : ''}`);
+  }
   if (response.headers.get('x-hamba-revision') !== needed('RELEASE_EXPECTED_SHA')) throw new Error('Response revision differs from deployment SHA');
   if (durationMs > item.budgetMs) throw new Error(`Duration ${durationMs}ms exceeds ${item.budgetMs}ms`);
   let data; try { data = JSON.parse(text); } catch { data = text; }
@@ -47,7 +50,7 @@ async function terminal(runId) {
     const { data } = await request({ method: 'GET', route: '/api/monthly-payments/import', status: 200, budgetMs: 15000 }, { query: `?runId=${encodeURIComponent(runId)}` });
     polls++;
     if (!data.queued) {
-      if (!data.success || data.status !== 'completed' || !data.verification?.dryRun) throw new Error('Import verification did not complete successfully');
+      if (!data.success || data.status !== 'completed' || !data.verification?.dryRun) throw new Error(`Import verification ${data.status}; failed steps: ${(data.persistedSteps ?? []).filter(step => step.status === 'failed').map(step => step.name.split('//').at(-1)).join(', ') || 'unknown'}`);
       const proof = data.verification;
       if (!(proof.sources?.mailboxes > 0) || !(proof.evidence?.verified > 0) || !Number.isInteger(proof.matching?.scanned) || proof.matching?.failed !== 0) throw new Error('Import source/evidence/matching verification is incomplete');
       if (!['verifySources', 'verifyEvidence', 'verifyMatching'].every(name => data.persistedSteps?.some(step => step.name.endsWith(name) && step.status === 'completed'))) throw new Error('Durable source, evidence and matching steps were not persisted');
@@ -92,7 +95,9 @@ for (const item of [...cases].sort((a, b) => Number(a.mode === 'job-status') - N
     if (item.route === '/api/chat' && !/^READY[.!]?$/i.test(data.reply?.trim())) throw new Error('Chat did not return the requested READY response');
     if (item.route === '/api/kb/search') {
       check.retrieval = data.retrieval;
-      if (data.retrieval !== 'vector') throw new Error('Embedding/vector integration degraded to text fallback');
+      check.vectorStatus = data.vectorStatus;
+      if (data.vectorStatus !== 'available') throw new Error('Embedding/vector integration failed; text fallback is active');
+      if (data.retrieval === 'text') check.limitation = 'Embedding and vector RPC succeeded with no semantic matches; scoped text fallback was used.';
     }
     if (item.route === '/api/monthly-payments/import/google-cloud' && !data.status.configured) throw new Error('Google Cloud is not configured');
     check.status = 'passed';

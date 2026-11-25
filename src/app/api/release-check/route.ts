@@ -16,8 +16,8 @@ export async function POST(request: Request) {
       if (!propertyId) throw new Error('RELEASE_TEST_PROPERTY_ID is missing');
       return NextResponse.json({ success: true, propertyId });
     }
-    const origin = new URL(process.env.APP_URL || 'https://hambatrading.co.za');
-    if (origin.protocol !== 'https:' || origin.hostname !== 'hambatrading.co.za') throw new Error('Production probe origin is not configured');
+    // Fixed production origin: generic APP_URL may name a preview or legacy host.
+    const origin = new URL('https://hambatrading.co.za');
     const target = new URL(body.probe === 'flow-ping' ? '/api/whatsapp/flows/waiting-list' : '/api/whatsapp/webhook', origin);
     let method = 'POST';
     let payload: string | undefined;

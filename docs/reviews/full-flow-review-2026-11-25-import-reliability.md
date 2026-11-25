@@ -40,3 +40,11 @@ QA proves local recovery/control behavior while production credentials and durat
 4. Retain historical archive gaps and broader mutation E2E acceptance as separate work; no bulk historical moves/reimports are included.
 
 Screenshot checklist: desktop/mobile import results; refresh-resumed job; stale-job error; follow-up totals/drilldown/draft; audit source link and missing-archive state. Captures are local under `.runtime/payment-workspace-check/` and contain isolated fixtures.
+
+## Production acceptance corrections
+
+PR #21 deployed as `895b95d`. Live authenticated checks caught an ambiguous PostgREST receipt relationship shared by the evidence probe and incremental checkpoints. Name the `payment_references_bank_import_entry_id_fkey` backlink explicitly; the reverse entry pointer must not be selected implicitly. Recovery regression checks now assert that relationship.
+
+Provider probes use the fixed production origin instead of generic `APP_URL`, which currently names another host. Vector integration health is reported separately from retrieval choice: a successful embedding and RPC with zero semantic matches is healthy, while provider/RPC failures still fail the gate. An isolated test covers both outcomes. No ledger or messaging mutation is added.
+
+The immutable Vercel deployment hostname is protected by Vercel SSO. The release gate uses the public production custom domain and retains strict deployment-SHA validation; a later deployment replacing the alias fails the older check rather than falsely validating it. Production acceptance remains pending the correction release and December manual import.
