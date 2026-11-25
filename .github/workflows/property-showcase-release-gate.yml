@@ -67,7 +67,7 @@ jobs:
       - run: npm ci
       - run: npm run test:release:api
         env:
-          RELEASE_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+          RELEASE_BASE_URL: https://hambatrading.co.za
           RELEASE_EXPECTED_SHA: ${{ github.event.deployment.sha }}
           RELEASE_CHECK_SECRET: ${{ secrets.RELEASE_CHECK_SECRET }}
       - uses: actions/upload-artifact@v4
