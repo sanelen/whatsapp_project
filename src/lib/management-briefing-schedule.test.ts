@@ -77,6 +77,7 @@ test('a clean completed manual Both import satisfies today; failed, partial or u
   const now = new Date('2026-12-01T05:30:00Z');
   const run = { startedAt: '2026-12-01T04:30:00Z', status: 'completed', summary: { autoMatch: { failed: 0 }, currentCycle: { sources: ['gmail', 'drive'], period: '2026-12', checkedAt: '2026-12-01T04:32:00Z', failedOrPendingFiles: 0, entriesMissingPaymentReference: 0 } } };
   assert.equal(scheduledImportDue(run, now, '2026-12'), false);
+  assert.equal(scheduledImportDue({ ...run, startedAt: '2026-11-30T21:59:00Z' }, now, '2026-12'), false, 'An import completed today counts even when it started yesterday');
   for (const status of ['running', 'failed', 'partial']) assert.equal(scheduledImportDue({ ...run, status }, now, '2026-12'), true);
   assert.equal(scheduledImportDue({ ...run, summary: { ...run.summary, autoMatch: undefined } }, now, '2026-12'), true);
   assert.equal(scheduledImportDue(run, now, '2027-01'), true);
