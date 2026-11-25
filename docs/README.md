@@ -81,6 +81,8 @@ is now the visual reference, not a separate competing plan.
 
 ## Full flow reviews
 
+- [Rent Follow-up — 2026-11-25](./reviews/full-flow-review-2026-11-25-rent-follow-up.md) — additive page, reconciled rent balances, compact WhatsApp draft, disabled alert hook, and branch-only validation.
+
 - [Property waiting list — 2026-09-15](./reviews/full-flow-review-2026-09-15-property-waiting-list.md) — native form, atomic Sheet persistence, duplicate protection, and live launch acceptance.
 - [Guided property assistant and authoritative content — 2026-07-25](./reviews/full-flow-review-2026-07-25-guided-property-assistant.md) — prospect guardrails, structured authority, approved media/vector boundaries, reviewed imports, durable handoff, and local release evidence.
 - [Requirements/UI rebaseline — 2026-07-18](./reviews/full-flow-review-2026-07-18-requirements-rebaseline.md) — current navigation/auth baseline and clean scheduled-job inputs.

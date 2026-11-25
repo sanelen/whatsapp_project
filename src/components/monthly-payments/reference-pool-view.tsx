@@ -112,9 +112,9 @@ function ReferenceRows({
   ));
 }
 
-export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
+export function ReferencePoolViewPanel({ view, initialProperty }: { view: ReferencePoolView; initialProperty?: string }) {
   const [query, setQuery] = useState('');
-  const [propertyFilter, setPropertyFilter] = useState('all');
+  const [propertyFilter, setPropertyFilter] = useState(initialProperty ?? 'all');
   const [accountFilter, setAccountFilter] = useState('all');
   const accounts = summarizeUnmatchedAccounts(view.rows);
   const filteredRows = filterUnmatchedRows(view.rows, query, propertyFilter, accountFilter);
@@ -134,6 +134,7 @@ export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
   return (
     <MonthlyPaymentsShell
       active="reference-pool"
+      collectionsHref={`/monthly-payments/follow-up?period=${view.periodKey}${propertyFilter !== 'all' && propertyFilter !== 'unassigned' ? `&building=${propertyFilter}` : ''}`}
       operationsHref={operationsHref}
       referencePoolHref={`/monthly-payments/reconcile?period=${view.periodKey}`}
     >
@@ -145,7 +146,7 @@ export function ReferencePoolViewPanel({ view }: { view: ReferencePoolView }) {
           <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <nav className="text-[13px] font-medium text-slate-500">
-                <Link href="/monthly-payments" className="hover:text-slate-800">
+                <Link href={`/monthly-payments?period=${view.periodKey}`} className="hover:text-slate-800">
                   {view.organizationLabel}
                 </Link>
                 <span className="px-1.5 text-slate-400">›</span>

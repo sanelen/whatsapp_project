@@ -1,3 +1,5 @@
+import { readAllRows } from '@/lib/read-all-rows';
+import { calculateRentBalance, southAfricaDate, sumRentBalances, type CollectionRoom } from '@/lib/rent-collections';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getBillingPeriodForDate, getBillingWindowForPeriod } from '@/lib/bank-import';
 import { summarizeUnmatchedLocations } from '@/lib/reconciliation-workspace';
@@ -34,6 +36,7 @@ export type MonthlyPaymentsPeriodRow = {
   unit_id: string;
   period_start: string;
   expected_amount: number | string;
+  due_date?: string | null;
   status: 'unpaid' | 'partial' | 'paid' | 'overdue' | 'blocked' | 'mismatch';
   is_blocked: boolean;
 };
@@ -81,6 +84,8 @@ export type MonthlyPaymentsMonthSummary = {
   };
   locations: MonthlyPaymentsLocationSummary[];
   unmatchedReferenceCount: number;
+  rooms: CollectionRoom[];
+  balances: ReturnType<typeof sumRentBalances>;
 };
 
 export type MonthlyPaymentsLocationSummary = {
@@ -108,9 +113,12 @@ export type MonthlyPaymentsLocationSummary = {
   blockedCount: number;
   unitCount: number;
   unmatchedReferenceCount: number;
+  rooms: CollectionRoom[];
+  balances: ReturnType<typeof sumRentBalances>;
 };
 
 export type MonthlyPaymentsDashboardSnapshot = {
+  asOf: string;
   setupState: 'ready' | 'empty' | 'missing_tables';
   organizationLabel: string;
   monthLabel: string;
@@ -223,346 +231,106 @@ export function buildMonthlyPaymentsDashboardSnapshot(
   options?: { currentDate?: Date; setupState?: MonthlyPaymentsDashboardSnapshot['setupState'] }
 ): MonthlyPaymentsDashboardSnapshot {
   const currentDate = options?.currentDate ?? new Date();
-  const currentBillingPeriodKey = getBillingPeriodForDate(currentDate.toISOString().slice(0, 10));
-  const currentMonthStart = new Date(`${currentBillingPeriodKey}-01T00:00:00Z`);
-  const currentMonthKey = formatMonthKey(currentMonthStart);
-  const monthStarts = buildMonthStarts(currentMonthStart);
-  const properties = input.properties;
-  const unitsByProperty = new Map<string, MonthlyPaymentsUnitRow[]>();
-  const periodsByUnitAndMonth = new Map<string, MonthlyPaymentsPeriodRow>();
-  const referencesByPeriod = new Map<string, MonthlyPaymentsReferenceRow[]>();
-  const referencesByPropertyAndMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
-  const referencesByMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
-  const referencesByInferredLocationAndMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
-  const referencesByUnitAndMonth = new Map<string, MonthlyPaymentsReferenceRow[]>();
-
-  for (const unit of input.units) {
-    const current = unitsByProperty.get(unit.property_id) ?? [];
-    current.push(unit);
-    unitsByProperty.set(unit.property_id, current);
+  const currentMonthKey = getBillingPeriodForDate(southAfricaDate(currentDate));
+  const currentMonthStart = new Date(`${currentMonthKey}-01T00:00:00Z`);
+  const periodMap = new Map(input.periods.map(p => [`${p.unit_id}:${p.period_start.slice(0, 7)}`, p]));
+  const refsByPeriod = new Map<string, MonthlyPaymentsReferenceRow[]>();
+  for (const ref of input.references) {
+    if (!ref.unit_payment_period_id) continue;
+    const list = refsByPeriod.get(ref.unit_payment_period_id) ?? [];
+    list.push(ref);
+    refsByPeriod.set(ref.unit_payment_period_id, list);
   }
-
-  for (const period of input.periods) {
-    periodsByUnitAndMonth.set(`${period.unit_id}:${toDateOnlyMonthKey(period.period_start)}`, period);
-  }
-
-  for (const reference of input.references) {
-    const monthKey = billingPeriodKeyForReferenceDate(reference.received_at);
-    const monthReferences = referencesByMonth.get(monthKey) ?? [];
-    monthReferences.push(reference);
-    referencesByMonth.set(monthKey, monthReferences);
-
-    if (!reference.property_id && reference.inferred_location_name) {
-      const inferredLocationKey = `${reference.inferred_location_name}:${monthKey}`;
-      const inferredLocationReferences = referencesByInferredLocationAndMonth.get(inferredLocationKey) ?? [];
-      inferredLocationReferences.push(reference);
-      referencesByInferredLocationAndMonth.set(inferredLocationKey, inferredLocationReferences);
-    }
-
-    if (reference.property_id) {
-      const propertyMonthKey = `${reference.property_id}:${monthKey}`;
-      const propertyMonthReferences = referencesByPropertyAndMonth.get(propertyMonthKey) ?? [];
-      propertyMonthReferences.push(reference);
-      referencesByPropertyAndMonth.set(propertyMonthKey, propertyMonthReferences);
-    }
-
-    if (reference.unit_id) {
-      const unitMonthKey = `${reference.unit_id}:${monthKey}`;
-      const unitMonthReferences = referencesByUnitAndMonth.get(unitMonthKey) ?? [];
-      unitMonthReferences.push(reference);
-      referencesByUnitAndMonth.set(unitMonthKey, unitMonthReferences);
-    }
-
-    if (!reference.unit_payment_period_id) continue;
-    const current = referencesByPeriod.get(reference.unit_payment_period_id) ?? [];
-    current.push(reference);
-    referencesByPeriod.set(reference.unit_payment_period_id, current);
-  }
-  function buildLocationsForMonth(monthKey: string): MonthlyPaymentsLocationSummary[] {
-    const propertyLocations = properties.map((property) => {
-      const units = unitsByProperty.get(property.id) ?? [];
-      const propertyReferences = referencesByPropertyAndMonth.get(`${property.id}:${monthKey}`) ?? [];
-      const matchedPropertyReferences = propertyReferences.filter((reference) => Boolean(reference.unit_id));
-      const unmatchedPropertyReferences = propertyReferences.filter((reference) => !reference.unit_id);
-      let expectedAmount = 0;
-      let occupiedCount = 0;
-      let blockedCount = 0;
-      let overdueCount = 0;
-      let paidCount = 0;
-      let pendingCount = 0;
-      let dueCount = 0;
-
-      for (const unit of units) {
-        const period = periodsByUnitAndMonth.get(`${unit.id}:${monthKey}`);
-        const matchedReferences = referencesByUnitAndMonth.get(`${unit.id}:${monthKey}`) ?? [];
-        const depositContributedAmount = matchedReferences.reduce(
-          (sum, reference) => sum + (input.depositContributedByReference?.[reference.id] ?? 0),
-          0
-        );
-        const creditFromMatchedReferencesAmount = matchedReferences.reduce(
-          (sum, reference) => sum + (input.creditFromReference?.[reference.id] ?? 0),
-          0
-        );
-        const isBlocked = period?.is_blocked ?? unit.is_blocked;
-        const expected = isBlocked
-          ? 0
-          : toMoney(
-              period?.expected_amount ?? (unit.occupancy_status === 'occupied' ? unit.rent_amount : 0)
-            );
-        const status = computeUnitStatus({
-          occupancyStatus: unit.occupancy_status,
-          isBlocked,
-          expectedAmount: expected,
-          depositContributedAmount,
-          creditFromMatchedReferencesAmount,
-          creditAppliedAmount: period ? (input.creditAppliedByPeriod?.[period.id] ?? 0) : 0,
-          matchedReferences,
-          dueDate: getBillingWindowForPeriod(monthKey).endDate,
-          now: currentDate,
-        }).status;
-
-        expectedAmount += expected;
-
-        if (isBlocked || status === 'blocked') {
-          blockedCount += 1;
-        } else if (unit.occupancy_status === 'occupied') {
-          occupiedCount += 1;
-        }
-
-        if (status === 'paid') paidCount += 1;
-        if (status === 'pending') pendingCount += 1;
-        if (status === 'overdue') overdueCount += 1;
-        if (status !== 'paid' && status !== 'pending' && status !== 'blocked') dueCount += 1;
-      }
-
-      const matchedCollectedAmount = matchedPropertyReferences.reduce(
-        (sum, reference) => sum + toMoney(reference.amount),
-        0
-      );
-      // Decision rule (owner, 2026-07-02): collection progress counts
-      // signed-off money only; matched-awaiting-sign-off stays visible as its
-      // own number instead of inflating "collected".
-      const signedOffCollectedAmount = matchedPropertyReferences
-        .filter((reference) => reference.signed_off)
-        .reduce((sum, reference) => sum + toMoney(reference.amount), 0);
-      const pendingCollectedAmount = matchedCollectedAmount - signedOffCollectedAmount;
-      const unmatchedCollectedAmount = unmatchedPropertyReferences.reduce(
-        (sum, reference) => sum + toMoney(reference.amount),
-        0
-      );
-      const collectedAmount = matchedCollectedAmount + unmatchedCollectedAmount;
-
+  const recentMonths = buildMonthStarts(currentMonthStart).map(monthStart => {
+    const key = formatMonthKey(monthStart);
+    const received = input.references.filter(ref => billingPeriodKeyForReferenceDate(ref.received_at) === key);
+    const unmatched = received.filter(ref => !ref.unit_payment_period_id);
+    const locations: MonthlyPaymentsLocationSummary[] = input.properties.map(property => {
+      const units = input.units.filter(unit => unit.property_id === property.id);
+      const rooms = units.map(unit => {
+        const period = periodMap.get(`${unit.id}:${key}`);
+        const refs = period ? (refsByPeriod.get(period.id) ?? []).filter(ref => ref.unit_id === unit.id) : [];
+        return {
+          unitId: unit.id, label: unit.label, propertyId: property.id, propertyName: property.name,
+          periodId: period?.id ?? null,
+          ...calculateRentBalance({ period, references: refs, now: currentDate,
+            depositByReference: input.depositContributedByReference,
+            creditFromReference: input.creditFromReference,
+            creditApplied: period ? input.creditAppliedByPeriod?.[period.id] : 0,
+            chargeMissing: !period && unit.occupancy_status === 'occupied' && !unit.is_blocked,
+          }),
+        };
+      });
+      const balances = sumRentBalances(rooms);
+      const propertyUnmatched = unmatched.filter(ref => ref.property_id === property.id);
+      const propertyReceived = received.filter(ref => ref.property_id === property.id);
       return {
-        id: property.id,
-        name: property.name,
-        location: property.location,
-        collectedAmount,
-        matchedCollectedAmount,
-        signedOffCollectedAmount,
-        pendingCollectedAmount,
-        unmatchedCollectedAmount,
-        expectedAmount,
-        collectionRate: expectedAmount > 0 ? signedOffCollectedAmount / expectedAmount : 0,
-        coverageRate: expectedAmount > 0 ? matchedCollectedAmount / expectedAmount : 0,
-        occupiedCount,
-        paidCount,
-        pendingCount,
-        dueCount,
-        overdueCount,
-        blockedCount,
-        unitCount: units.length,
-        unmatchedReferenceCount: unmatchedPropertyReferences.length,
+        id: property.id, name: property.name, location: property.location, rooms, balances,
+        collectedAmount: roundMoney(propertyReceived.reduce((sum, ref) => sum + toMoney(ref.amount), 0)),
+        matchedCollectedAmount: roundMoney(balances.confirmedAmount + balances.pendingAmount),
+        signedOffCollectedAmount: balances.confirmedAmount, pendingCollectedAmount: balances.pendingAmount,
+        unmatchedCollectedAmount: roundMoney(propertyUnmatched.reduce((sum, ref) => sum + toMoney(ref.amount), 0)),
+        expectedAmount: balances.expectedAmount,
+        collectionRate: balances.expectedAmount ? balances.confirmedAmount / balances.expectedAmount : 0,
+        coverageRate: balances.expectedAmount ? (balances.confirmedAmount + balances.pendingAmount) / balances.expectedAmount : 0,
+        occupiedCount: rooms.filter(room => room.expectedAmount > 0).length,
+        blockedCount: rooms.filter(room => room.expectedAmount === 0 && !room.chargeMissing).length,
+        paidCount: rooms.filter(room => room.expectedAmount > 0 && room.outstandingAmount === 0).length,
+        pendingCount: rooms.filter(room => room.pendingAmount > 0).length,
+        dueCount: rooms.filter(room => room.outstandingAmount > room.pendingAmount).length,
+        overdueCount: rooms.filter(room => room.overdueAmount > 0).length,
+        unitCount: units.length, unmatchedReferenceCount: propertyUnmatched.length,
       };
     });
-
-    const inferredLocationNames = Array.from(
-      new Set(
-        (referencesByMonth.get(monthKey) ?? [])
-          .filter((reference) => !reference.property_id && reference.inferred_location_name)
-          .map((reference) => reference.inferred_location_name as string)
-      )
-    );
-
-    const inferredLocations = inferredLocationNames.map((name) => {
-      const references = referencesByInferredLocationAndMonth.get(`${name}:${monthKey}`) ?? [];
-      const collectedAmount = references.reduce((sum, reference) => sum + toMoney(reference.amount), 0);
-
-      return {
-        id: `inferred:${name}`,
-        name,
-        location: 'Imported bank references',
-        collectedAmount,
-        matchedCollectedAmount: 0,
-        signedOffCollectedAmount: 0,
-        pendingCollectedAmount: 0,
-        unmatchedCollectedAmount: collectedAmount,
-        expectedAmount: 0,
-        collectionRate: 0,
-        coverageRate: 0,
-        occupiedCount: 0,
-        paidCount: 0,
-        pendingCount: 0,
-        dueCount: references.length,
-        overdueCount: 0,
-        blockedCount: 0,
-        unitCount: 0,
-        unmatchedReferenceCount: references.length,
-      };
-    });
-
-    return [...propertyLocations, ...inferredLocations].sort((left, right) => right.expectedAmount - left.expectedAmount);
-  }
-
-  const recentMonths = monthStarts.map((monthStart) => {
-    const monthKey = formatMonthKey(monthStart);
-    const locations = buildLocationsForMonth(monthKey);
-    const rollingTotal = locations.reduce(
-      (summary, location) => ({
-        collectedAmount: summary.collectedAmount + location.collectedAmount,
-        matchedCollectedAmount: summary.matchedCollectedAmount + location.matchedCollectedAmount,
-        signedOffCollectedAmount: summary.signedOffCollectedAmount + location.signedOffCollectedAmount,
-        pendingCollectedAmount: summary.pendingCollectedAmount + location.pendingCollectedAmount,
-        expectedAmount: summary.expectedAmount + location.expectedAmount,
-        occupiedCount: summary.occupiedCount + location.occupiedCount,
-        blockedCount: summary.blockedCount + location.blockedCount,
-        overdueCount: summary.overdueCount + location.overdueCount,
-        paidCount: summary.paidCount + location.paidCount,
-        pendingCount: summary.pendingCount + location.pendingCount,
-        dueCount: summary.dueCount + location.dueCount,
-      }),
-      {
-        collectedAmount: 0,
-        matchedCollectedAmount: 0,
-        signedOffCollectedAmount: 0,
-        pendingCollectedAmount: 0,
-        expectedAmount: 0,
-        occupiedCount: 0,
-        blockedCount: 0,
-        overdueCount: 0,
-        paidCount: 0,
-        pendingCount: 0,
-        dueCount: 0,
-      }
-    );
-
-    const unmatchedPropertylessCollectedAmount = (referencesByMonth.get(monthKey) ?? [])
-      .filter((reference) => !reference.property_id && !reference.inferred_location_name)
-      .reduce((sum, reference) => sum + toMoney(reference.amount), 0);
-
-    const unmatchedReferenceCount = input.references.filter(
-      (reference) =>
-        billingPeriodKeyForReferenceDate(reference.received_at) === monthKey && !reference.unit_payment_period_id
-    ).length;
-
-    return {
-      key: monthKey,
-      label: new Intl.DateTimeFormat('en-ZA', {
-        month: 'short',
-        timeZone: 'UTC',
-      }).format(monthStart),
-      collectedAmount: rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount,
-      expectedAmount: rollingTotal.expectedAmount,
-      // Decision rule: collection progress = signed-off money / expected.
-      // Total money arrived (incl. unmatched) stays visible via collectedAmount.
-      collectionRate:
-        rollingTotal.expectedAmount > 0
-          ? rollingTotal.signedOffCollectedAmount / rollingTotal.expectedAmount
-          : 0,
-      // Operator-facing month progress = money already worked into unit rows,
-      // even if some of it is still awaiting sign-off.
-      coverageRate:
-        rollingTotal.expectedAmount > 0
-          ? rollingTotal.matchedCollectedAmount / rollingTotal.expectedAmount
-          : 0,
-      isCurrent: monthKey === currentMonthKey,
-      rollingTotal: {
-        ...rollingTotal,
-        collectedAmount: rollingTotal.collectedAmount + unmatchedPropertylessCollectedAmount,
-        // Every rand that arrived is either signed off, awaiting sign-off, or
-        // unmatched — nothing may become invisible (owner report 2026-07-02).
-        unmatchedCollectedAmount: roundMoney(
-          rollingTotal.collectedAmount +
-            unmatchedPropertylessCollectedAmount -
-            rollingTotal.signedOffCollectedAmount -
-            rollingTotal.pendingCollectedAmount
-        ),
-        collectionRate:
-          rollingTotal.expectedAmount > 0
-            ? rollingTotal.signedOffCollectedAmount / rollingTotal.expectedAmount
-            : 0,
-        coverageRate:
-          rollingTotal.expectedAmount > 0
-            ? rollingTotal.matchedCollectedAmount / rollingTotal.expectedAmount
-            : 0,
-      },
-      locations,
-      unmatchedReferenceCount,
+    const rooms = locations.flatMap(location => location.rooms);
+    const balances = sumRentBalances(rooms);
+    const collectedAmount = roundMoney(received.reduce((sum, ref) => sum + toMoney(ref.amount), 0));
+    const collectionRate = balances.expectedAmount ? balances.confirmedAmount / balances.expectedAmount : 0;
+    const coverageRate = balances.expectedAmount ? (balances.confirmedAmount + balances.pendingAmount) / balances.expectedAmount : 0;
+    const rollingTotal = {
+      collectedAmount, expectedAmount: balances.expectedAmount, collectionRate, coverageRate,
+      signedOffCollectedAmount: balances.confirmedAmount, pendingCollectedAmount: balances.pendingAmount,
+      matchedCollectedAmount: roundMoney(balances.confirmedAmount + balances.pendingAmount),
+      unmatchedCollectedAmount: roundMoney(unmatched.reduce((sum, ref) => sum + toMoney(ref.amount), 0)),
+      occupiedCount: locations.reduce((sum, l) => sum + l.occupiedCount, 0),
+      blockedCount: locations.reduce((sum, l) => sum + l.blockedCount, 0),
+      paidCount: locations.reduce((sum, l) => sum + l.paidCount, 0),
+      pendingCount: locations.reduce((sum, l) => sum + l.pendingCount, 0),
+      dueCount: locations.reduce((sum, l) => sum + l.dueCount, 0),
+      overdueCount: locations.reduce((sum, l) => sum + l.overdueCount, 0),
     };
+    return { key, label: new Intl.DateTimeFormat('en-ZA', { month: 'short', timeZone: 'UTC' }).format(monthStart),
+      collectedAmount, expectedAmount: balances.expectedAmount, collectionRate, coverageRate,
+      isCurrent: key === currentMonthKey, rollingTotal, locations, unmatchedReferenceCount: unmatched.length, rooms, balances };
   });
-
-  const selectedMonth = recentMonths.find((month) => month.key === currentMonthKey) ?? recentMonths.at(2);
-  const rollingTotal = selectedMonth?.rollingTotal ?? {
-    collectedAmount: 0,
-    matchedCollectedAmount: 0,
-    signedOffCollectedAmount: 0,
-    pendingCollectedAmount: 0,
-    unmatchedCollectedAmount: 0,
-    expectedAmount: 0,
-    collectionRate: 0,
-    coverageRate: 0,
-    occupiedCount: 0,
-    blockedCount: 0,
-    overdueCount: 0,
-    paidCount: 0,
-    pendingCount: 0,
-    dueCount: 0,
-  };
-  const locations = selectedMonth?.locations ?? [];
-  const unmatchedReferenceCount = selectedMonth?.unmatchedReferenceCount ?? 0;
-
+  const selected = recentMonths.find(month => month.isCurrent)!;
   return {
-    setupState: options?.setupState ?? (properties.length === 0 ? 'empty' : 'ready'),
-    organizationLabel:
-      input.organizations.length === 1
-        ? input.organizations[0].name
-        : input.organizations.length > 1
-          ? 'Hamba operations'
-          : 'Hamba Trading',
-    monthLabel: formatMonthLabel(currentMonthStart),
-    recentMonths,
-    rollingTotal,
-    locations,
-    unmatchedReferenceCount,
+    asOf: southAfricaDate(currentDate),
+    setupState: options?.setupState ?? (input.properties.length ? 'ready' : 'empty'),
+    organizationLabel: input.organizations.map(org => org.name).join(' · ') || 'Hamba Trading',
+    monthLabel: formatMonthLabel(currentMonthStart), recentMonths, rollingTotal: selected.rollingTotal,
+    locations: selected.locations, unmatchedReferenceCount: selected.unmatchedReferenceCount,
   };
 }
 
-export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDashboardSnapshot> {
+export async function readMonthlyPaymentsDashboard(options?: { readOnly?: boolean }): Promise<MonthlyPaymentsDashboardSnapshot> {
   const admin = getSupabaseAdmin();
-  const currentBillingPeriodKey = getBillingPeriodForDate(new Date().toISOString().slice(0, 10));
+  const currentBillingPeriodKey = getBillingPeriodForDate(southAfricaDate(new Date()));
   const currentMonthStart = new Date(`${currentBillingPeriodKey}-01T00:00:00Z`);
-  await ensurePaymentPeriodsForPeriod({ periodKey: formatMonthKey(currentMonthStart) });
+  if (!options?.readOnly) await ensurePaymentPeriodsForPeriod({ periodKey: formatMonthKey(currentMonthStart) });
   const historyStart = addMonths(currentMonthStart, -5).toISOString().slice(0, 10);
   const referenceHistoryStart = getBillingWindowForPeriod(historyStart.slice(0, 7)).startDate;
 
   const [organizationsResult, propertiesResult, unitsResult, periodsResult, referencesResult] =
     await Promise.all([
-      admin.from('organizations').select('id,name').order('created_at', { ascending: true }),
-      admin
-        .from('properties')
-        .select('id,organization_id,name,location')
-        .order('created_at', { ascending: true }),
-      admin
-        .from('property_units')
-        .select('id,property_id,label,rent_amount,occupancy_status,is_blocked')
-        .order('display_order', { ascending: true }),
-      admin
-        .from('unit_payment_periods')
-        .select('id,unit_id,period_start,expected_amount,status,is_blocked')
-        .gte('period_start', historyStart),
-      admin
-        .from('payment_references')
+      readAllRows((from, to) => admin.from('organizations').select('id,name').order('id').range(from, to)),
+      readAllRows((from, to) => admin.from('properties').select('id,organization_id,name,location').order('id').range(from, to)),
+      readAllRows((from, to) => admin.from('property_units').select('id,property_id,label,rent_amount,occupancy_status,is_blocked').order('id').range(from, to)),
+      readAllRows((from, to) => admin.from('unit_payment_periods').select('id,unit_id,period_start,expected_amount,status,is_blocked,due_date')
+        .gte('period_start', historyStart).lt('period_start', addMonths(currentMonthStart, 2).toISOString().slice(0, 10)).order('id').range(from, to)),
+      readAllRows((from, to) => admin.from('payment_references')
         .select('id,organization_id,property_id,unit_id,unit_payment_period_id,bank_import_entry_id,reference,amount,received_at,signed_off')
-        .gte('received_at', referenceHistoryStart),
+        .gte('received_at', referenceHistoryStart).order('id').range(from, to)),
     ]);
 
   const tableErrors = [unitsResult.error, periodsResult.error, referencesResult.error].filter(Boolean);
@@ -595,35 +363,24 @@ export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDas
     throw new Error(`Failed to load payment references: ${referencesResult.error.message}`);
   }
 
-  const references = (referencesResult.data ?? []) as MonthlyPaymentsReferenceRow[];
-  const referenceIds = references.map((reference) => reference.id);
-  const periodIds = (periodsResult.data ?? []).map((period) => period.id as string);
+  const appliedPeriodIds = (periodsResult.data ?? []).map(period => period.id);
+  const referenceMap = new Map((referencesResult.data ?? []).map(ref => [ref.id, ref]));
+  for (let offset = 0; offset < appliedPeriodIds.length; offset += 100) {
+    const result = await readAllRows((from, to) => admin.from('payment_references')
+      .select('id,organization_id,property_id,unit_id,unit_payment_period_id,bank_import_entry_id,reference,amount,received_at,signed_off')
+      .in('unit_payment_period_id', appliedPeriodIds.slice(offset, offset + 100)).order('id').range(from, to));
+    if (result.error) throw new Error(`Failed to load applied rent: ${result.error.message}`);
+    for (const ref of result.data ?? []) referenceMap.set(ref.id, ref);
+  }
+  const references = [...referenceMap.values()] as MonthlyPaymentsReferenceRow[];
+  // Read the active ledgers without an oversized URL-sized IN list, then join by ID below.
   const [contributionsResult, creditsResult, allocationsResult] = await Promise.all([
-    referenceIds.length > 0
-      ? admin
-          .from('deposit_contributions')
-          .select('payment_reference_id,amount')
-          .in('payment_reference_id', referenceIds)
-          .is('reversed_at', null)
-      : Promise.resolve({ data: [], error: null }),
-    referenceIds.length > 0
-      ? admin
-          .from('unit_credits')
-          .select('payment_reference_id,amount')
-          .in('payment_reference_id', referenceIds)
-          .is('reversed_at', null)
-      : Promise.resolve({ data: [], error: null }),
-    periodIds.length > 0
-      ? admin
-          .from('unit_credit_allocations')
-          .select('target_period_id,amount,destination')
-          .in('target_period_id', periodIds)
-          .in('destination', ['arrears', 'advance'])
-          .is('reversed_at', null)
-      : Promise.resolve({ data: [], error: null }),
+    readAllRows((from, to) => admin.from('deposit_contributions').select('id,payment_reference_id,amount').is('reversed_at', null).order('id').range(from, to)),
+    readAllRows((from, to) => admin.from('unit_credits').select('id,payment_reference_id,amount').is('reversed_at', null).order('id').range(from, to)),
+    readAllRows((from, to) => admin.from('unit_credit_allocations').select('id,target_period_id,amount,destination').in('destination', ['arrears', 'advance']).is('reversed_at', null).order('id').range(from, to)),
   ]);
   const ledgerErrors = [contributionsResult.error, creditsResult.error, allocationsResult.error]
-    .filter((error) => error && !isMissingRelation(error));
+    .filter(Boolean);
   if (ledgerErrors.length > 0) {
     throw new Error(`Failed to load payment allocation ledgers: ${ledgerErrors[0]?.message}`);
   }
@@ -651,30 +408,6 @@ export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDas
       (creditAppliedByPeriod[periodId] ?? 0) + toMoney(row.amount as number | string)
     );
   }
-  const unresolvedBankImportEntryIds = references
-    .filter((reference) => !reference.property_id && reference.bank_import_entry_id)
-    .map((reference) => reference.bank_import_entry_id as string);
-
-  const inferredLocationNamesByEntryId = new Map<string, string>();
-  if (unresolvedBankImportEntryIds.length > 0) {
-    const { data: bankImportEntries, error: bankImportEntriesError } = await admin
-      .from('bank_import_entries')
-      .select('id,raw_metadata')
-      .in('id', unresolvedBankImportEntryIds);
-
-    if (bankImportEntriesError) {
-      throw new Error(`Failed to load bank import entry metadata: ${bankImportEntriesError.message}`);
-    }
-
-    for (const entry of bankImportEntries ?? []) {
-      const propertyName =
-        typeof entry.raw_metadata?.propertyName === 'string' ? entry.raw_metadata.propertyName.trim() : '';
-      if (propertyName) {
-        inferredLocationNamesByEntryId.set(entry.id, propertyName);
-      }
-    }
-  }
-
   return buildMonthlyPaymentsDashboardSnapshot({
     organizations: organizationsResult.data ?? [],
     properties: propertiesResult.data ?? [],
@@ -683,13 +416,7 @@ export async function readMonthlyPaymentsDashboard(): Promise<MonthlyPaymentsDas
     depositContributedByReference,
     creditFromReference,
     creditAppliedByPeriod,
-    references: references.map((reference) => ({
-      ...reference,
-      inferred_location_name:
-        !reference.property_id && reference.bank_import_entry_id
-          ? inferredLocationNamesByEntryId.get(reference.bank_import_entry_id) ?? null
-          : null,
-    })),
+    references,
   });
 }
 
@@ -702,6 +429,7 @@ export type UnitTableRow = {
   label: string;
   occupancy: 'occupied' | 'vacant';
   contacts: string[];
+  rentBalance?: ReturnType<typeof calculateRentBalance>;
   expectedAmount: number;
   expectedReference: string;
   matchKeywords: string[];
@@ -1462,7 +1190,9 @@ export async function readPropertyUnitsTable(
   const admin = getSupabaseAdmin();
   const now = options?.currentDate ?? new Date();
   const resolvedPeriodKey = resolvePeriodKey(periodKey, now);
-  await ensurePaymentPeriodsForPeriod({ periodKey: resolvedPeriodKey, propertyId });
+  if (resolvedPeriodKey === getBillingPeriodForDate(southAfricaDate(now))) {
+    await ensurePaymentPeriodsForPeriod({ periodKey: resolvedPeriodKey, propertyId });
+  }
   const monthStart = new Date(`${resolvedPeriodKey}-01T00:00:00Z`);
   const monthStartDate = monthStart.toISOString().slice(0, 10);
   const nextMonthDate = addMonths(monthStart, 1).toISOString().slice(0, 10);
@@ -1761,12 +1491,13 @@ export async function readPropertyUnitsTable(
 
   const referencesByUnit = new Map<string, typeof references>();
   const pool: typeof references = [];
-  for (const reference of references) {
-    if (reference.unit_id) {
+  const selectedReferences = [...new Map([...references, ...recentReferences].map(ref => [ref.id, ref])).values()];
+  for (const reference of selectedReferences) {
+    if (reference.unit_id && reference.unit_payment_period_id === periodsByUnit.get(reference.unit_id)?.id) {
       const list = referencesByUnit.get(reference.unit_id) ?? [];
       list.push(reference);
       referencesByUnit.set(reference.unit_id, list);
-    } else {
+    } else if (!reference.unit_payment_period_id && references.some(ref => ref.id === reference.id)) {
       pool.push(reference);
     }
   }
@@ -2076,8 +1807,8 @@ export async function readPropertyUnitsTable(
     const effectiveOccupancy = hasDepositLifecycle ? findStayForDate(unit.id, effectiveStayDate) : null;
     const periodOccupancyStatus: 'occupied' | 'vacant' =
       hasDepositLifecycle ? (effectiveOccupancy ? 'occupied' : 'vacant') : unit.occupancy_status;
-    const isBlocked = unit.is_blocked || (period?.is_blocked ?? false) || periodOccupancyStatus === 'vacant';
-    const expectedAmount = isBlocked ? 0 : toMoney(period?.expected_amount ?? unit.rent_amount);
+    const isBlocked = period ? period.is_blocked : unit.is_blocked || periodOccupancyStatus === 'vacant';
+    const expectedAmount = isBlocked ? 0 : toMoney(period?.expected_amount);
     expectedTotal += expectedAmount;
     if (isBlocked) blockedCount += 1;
     const legacyDepositTarget = toMoney(unit.deposit_amount);
@@ -2110,7 +1841,7 @@ export async function readPropertyUnitsTable(
     );
     const creditAppliedAmount = period?.id ? (creditAppliedByPeriod.get(period.id) ?? 0) : 0;
     const statusState = computeUnitStatus({
-      occupancyStatus: periodOccupancyStatus,
+      occupancyStatus: expectedAmount > 0 ? 'occupied' : periodOccupancyStatus,
       isBlocked,
       expectedAmount,
       // Split suggestions only get the REMAINING deposit headroom.
@@ -2119,22 +1850,23 @@ export async function readPropertyUnitsTable(
       creditFromMatchedReferencesAmount,
       creditAppliedAmount,
       matchedReferences: matched,
-      dueDate: period?.due_date ?? billingWindow.endDate,
+      dueDate: period?.due_date ?? null,
       now,
     });
     const allMatchedReferencesSignedOff = matched.length > 0 && matched.every((reference) => reference.signed_off);
-    // Decision rule: only signed-off money counts as collected.
-    collected += statusState.signedOffAmount;
-    pendingAmountTotal += statusState.pendingAmount;
-    outstandingTotal += statusState.outstandingAmount ?? 0;
-    if (statusState.status === 'paid') paidCount += 1;
-    if (statusState.status === 'pending') pendingCount += 1;
-    if (statusState.status === 'overdue') overdueCount += 1;
-    // "Due" = money not fully received (chase list). Pending is excluded — the
-    // money arrived; the action is sign-off, not follow-up.
-    if (statusState.status !== 'paid' && statusState.status !== 'pending' && statusState.status !== 'blocked') {
-      dueCount += 1;
-    }
+    const rentBalance = calculateRentBalance({
+      period, references: matched, now,
+      depositByReference: Object.fromEntries(contributionsByReference),
+      creditFromReference: Object.fromEntries(creditsByReference), creditApplied: creditAppliedAmount,
+      chargeMissing: !period && unit.occupancy_status === 'occupied' && !unit.is_blocked,
+    });
+    collected += rentBalance.confirmedAmount;
+    pendingAmountTotal += rentBalance.pendingAmount;
+    outstandingTotal += rentBalance.outstandingAmount;
+    if (rentBalance.expectedAmount > 0 && rentBalance.outstandingAmount === 0) paidCount += 1;
+    if (rentBalance.pendingAmount > 0) pendingCount += 1;
+    if (rentBalance.overdueAmount > 0) overdueCount += 1;
+    if (rentBalance.outstandingAmount > rentBalance.pendingAmount) dueCount += 1;
 
     const primaryMeta = primary?.bank_import_entry_id
       ? entryMeta.get(primary.bank_import_entry_id)
@@ -2150,6 +1882,7 @@ export async function readPropertyUnitsTable(
 
     return {
       unitId: unit.id,
+      rentBalance,
       label: unit.label,
       occupancy: periodOccupancyStatus,
       contacts: displayContacts,

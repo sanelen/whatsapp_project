@@ -5,11 +5,11 @@ import { ReferencePoolViewPanel } from '@/components/monthly-payments/reference-
 export default async function MonthlyPaymentsReconcilePage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; property?: string }>;
 }) {
   await requireUser();
-  const { period } = await searchParams;
+  const { period, property } = await searchParams;
   const view = await readReferencePoolView(period);
 
-  return <ReferencePoolViewPanel view={view} />;
+  return <ReferencePoolViewPanel view={view} initialProperty={property} />;
 }

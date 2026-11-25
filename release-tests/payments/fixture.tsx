@@ -1,3 +1,5 @@
+import { RentCollectionsDashboard } from '../../src/components/monthly-payments/rent-collections-dashboard';
+import { calculateRentBalance, sumRentBalances, type CollectionRoom } from '../../src/lib/rent-collections';
 import { createRoot } from 'react-dom/client';
 import { ReferencePoolViewPanel } from '../../src/components/monthly-payments/reference-pool-view';
 import { UnitsTable } from '../../src/components/monthly-payments/units-table';
@@ -47,19 +49,35 @@ const view: ReferencePoolView = {
   totals: { unmatchedCount: 3, totalAmount: 5400, currentUnmatchedCount: 2, currentAmount: 3200, carryoverUnmatchedCount: 1, carryoverAmount: 2200 },
 };
 
+const collectionRooms: CollectionRoom[] = [
+  { unitId: 'room-1', label: 'Room 1', propertyId: 'test-property', propertyName: 'Test property', periodId: 'period-1',
+    ...calculateRentBalance({ period: { expected_amount: 2200, is_blocked: false, due_date: '2026-08-08' }, references: [{ id: 'ref-1', amount: 1000, signed_off: true }], now: new Date('2026-08-20') }) },
+  { unitId: 'room-2', label: 'Room 2', propertyId: 'test-property', propertyName: 'Test property', periodId: 'period-2',
+    ...calculateRentBalance({ period: { expected_amount: 2200, is_blocked: false, due_date: '2026-08-25' }, references: [{ id: 'ref-2', amount: 2200, signed_off: false }], now: new Date('2026-08-20') }) },
+  { unitId: 'room-3', label: 'Room 3', propertyId: 'other-property', propertyName: 'Other property', periodId: 'period-3',
+    ...calculateRentBalance({ period: { expected_amount: 1800, is_blocked: false, due_date: '2026-08-08' }, references: [{ id: 'ref-3', amount: 3000, signed_off: true }], now: new Date('2026-08-20') }) },
+];
 const rollingTotal: MonthlyPaymentsDashboardSnapshot['rollingTotal'] = {
-  collectedAmount: 4400, matchedCollectedAmount: 2200, signedOffCollectedAmount: 0,
-  pendingCollectedAmount: 2200, unmatchedCollectedAmount: 2200, expectedAmount: 4400,
-  collectionRate: 0, coverageRate: 0.5, occupiedCount: 2, blockedCount: 0,
-  overdueCount: 0, paidCount: 0, pendingCount: 1, dueCount: 1,
+  collectedAmount: 8400, matchedCollectedAmount: 5000, signedOffCollectedAmount: 2800,
+  pendingCollectedAmount: 2200, unmatchedCollectedAmount: 2200, expectedAmount: 6200,
+  collectionRate: 2800 / 6200, coverageRate: 5000 / 6200, occupiedCount: 3, blockedCount: 0,
+  overdueCount: 1, paidCount: 1, pendingCount: 1, dueCount: 1,
 };
+const collectionLocations = ['test-property', 'other-property'].map(id => {
+  const rooms = collectionRooms.filter(room => room.propertyId === id);
+  const balances = sumRentBalances(rooms);
+  return { id, name: rooms[0].propertyName, location: 'Test location', rooms, balances,
+    ...rollingTotal, unitCount: rooms.length, unmatchedReferenceCount: id === 'test-property' ? 1 : 0,
+    unmatchedCollectedAmount: id === 'test-property' ? 2200 : 0 };
+});
 const dashboard: MonthlyPaymentsDashboardSnapshot = {
-  setupState: 'ready', organizationLabel: 'Local test portfolio', monthLabel: 'August 2026',
-  rollingTotal, locations: [], unmatchedReferenceCount: 1,
-  recentMonths: ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09'].map((key) => ({
+  asOf: '2026-11-25', setupState: 'ready', organizationLabel: 'Local test portfolio', monthLabel: 'August 2026',
+  rollingTotal, locations: collectionLocations, unmatchedReferenceCount: 1,
+  recentMonths: ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'].map((key) => ({
     key, label: new Intl.DateTimeFormat('en', { month: 'short', timeZone: 'UTC' }).format(new Date(`${key}-01`)),
-    collectedAmount: 4400, expectedAmount: 4400, collectionRate: 0, coverageRate: 0.5,
-    isCurrent: key === '2026-08', rollingTotal, locations: [], unmatchedReferenceCount: 1,
+    collectedAmount: 8400, expectedAmount: 6200, collectionRate: 2800 / 6200, coverageRate: 5000 / 6200,
+    isCurrent: key === '2026-08', rollingTotal, locations: collectionLocations.map(location => ({ ...location, rooms: location.rooms.map(room => ({ ...room, dueDate: room.dueDate?.replace('2026-08', key) ?? null })) })), unmatchedReferenceCount: 1,
+    rooms: collectionRooms.map(room => ({ ...room, dueDate: room.dueDate?.replace('2026-08', key) ?? null })), balances: sumRentBalances(collectionRooms),
   })),
 };
 
@@ -76,10 +94,33 @@ const audit: ImportAuditView = {
   })),
 };
 
+const previewParams = new URLSearchParams(location.search);
+const previewPeriod = previewParams.get('period') ?? '2026-08';
+const previewProperty = location.pathname.split('/').at(-1);
+const previewLocation = dashboard.recentMonths.find(month => month.key === previewPeriod)?.locations.find(item => item.id === previewProperty);
+const previewTable: PropertyUnitsTable = previewLocation ? {
+  ...table, propertyId: previewLocation.id, propertyName: previewLocation.name, periodKey: previewPeriod,
+  periodLabel: new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${previewPeriod}-01`)),
+  billingWindowLabel: previewPeriod === '2026-11' ? '09 Oct - 08 Nov' : table.billingWindowLabel,
+  rows: previewLocation.rooms.map(room => makeRoom({
+    unitId: room.unitId, label: room.label, periodId: room.periodId, rentBalance: room,
+    expectedAmount: room.expectedAmount, receivedAmount: room.confirmedAmount + room.pendingAmount,
+    outstandingAmount: room.outstandingAmount, status: room.pendingAmount > 0 ? 'pending' : room.outstandingAmount > 0 ? 'partial' : 'paid',
+    signedOff: room.pendingAmount === 0, reference: 'Sample receipt', transactionDate: `${previewPeriod}-01`,
+  })),
+  totals: { ...table.totals, unitCount: previewLocation.rooms.length, expected: previewLocation.balances.expectedAmount,
+    collected: previewLocation.balances.confirmedAmount, pendingAmount: previewLocation.balances.pendingAmount,
+    paidCount: previewLocation.rooms.filter(room => room.expectedAmount > 0 && room.outstandingAmount === 0).length,
+    dueCount: previewLocation.rooms.filter(room => room.outstandingAmount > room.pendingAmount).length,
+    pendingCount: previewLocation.rooms.filter(room => room.pendingAmount > 0).length,
+    outstandingAmount: previewLocation.balances.outstandingAmount, overdueCount: previewLocation.rooms.filter(room => room.overdueAmount > 0).length },
+} : table;
+
 createRoot(document.getElementById('root')!).render(
-  location.pathname === '/audit' ? <ImportAuditViewPanel view={audit} /> :
-  location.pathname === '/dashboard' ? <MonthlyPaymentsHub dashboard={dashboard} /> :
-  location.pathname === '/units'
-    ? <UnitsTable table={table} initialUnitId="room-1" />
-    : <ReferencePoolViewPanel view={view} />
+  location.pathname === '/audit' || location.pathname.includes('import-audit') ? <ImportAuditViewPanel view={audit} /> :
+  (location.pathname === '/dashboard' || location.pathname === '/monthly-payments') ? <MonthlyPaymentsHub dashboard={dashboard} /> :
+  location.pathname === '/monthly-payments/follow-up' ? <RentCollectionsDashboard dashboard={dashboard} initialPeriod={previewParams.get('period') ?? undefined} initialBuilding={previewParams.get('building') ?? undefined} initialFilter={previewParams.get('filter') ?? undefined} /> :
+  (location.pathname === '/units' || previewLocation)
+    ? <UnitsTable table={previewLocation ? previewTable : table} initialUnitId={previewParams.get('unitId') ?? 'room-1'} />
+    : <ReferencePoolViewPanel view={{ ...view, periodKey: previewPeriod }} initialProperty={previewParams.get('property') ?? undefined} />
 );

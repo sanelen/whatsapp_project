@@ -7,6 +7,8 @@ function searchable(value: string): string {
 }
 
 type SearchableUnit = Pick<UnitTableRow, 'label' | 'contacts' | 'expectedReference' | 'reference' | 'status'> & {
+  rentBalance?: { overdueAmount: number; pendingAmount: number };
+  overdueDays?: number | null;
   matchedReferences?: Array<{ reference: string }>;
 };
 
@@ -14,7 +16,7 @@ export function filterUnitRows<T extends SearchableUnit>(rows: T[], query: strin
   const needle = searchable(query);
   return rows.filter((row) => {
     const statusMatches = status === 'all'
-      || (status === 'attention' ? row.status !== 'paid' && row.status !== 'blocked' : row.status === status);
+      || (status === 'overdue' ? (row.rentBalance ? row.rentBalance.overdueAmount > 0 : row.status === 'overdue' || (row.status === 'partial' && (row.overdueDays ?? 0) > 0)) : status === 'pending' && row.rentBalance ? row.rentBalance.pendingAmount > 0 : status === 'attention' ? row.status !== 'paid' && row.status !== 'blocked' : row.status === status);
     const text = [row.label, ...row.contacts, row.expectedReference, row.reference,
       ...(row.matchedReferences ?? []).map((payment) => payment.reference)].filter(Boolean).join(' ');
     return statusMatches && searchable(text).includes(needle);
