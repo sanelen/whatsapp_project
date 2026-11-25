@@ -16,6 +16,7 @@ export function ReconciliationControl({ initialRun, scheduledRun }: { initialRun
   const [run, setRun] = useState(initialRun);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const sourceRun = run ?? scheduledRun ?? null;
 
   async function checkNow() {
     setBusy(true);
@@ -73,11 +74,11 @@ export function ReconciliationControl({ initialRun, scheduledRun }: { initialRun
         </button>
       </div>
       <div className="mt-3 text-sm text-slate-700" role="status">
-        <p>Automatic Gmail + Drive check: daily 07:00–08:00 SAST. Imports continue when this page is closed. Financial sign-off stays manual.</p>
-        <p className="mt-1 font-semibold">Scheduled source status: {sourceCheckState(scheduledRun ?? null).replaceAll('_', ' ')}{scheduledRun ? ` · ${formatTimestamp(scheduledRun.startedAt)}` : ''}</p>
-        {scheduledRun?.summary.currentCycle && <p>Current cycle exceptions: {scheduledRun.summary.currentCycle.failedOrPendingFiles} files · {scheduledRun.summary.currentCycle.entriesMissingPaymentReference} receipts missing. Historical/global file backlog: {scheduledRun.summary.failedOrPendingFiles}.</p>}
-        {scheduledRun?.summary.managementAlert && <p>Management briefing: {scheduledRun.summary.managementAlert.state === 'sent' ? 'provider accepted (delivery tracked separately)' : scheduledRun.summary.managementAlert.state.replaceAll('_', ' ')}.</p>}
-        <Link className="mt-1 inline-block font-semibold text-sky-800 underline" href={`/monthly-payments/follow-up?period=${scheduledRun?.summary.currentCycle?.period ?? ''}&filter=pending`}>Review payments awaiting sign-off</Link>
+        <p>Automatic Gmail + Drive check: daily 07:00–08:00 SAST. A clean manual check satisfies the day. Imports continue when this page is closed. Financial sign-off stays manual.</p>
+        <p className="mt-1 font-semibold">Latest source status: {sourceCheckState(sourceRun ?? null).replaceAll('_', ' ')}{sourceRun ? ` · ${formatTimestamp(sourceRun.startedAt)}` : ''}</p>
+        {sourceRun?.summary.currentCycle && <p>Current cycle exceptions: {sourceRun.summary.currentCycle.failedOrPendingFiles} files · {sourceRun.summary.currentCycle.entriesMissingPaymentReference} receipts missing. Historical/global file backlog: {sourceRun.summary.failedOrPendingFiles}.</p>}
+        {sourceRun?.summary.managementAlert && <p>Management briefing: {sourceRun.summary.managementAlert.state === 'sent' ? 'provider accepted (delivery tracked separately)' : sourceRun.summary.managementAlert.state.replaceAll('_', ' ')}.</p>}
+        <Link className="mt-1 inline-block font-semibold text-sky-800 underline" href={`/monthly-payments/follow-up?period=${sourceRun?.summary.currentCycle?.period ?? ''}&filter=pending`}>Review payments awaiting sign-off</Link>
       </div>
       {error || run?.errorMessage ? (
         <p className="mt-2 rounded-[8px] border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">

@@ -56,7 +56,8 @@ historical observations, not evidence of a future scheduled send.
 ## UI, accessibility and roadmap
 
 Rent Follow-up retains its building/month selection and inline briefing panel.
-The panel shows the effective schedule and a separate read-only Check delivery
+The source-check card uses the latest manual or scheduled audit, so a clean manual
+check does not leave a false stale scheduled status. The panel shows the effective schedule and a separate read-only Check delivery
 status button. Failure text says not delivered and exposes the provider error;
 acceptance is never labeled delivery. Desktop 1440×1000 and mobile 390×844 checks
 pass with no overflow or browser errors; the mobile result was visually reviewed.
@@ -74,7 +75,7 @@ it cannot guarantee Meta delivery. The approved template is categorized Marketin
 West Rich's 25 November attempt has a real failed webhook (131049), while Berea
 was delivered. This must stay visible and must not trigger a same-day retry.
 
-Before final handoff: verify the deployed revision, production-only allowlist,
+Release checklist (revision-bound results recorded in PR #29): deployed revision, production-only allowlist,
 active cron, 31 API checks and 10 deployed browser checks, and confirm today's
 three existing attempt records have not increased. December 1/7 execution and
 delivered/read outcomes must be verified when they actually occur.
