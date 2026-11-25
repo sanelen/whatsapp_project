@@ -1,6 +1,6 @@
 # Import reliability and production API gate — 2026-11-25
 
-Verdict: locally validated implementation; production acceptance remains pending dedicated credential provisioning and deployed execution.
+Verdict: locally validated implementation; production acceptance remains pending deployed execution; dedicated credentials are provisioned.
 
 Scope: manual import → durable progress → automatic matching → operator review, plus API checks on every production deployment. Trigger: pre-merge/release. Changes replace the synchronous manual request, reuse the existing reconciliation ledger/workflow, skip complete evidence before expensive work, and introduce a restricted release principal.
 
@@ -14,11 +14,11 @@ Known architecture §9 debt: this addresses synchronous manual-import timeout an
 
 ## QA
 
-Baseline production evidence: two manual POST requests returned HTTP 504 at exactly 300 seconds. Database activity continued during the request; this was not only a stale browser spinner. The request logs do not establish the selected billing period, so they are not labelled October. A separate December read-only balance snapshot and source audit are retained privately.
+Baseline production evidence: three manual POST requests returned HTTP 504 at exactly 300 seconds. Database activity continued during the request; this was not only a stale browser spinner. The request logs do not establish the selected billing period, so they are not labelled October. A separate December read-only balance snapshot and source audit are retained privately.
 
-Local checks: full unit/contract suite, TypeScript, changed-area ESLint, production build and six artifact checks pass. Recovery fixtures verify that completed attachment replay adds no download/storage write, missing archives do not produce false success, and signed-off receipts remain unchanged. The isolated browser flow covers source selection without import, queued status, refresh/reconnect, terminal matching feedback, stale-job recovery, and existing desktop/mobile payment/follow-up journeys. Exact run results are recorded in `.runtime/payment-workspace-check/results.json`.
+Local checks: 303 unit/contract tests, TypeScript, changed-area ESLint, production build and six artifact checks pass. Recovery fixtures verify that completed attachment replay adds no download/storage write, missing archives do not produce false success, and signed-off receipts remain unchanged. The isolated browser flow covers source selection without import, queued status, refresh/reconnect, terminal matching feedback, stale-job recovery, and existing desktop/mobile payment/follow-up journeys. Exact run results are recorded in `.runtime/payment-workspace-check/results.json`.
 
-Production verification is still required: service credentials must be provisioned, the deployed SHA must pass the new API job, and an authorized December Both import must reach a measured terminal result. Local fixture success does not establish live provider performance or financial correctness.
+Production verification is still required: service credentials are provisioned in Production and Actions; the deployed SHA must pass the new API job, and an authorized December Both import must reach a measured terminal result. Local fixture success does not establish live provider performance or financial correctness.
 
 ## UI and accessibility
 
@@ -34,7 +34,7 @@ QA proves local recovery/control behavior while production credentials and durat
 
 ## Prioritized remainder
 
-1. Provision the restricted release principal in Vercel Production and GitHub Actions; the connected Vercel tool currently reports missing team authorization.
+1. Dedicated release credentials are provisioned in Vercel Production and GitHub Actions through the existing authorized sessions. The non-secret property scope is read from the production server.
 2. Deploy and pass the authenticated revision-bound API gate; investigate any route/provider failure instead of accepting 401 or fallback as success.
 3. Run the authorized current-cycle Both import to terminal status, record actual duration/counts/matches, and verify no sign-off, alert or protected credit change.
 4. Retain historical archive gaps and broader mutation E2E acceptance as separate work; no bulk historical moves/reimports are included.

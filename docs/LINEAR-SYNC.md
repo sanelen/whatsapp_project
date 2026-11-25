@@ -44,7 +44,7 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 
 ## Gaps not yet ticketed
 
-- Owner-directed durable imports and production API verification (2026-11-25) — implementation and local checks ready; dedicated release-secret provisioning and live acceptance remain. No dedicated Linear ticket yet. See [review](./reviews/full-flow-review-2026-11-25-import-reliability.md).
+- Owner-directed durable imports and production API verification (2026-11-25) — implementation and local checks ready; dedicated credentials are provisioned; live acceptance remains. No dedicated Linear ticket yet. See [review](./reviews/full-flow-review-2026-11-25-import-reliability.md).
 
 - Native property waiting-list connection (FR-3.8), promoted by the owner on 2026-09-15. Backend Sheet persistence and retry/business dedupe verified; deployment and actual native launch acceptance are tracked in [the flow review](./reviews/full-flow-review-2026-09-15-property-waiting-list.md). No live Linear ticket has been created for this slice.
 These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ticket:
