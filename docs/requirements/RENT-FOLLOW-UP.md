@@ -94,7 +94,9 @@ copied and no deployed environment was changed.
 
 Template **hamba_management_rent_briefing**, language **en_US**, was submitted in
 the selected sender account. Meta required **Marketing** instead of Utility;
-the verified status is **In review**, with zero messages sent. Body contract:
+the initial status was **In review**, with zero messages sent. A later refresh
+on the same day confirmed **Active — Quality pending**. No duplicate template
+was submitted. Body contract:
 
 ```text
 *Hamba rent briefing*
@@ -110,12 +112,47 @@ characters, within the 100-character budget. Fictional examples were supplied
 only for Meta's template review, not delivered to a recipient.
 
 The authorized one-time setup delivery was **not sent**. A read-only Graph check
-rejected the existing local API token (HTTP 401, error 190), and the new template
-is awaiting approval. No message POST was attempted. Before activation, supply a
-valid token for the selected sender, confirm approval/category, set organization
+rejected the existing local API token (HTTP 401, error 190). Template approval is
+now verified; credential issuance requires the owner's direct Meta action. No
+message POST was attempted. Before activation, supply a valid token for the
+selected sender, confirm approval/category, set organization
 and building scope, apply the reviewed ledger migration and deploy the reviewed
 route. The production follow-up URL is not yet deployed by this branch.
 
 Any later setup check must use only the confirmed recipient, clearly say it is a
 setup test, and contain no sample financial figures. Do not substitute hello_world
 or infer successful handset receipt from provider acceptance.
+
+### Live readiness follow-up
+
+- Meta Developer app: Hamba Tenant Assistant, Live. Its WhatsApp production
+  setup selects hamba Trading info and exposes **Generate token** for a permanent
+  access token. No token is present. Browser credential-handling rules require
+  the owner to perform credential issuance/authorization directly; the page is
+  prepared for that handoff. Never paste the resulting token into chat.
+- Existing schedule: `vercel.json` requests daily checks at 05:00 UTC / 07:00
+  SAST. Code gates reconciliation to 72 hours after the last start. Live database
+  evidence shows scheduled completed runs on 10, 14, 18, 22 and 25 November;
+  this verifies execution, not the current Vercel cron configuration. The latest
+  started at 07:48 SAST and completed at 07:53 SAST on 25 November.
+- Latest run audit: 36 failed/pending files, zero entries missing a payment
+  reference. Despite status `completed`, these files prevent this branch's
+  automatic alert. Do not bypass that safeguard or silently repair imports.
+- Three properties belong to one organization. Alert scope is still unset;
+  this implementation supports one explicitly configured building. Saved charge,
+  due-date and confirmed-payment parity still need acceptance for that scope.
+- The delivery ledger returned REST 404 / PGRST205 (not available in the schema
+  cache). No migration was applied. Local production-snapshot Meta/outbound
+  flags are false; current deployed flags were not independently verified.
+- Duplicate handling is at-most-once per run/organization/property/recipient/
+  part, enforced by a primary-key claim before the provider request. Unknown
+  outcomes are retained and not retried automatically. Separate scheduled runs
+  may send fresh briefings. Five targeted alert tests passed in this follow-up.
+- A single setup test can use the approved four-parameter body with explicit
+  setup-only text and no financial figures. Do not use the developer page's
+  generic integration test template. Capture the resulting provider message ID
+  privately, then seek a matching delivered/read webhook in `channel_events`
+  or verified handset receipt; the alert ledger's `sent` alone is insufficient.
+
+No credential was generated, no message sent, and no production deployment,
+financial mutation, schedule change or activation was performed in this check.

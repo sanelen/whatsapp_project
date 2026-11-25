@@ -51,7 +51,7 @@ large-ledger production parity needs a real-data acceptance check before release
 | Overdue room → unit → scoped return | Pass | November room due date and balances checked |
 | Compact editable management draft | Pass | Recipient validation/encoded URL inspected; WhatsApp never opened |
 | Production authentication/database route | Not revalidated | Protected route uses existing requireUser boundary; build passes |
-| Migration/provider send | Blocked | Migration unapplied; private routing saved, template In review, stored API token rejected |
+| Migration/provider send | Blocked | Migration unapplied; private routing saved, template now Active, stored API token rejected |
 
 ## UI and accessibility
 
@@ -129,3 +129,16 @@ ledger migration and reviewed deployment remain prerequisites to activation.
 Configuration verification checked recipient suffix, sender identity, disabled
 flag, file permissions and Git ignore coverage without exposing values. No
 application code changed during this setup follow-up.
+
+The subsequent owner-authorized readiness check confirmed the same template is
+now **Active — Quality pending**. The live Hamba Tenant Assistant production page
+offers permanent token generation for the selected sender; credential issuance
+is left for the owner's direct action. No credential or send was performed.
+
+Live database reads confirm scheduled imports: latest run completed on 25 November
+at 07:53 SAST, but its audit has 36 failed/pending files, so alerts would be blocked.
+The configured daily cron check is gated by a 72-hour cadence; actual recorded
+runs are three to four days apart. The alert ledger is unavailable via REST
+(404 / PGRST205). There are three properties and no selected alert property yet.
+Five focused alert tests passed, including duplicate replay and ambiguous-send
+handling. Detailed findings and exact remaining prerequisites are in the runbook.
