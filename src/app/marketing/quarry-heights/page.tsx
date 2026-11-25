@@ -131,7 +131,7 @@ export default function QuarryHeightsAdvertPreviewPage() {
 
             <div className="mt-8 rounded-2xl border border-[#c88743]/35 bg-[#c88743]/10 p-4">
               <p className="text-xs font-black uppercase tracking-[0.18em] text-[#dca65f]">Current documented baseline</p>
-              <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-[#f5e0bc]">R2,200 / month</p>
+              <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-[#f5e0bc]">R2,400 / month</p>
               <p className="mt-1 text-sm font-semibold text-white/65">Refundable deposit: R2,200. Confirm current availability.</p>
             </div>
 

@@ -59,7 +59,7 @@ export const publicProperties: PublicProperty[] = [
     image: '/marketing/quarry-heights-exterior.jpg',
     monogram: 'QH',
     visualClass: 'from-[#5f3c27] via-[#9a6842] to-[#e1c697]',
-    priceLine: 'Current documented baseline: R2,200 per month',
+    priceLine: 'R2,400 per month',
     featureLine: 'Studio and en-suite rentals with free Wi-Fi; maximum two occupants',
     parkingLine: 'No tenant or guest parking is available',
     portfolioUrl: 'https://photos.app.goo.gl/56RH6eEDm8tBMWxo8',

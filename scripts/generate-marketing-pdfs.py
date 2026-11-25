@@ -109,7 +109,7 @@ PROPERTIES = [
         "strapline": "STUDIO & EN-SUITE APARTMENTS",
         "area": "NEWLANDS EAST, DURBAN",
         "address": "28 Nkunzana Grove, Newlands East, 4037",
-        "price": "R2,200 PER MONTH",
+        "price": "R2,400 PER MONTH",
         "deposit": "Current documented deposit baseline: R2,200",
         "profile": "hamba-quarry-heights-profile.png",
         "hero": "quarry-heights-exterior.jpg",
@@ -127,7 +127,7 @@ PROPERTIES = [
         "fit": "R2,200 refundable deposit baseline. Children under 12 are not permitted; ages 12-15 require staff confirmation.",
         "property_facts": [
             "Free Wi-Fi is included and units have private en-suite facilities.",
-            "The current documented baseline is R2,200 rent and a R2,200 refundable deposit.",
+            "The advertised monthly rent is R2,400, with a R2,200 refundable deposit.",
             "A maximum of two occupants is allowed per unit.",
             "No parking is available for tenants or guests, and there is no shared kitchen.",
         ],
@@ -142,7 +142,7 @@ PROPERTIES = [
             {
                 "title": "RENT & DEPOSIT",
                 "items": [
-                    "The current documented baseline is R2,200 monthly rent and a R2,200 refundable deposit.",
+                    "The advertised monthly rent is R2,400, with a R2,200 refundable deposit.",
                     "The deposit is refundable subject to the lease, final inspection and lawful deductions for amounts owed or documented damage.",
                     "Any deposit split requires staff approval before payment; do not assume an instalment arrangement.",
                     "Availability and the exact unit must be confirmed in writing.",
@@ -663,7 +663,7 @@ def draw_pdf(data: dict[str, object]) -> Path:
     c.setFillColor(accent)
     c.roundRect(50, hero_y + 26, 225, 45, 8, fill=1, stroke=0)
     c.setFillColor(ink)
-    c.setFont("Helvetica-Bold", 13 if "R2,200" in str(data["price"]) else 8.5)
+    c.setFont("Helvetica-Bold", 13 if str(data["slug"]) == "hamba-quarry-heights-advert" else 8.5)
     c.drawCentredString(162.5, hero_y + 51, str(data["price"]))
     c.setFont("Helvetica", 7.5)
     c.drawCentredString(162.5, hero_y + 38, str(data["deposit"]))

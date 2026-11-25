@@ -68,7 +68,7 @@ test('Quarry Heights advert keeps building-specific facts narrow and verified', 
   const source = readFileSync('src/app/marketing/quarry-heights/page.tsx', 'utf8');
   const profileSource = readFileSync('public/marketing/hamba-quarry-heights-profile.svg', 'utf8');
 
-  assert.match(source, /R2,200 \/ month/);
+  assert.match(source, /R2,400 \/ month/);
   assert.match(source, /Refundable deposit: R2,200/);
   assert.match(source, /Free Wi-Fi included/);
   assert.match(source, /Maximum two occupants/);
