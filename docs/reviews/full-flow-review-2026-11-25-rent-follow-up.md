@@ -51,7 +51,7 @@ large-ledger production parity needs a real-data acceptance check before release
 | Overdue room → unit → scoped return | Pass | November room due date and balances checked |
 | Compact editable management draft | Pass | Recipient validation/encoded URL inspected; WhatsApp never opened |
 | Production authentication/database route | Not revalidated | Protected route uses existing requireUser boundary; build passes |
-| Migration/provider send | Not yet testable live | Migration unapplied; credentials/recipient/template not configured |
+| Migration/provider send | Blocked | Migration unapplied; private routing saved, template In review, stored API token rejected |
 
 ## UI and accessibility
 
@@ -108,3 +108,24 @@ Local artifacts: `.runtime/payment-workspace-check/` (not committed).
 
 No push, merge, deployment, live import, migration, allocation, or message send
 was performed. Optional delivery remains disabled.
+
+## Subsequent authorized alert setup
+
+The owner selected connected **hamba Trading info** as sender and the Hamba
+Trading pamphlet number ending **4647** as the only recipient. Verified routing
+is saved in ignored `.env.local` with mode 0600, opt-in true and delivery disabled.
+The verified sender differs from the old local production phone setting; that
+production file was not modified. No token was copied into this branch.
+
+Submitted `hamba_management_rent_briefing` (`en_US`) through WhatsApp Manager.
+Meta required Marketing categorization; the resulting list shows **In review**
+and zero sends. Review samples are fictional and were not sent as a message.
+The four-parameter contract and exact body are recorded in the requirements.
+
+A read-only Graph token check failed with HTTP 401 / error 190. Consequently,
+the authorized setup delivery remains blocked; no message POST was attempted.
+Approval, valid selected-sender credentials, organization/building scope, the
+ledger migration and reviewed deployment remain prerequisites to activation.
+Configuration verification checked recipient suffix, sender identity, disabled
+flag, file permissions and Git ignore coverage without exposing values. No
+application code changed during this setup follow-up.

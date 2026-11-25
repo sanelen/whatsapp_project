@@ -1,7 +1,9 @@
 # Rent Follow-up — owner request, 2026-11-25
 
 Status: implemented on `codex/rent-collections-dashboard` for owner review only.
-This request does not activate unattended payment repair, deployment, or messaging.
+Automatic delivery remains disabled. The owner subsequently authorized private
+sender/recipient routing and submission of the management template; see setup
+status below. No deployment or unattended payment repair is authorized here.
 
 ## Acceptance
 
@@ -64,7 +66,8 @@ Before enabling in a reviewed environment:
    Existing Meta outbound configuration/token/phone ID must also be enabled.
 4. Only with owner authorization, set both `RENT_MANAGEMENT_ALERT_OPT_IN=true`
    and `RENT_MANAGEMENT_ALERTS_ENABLED=true`. Validate with an authorized test
-   recipient before relying on operational delivery. Neither flag was set here.
+   recipient before relying on operational delivery. The private branch routing
+   now records opt-in; the delivery-enabled flag remains false.
 
 Delivery requires a scheduled completed import less than two hours old, zero
 failed/pending files, zero entries missing references, refreshed current cycle,
@@ -77,3 +80,42 @@ Alert failure does not turn a completed bank import into a failed import.
 
 Disable by clearing `RENT_MANAGEMENT_ALERTS_ENABLED`; retain the delivery ledger.
 The migration and real provider transport have not been exercised in this branch.
+
+## Management alert setup — 25 November 2026
+
+The owner selected **hamba Trading info** as sender and the public Hamba Trading
+pamphlet number ending **4647** as the only management recipient. Meta shows the
+sender as Connected, with High quality. Its phone identifier was verified against
+the phone details UI; it differs from the old locally stored production setting.
+The branch's ignored, owner-readable `.env.local` records that verified sender,
+recipient, `RENT_MANAGEMENT_ALERT_OPT_IN=true`, template/language and HTTPS app
+origin. `RENT_MANAGEMENT_ALERTS_ENABLED=false` remains explicit. No credential was
+copied and no deployed environment was changed.
+
+Template **hamba_management_rent_briefing**, language **en_US**, was submitted in
+the selected sender account. Meta required **Marketing** instead of Utility;
+the verified status is **In review**, with zero messages sent. Body contract:
+
+```text
+*Hamba rent briefing*
+{{1}}
+Balances: {{2}}
+Rooms: {{3}}
+Review: {{4}}
+Verify pending receipts first.
+```
+
+The four parameters match the implementation's order above. Static text is 81
+characters, within the 100-character budget. Fictional examples were supplied
+only for Meta's template review, not delivered to a recipient.
+
+The authorized one-time setup delivery was **not sent**. A read-only Graph check
+rejected the existing local API token (HTTP 401, error 190), and the new template
+is awaiting approval. No message POST was attempted. Before activation, supply a
+valid token for the selected sender, confirm approval/category, set organization
+and building scope, apply the reviewed ledger migration and deploy the reviewed
+route. The production follow-up URL is not yet deployed by this branch.
+
+Any later setup check must use only the confirmed recipient, clearly say it is a
+setup test, and contain no sample financial figures. Do not substitute hello_world
+or infer successful handset receipt from provider acceptance.
