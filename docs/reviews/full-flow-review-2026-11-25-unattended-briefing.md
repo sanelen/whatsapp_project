@@ -1,7 +1,8 @@
 # Full-flow review: unattended checks and management briefing — 2026-11-25
 
-Verdict: local acceptance passes; ready for the normal release gates. Live
-enablement and one real-data delivered receipt remain outstanding.
+Verdict: production acceptance passed. Daily source checks and management alerts
+are active; one real-data briefing has a verified delivered receipt. Earlier
+pre-release checkpoints below are retained as the investigation history.
 
 Scope: daily scheduler → durable Gmail/Drive batches → current-cycle matching →
 source audit → one meaningful management briefing → operator review. Trigger:
@@ -100,3 +101,34 @@ refusal. UI: no new screen or interaction; the existing monitor records the outc
 Roadmap: this completes the authorized PAY-7 activation path while preserving
 manual financial approval. No new cross-lens disagreement; handset receipt remains
 an explicit pending acceptance until the corrected configuration is deployed.
+
+## Final operational acceptance — 25 November 2026
+
+The production enable flag and opted-in recipient were verified in the correct
+Vercel project. APP_URL was corrected from the old localhost value to the public
+HTTPS origin. Revision 3c9f8d6 deployed and passed all 29 production API checks and
+10 deployed-browser tests (runs 45673575335 and 45673766660). Local acceptance is
+313 tests plus the build, artifact checks and lint.
+
+Exactly one scheduled import was created for this test. It completed the current
+Gmail and Drive cycle in 87 seconds, with zero current file exceptions, missing
+references or matching failures. Recovery reused that audit after configuration
+repair; it did not create another import. New receipts remain unsigned for review.
+Historical exceptions were retained and no historical decision was repaired.
+
+The ledger contains exactly one financial briefing claim and provider message ID.
+The matching Meta status webhook confirms delivered at 20:18:56 SAST. A local
+reconstruction from the refreshed post-import balances matches the stored content
+fingerprint, confirming the briefing includes newly received pending rent. This
+is distinct from the earlier setup-only message. Private IDs and financial details
+are retained only in the ignored, owner-readable
+`.runtime/management-briefing-acceptance.json` artifact.
+
+The live Import audit screen shows fresh sources, zero current exceptions and
+provider acceptance. Its wording correctly leaves handset delivery to the separate
+webhook evidence. The single existing scheduler remains active at 05:00 UTC
+(07:00–08:00 SAST on Hobby). Unchanged briefings are suppressed; attempted delivery
+is capped daily and uncertainty blocks retry. No independent stale-source paging
+service was added; the 36-hour stale and two-hour stalled signals are visible in
+Import audit. Meta credentials remain exclusively in Vercel, shared chat outbound
+was not enabled, and no tenant message or financial sign-off was performed.

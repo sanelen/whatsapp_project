@@ -132,4 +132,4 @@ These are called out in ROADMAP.md / REQUIREMENTS.md but have no known Linear ti
 4. Once the connector is authorized, replace the "last known" statuses above with a
    live pull and remove this caveat.
 
-- PAY-7 unattended management briefing (2026-11-25): owner-authorized daily current-cycle source checks and meaningful-change alerts; dedicated Linear mapping remains absent. Local review passes; real-data delivery acceptance is pending. See [review](./reviews/full-flow-review-2026-11-25-unattended-briefing.md).
+- PAY-7 unattended management briefing (2026-11-25): owner-authorized daily current-cycle source checks and meaningful-change alerts; dedicated Linear mapping remains absent. Production acceptance passed: one real-data briefing delivered at 20:18:56 SAST on 25 November; PAY-7 is Met with manual sign-off retained. See [review](./reviews/full-flow-review-2026-11-25-unattended-briefing.md).
