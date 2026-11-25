@@ -81,6 +81,8 @@ is now the visual reference, not a separate competing plan.
 
 ## Full flow reviews
 
+- [Import reliability and production API gate — 2026-11-25](./reviews/full-flow-review-2026-11-25-import-reliability.md) — durable batches, evidence checkpoints, matching and restricted deployment probes.
+
 - [Rent Follow-up — 2026-11-25](./reviews/full-flow-review-2026-11-25-rent-follow-up.md) — additive page, reconciled rent balances, compact WhatsApp draft, disabled alert hook, and branch-only validation.
 
 - [Property waiting list — 2026-09-15](./reviews/full-flow-review-2026-09-15-property-waiting-list.md) — native form, atomic Sheet persistence, duplicate protection, and live launch acceptance.

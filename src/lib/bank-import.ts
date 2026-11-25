@@ -12,6 +12,7 @@ import {
   listFilesUnder,
   listPdfFilesUnder,
   uploadFile as uploadDriveFile,
+  type DriveFile,
 } from '@/lib/google-drive';
 
 type BankImportMailboxRow = {
@@ -73,6 +74,7 @@ type BankImportUnitMatchHintRow = {
 type GmailListResponse = {
   messages?: Array<{ id: string; threadId?: string }>;
   resultSizeEstimate?: number;
+  nextPageToken?: string;
 };
 
 type GmailMessagePart = {
@@ -1115,7 +1117,7 @@ async function loadGmailAttachment(
   return decodeBase64Url(payload.data);
 }
 
-async function collectGmailAttachments(accessToken: string, gmailUserId: string, message: GmailMessage) {
+async function collectGmailAttachments(accessToken: string, gmailUserId: string, message: GmailMessage, completedIds = new Set<string>()) {
   const attachments: ImportedAttachment[] = [];
 
   async function walk(part: GmailMessagePart | undefined): Promise<void> {
@@ -1127,6 +1129,8 @@ async function collectGmailAttachments(accessToken: string, gmailUserId: string,
 
     const fileName = part.filename?.trim() ?? '';
     if (!fileName) return;
+
+    if (part.body?.attachmentId && completedIds.has(part.body.attachmentId)) return;
 
     let data: Buffer | null = null;
     if (part.body?.data) {
@@ -1725,6 +1729,7 @@ export async function saveImportEvidenceToDrive(input: {
   attachment: ImportedAttachment;
   propertyMappings: BankImportPropertyMappingRow[];
   sourceDriveId?: string;
+  newFile?: boolean;
 }): Promise<{ bytes: Buffer; newlyArchived: boolean }> {
   const admin = getSupabaseAdmin();
   const { accessToken } = await getGoogleAccessToken(input.mailboxEmail);
@@ -1737,7 +1742,7 @@ export async function saveImportEvidenceToDrive(input: {
   let state = await readState();
   let folderPath = state.drive_folder_path as string | null;
   if (!state.drive_file_id) {
-    const existing = await findFileByAppProperty(accessToken, 'hambaFileId', input.fileId);
+    const existing = input.newFile || input.sourceDriveId ? null : await findFileByAppProperty(accessToken, 'hambaFileId', input.fileId);
     const proposedId = input.sourceDriveId ?? existing?.id ?? await generateFileId(accessToken);
     // Compare-and-set: concurrent workers must use the same reserved Drive ID.
     const { error } = await admin.from('bank_import_files').update({ drive_file_id: proposedId })
@@ -1770,6 +1775,28 @@ export async function saveImportEvidenceToDrive(input: {
   }).eq('id', input.fileId).eq('drive_file_id', driveId);
   if (error) throw new Error('Drive file saved, but archive checkpoint could not be completed; retry required');
   return { bytes, newlyArchived: !state.drive_archived_at };
+}
+
+async function completedGmailAttachments(messageId: string, accessToken: string) {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin.from('bank_import_files')
+    .select('gmail_attachment_id,drive_file_id,bank_import_entries(id,payment_references(id))')
+    .eq('message_id', messageId).eq('parser_status', 'parsed').not('drive_archived_at', 'is', null);
+  if (error) throw new Error(`Cannot verify Gmail checkpoints: ${error.message}`);
+  const ids = new Set<string>();
+  for (const file of data ?? []) {
+    if (!file.drive_file_id || !file.bank_import_entries.length || !file.bank_import_entries.every((entry) => entry.payment_references.length)) continue;
+    // Exact ID lookup, never a Drive search per email. A missing archive remains
+    // on the recovery path; checkpoint timestamps alone are insufficient.
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.drive_file_id)}?fields=id,trashed`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (response.status === 404) continue;
+    if (!response.ok) throw new Error(`Cannot verify archived evidence (${response.status})`);
+    const archived = await response.json() as { id?: string; trashed?: boolean };
+    if (archived.id === file.drive_file_id && !archived.trashed) ids.add(file.gmail_attachment_id);
+  }
+  return ids;
 }
 
 async function processImportedAttachment(input: {
@@ -1816,6 +1843,22 @@ async function processImportedAttachment(input: {
     storagePath,
   });
 
+  if (duplicate) {
+    const { data: checkpoint, error } = await getSupabaseAdmin().from('bank_import_files')
+      .select('id,drive_file_id,parser_status,drive_archived_at,bank_import_entries(id,payment_references(id))')
+      .eq('id', file.id).single();
+    if (error) throw new Error(`Cannot verify duplicate evidence: ${error.message}`);
+    if (checkpoint.parser_status === 'parsed' && checkpoint.drive_archived_at && checkpoint.drive_file_id
+      && checkpoint.bank_import_entries.length && checkpoint.bank_import_entries.every((entry) => entry.payment_references.length)) {
+      const { accessToken } = await getGoogleAccessToken(input.mailbox.email_address);
+      const verified = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkpoint.drive_file_id)}?fields=id,trashed`, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (verified.ok && !(await verified.json() as { trashed?: boolean }).trashed) {
+        return { duplicate: true, fileStored: false, entryCreated: false, paymentReferenceCreated: false, ignored: false, fileArchivedToDrive: false };
+      }
+      if (verified.status !== 404 && !verified.ok) throw new Error(`Cannot verify duplicate archive (${verified.status})`);
+    }
+  }
+
   // Store evidence before classification, including unsupported and excluded PDFs.
   // No payment entry is written until its Drive copy has been verified.
   await uploadImportFile(storagePath, input.attachment.data, input.attachment.mimeType);
@@ -1825,6 +1868,7 @@ async function processImportedAttachment(input: {
     attachment: input.attachment,
     propertyMappings: input.propertyMappings,
     sourceDriveId: input.sourceFolder === 'drive' ? input.attachment.sourceId : undefined,
+    newFile: !duplicate,
   });
   let parsedEntry: ParsedCapitecEntry | null = null;
   try {
@@ -2186,7 +2230,7 @@ export async function listActiveBankImportMailboxes() {
 
 export async function listBankImportGmailMessageIds(input: {
   mailboxId: string;
-  billingPeriod: string;
+  billingPeriod?: string;
   maxMessages?: number;
 }) {
   const mailboxes = await listActiveBankImportMailboxes();
@@ -2196,14 +2240,17 @@ export async function listBankImportGmailMessageIds(input: {
   const googleAuth = await getGoogleAccessToken(mailbox.email_address);
   await verifyGmailMailboxAccess(googleAuth, mailbox.email_address);
   const gmailUserId = gmailUserIdForRequest(googleAuth, mailbox.email_address);
-  const billingWindow = getBillingWindowForPeriod(input.billingPeriod);
+  const billingWindow = input.billingPeriod ? getBillingWindowForPeriod(input.billingPeriod) : undefined;
   const searchQuery = buildGmailSearchQuery(mailbox, billingWindow);
-  const listResponse = await gmailRequest<GmailListResponse>(
-    googleAuth.accessToken,
-    `users/${gmailUserId}/messages`,
-    { q: searchQuery, maxResults: input.maxMessages ?? 250 }
-  );
-  return (listResponse.messages ?? []).map((message) => message.id);
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const page = await gmailRequest<GmailListResponse>(googleAuth.accessToken,
+      `users/${gmailUserId}/messages`, { q: searchQuery, maxResults: 100, pageToken });
+    ids.push(...(page.messages ?? []).map((message) => message.id));
+    pageToken = page.nextPageToken;
+  } while (pageToken);
+  return [...new Set(ids)];
 }
 
 export async function importMailboxPayments(
@@ -2280,7 +2327,9 @@ export async function importMailboxPayments(
         messageRowId = messageRow.id;
         summary.messagesImported += 1;
 
-        const attachments = await collectGmailAttachments(accessToken, gmailUserId, message);
+        const completedIds = await completedGmailAttachments(messageRow.id, accessToken);
+        summary.duplicateFiles += completedIds.size;
+        const attachments = await collectGmailAttachments(accessToken, gmailUserId, message, completedIds);
         const attachmentErrors: string[] = [];
         for (const attachment of attachments) {
           summary.attachmentsProcessed += 1;
@@ -2333,9 +2382,56 @@ export async function importMailboxPayments(
   return summary;
 }
 
+// A checkpoint alone is not proof of a complete import: require both the
+// canonical entry and its receipt. Missing/pending evidence remains recoverable.
+export async function listBankImportDriveFiles(mailboxId: string, source: 'drive' | 'bank' = 'drive', billingPeriod?: string) {
+  const mailbox = (await listActiveBankImportMailboxes()).find((row) => row.id === mailboxId);
+  if (!mailbox) throw new Error('No active bank import mailbox matched the request');
+  const { accessToken } = await getGoogleAccessToken(mailbox.email_address);
+  const rootId = source === 'bank'
+    ? DRIVE_BANK_UPLOADS_FOLDER_ID ?? await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER, DRIVE_BANK_UPLOADS_FOLDER])
+    : await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER]);
+  const files = await (source === 'bank'
+    ? listFilesUnder(accessToken, rootId, { extensions: ['.pdf', '.csv', '.txt'], mimeTypes: ['application/pdf', 'text/csv', 'text/plain'] })
+    : listPdfFilesUnder(accessToken, rootId));
+  if (!billingPeriod || source === 'bank') return files;
+  const window = getBillingWindowForPeriod(billingPeriod);
+  const outside = new Set<string>();
+  const admin = getSupabaseAdmin();
+  for (let offset = 0; offset < files.length; offset += 100) {
+    const { data, error } = await admin.from('bank_import_files')
+      .select('drive_file_id,bank_import_entries(transaction_date)')
+      .in('drive_file_id', files.slice(offset, offset + 100).map(file => file.id));
+    if (error) throw new Error(`Cannot scope archive evidence: ${error.message}`);
+    for (const row of data ?? []) {
+      const entries = row.bank_import_entries ?? [];
+      if (entries.length && entries.every(entry => entry.transaction_date && (entry.transaction_date < window.startDate || entry.transaction_date > window.endDate))) outside.add(row.drive_file_id as string);
+    }
+  }
+  // Never rely on filename/folder month alone. Unknown evidence stays in scope.
+  return files.filter(file => !outside.has(file.id));
+}
+
+async function completedArchiveIds(files: DriveFile[]) {
+  const admin = getSupabaseAdmin();
+  const complete = new Set<string>();
+  for (let offset = 0; offset < files.length; offset += 100) {
+    const ids = files.slice(offset, offset + 100).map((file) => file.id);
+    const { data: evidence, error } = await admin.from('bank_import_files')
+      .select('id,drive_file_id,bank_import_entries(id,payment_references(id))')
+      .in('drive_file_id', ids).eq('parser_status', 'parsed').not('drive_archived_at', 'is', null);
+    if (error) throw new Error(`Cannot verify archive checkpoints: ${error.message}`);
+    for (const file of evidence ?? []) {
+      const entries = file.bank_import_entries ?? [];
+      if (entries.length && entries.every((entry) => entry.payment_references.length > 0)) complete.add(file.drive_file_id as string);
+    }
+  }
+  return complete;
+}
+
 export async function importDrivePayments(
   mailbox: BankImportMailboxRow,
-  options?: { billingWindow?: BillingWindow }
+  options?: { billingWindow?: BillingWindow; driveFiles?: DriveFile[] }
 ): Promise<BankImportRunSummary> {
   if (!mailbox.organization_id) {
     throw new Error(`Mailbox ${mailbox.email_address} is missing organization_id`);
@@ -2345,19 +2441,8 @@ export async function importDrivePayments(
   const accessToken = googleAuth.accessToken;
   const { propertyMappings, unitMatchHints } = await loadImportLookups(mailbox.organization_id);
   const rootId = await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER]);
-  const driveFiles = await listPdfFilesUnder(accessToken, rootId);
-
-  // Pre-load processed Drive file IDs to skip already-handled files
-  const admin = getSupabaseAdmin();
-  const { data: processedDriveMessages } = await admin
-    .from('bank_import_messages')
-    .select('gmail_message_id')
-    .eq('mailbox_id', mailbox.id)
-    .eq('import_status', 'processed')
-    .like('gmail_message_id', 'drive:%');
-  const processedDriveIds = new Set(
-    (processedDriveMessages ?? []).map((m: { gmail_message_id: string }) => m.gmail_message_id)
-  );
+  const driveFiles = options?.driveFiles ?? await listPdfFilesUnder(accessToken, rootId);
+  const completeArchiveIds = await completedArchiveIds(driveFiles);
 
   const summary: BankImportRunSummary = {
     mailboxEmail: mailbox.email_address,
@@ -2381,7 +2466,7 @@ export async function importDrivePayments(
 
   for (const driveFile of driveFiles) {
     // Fix 3: Skip Drive files already fully processed
-    if (!driveFile.appProperties?.hambaFileId && processedDriveIds.has(`drive:${driveFile.id}`)) {
+    if (completeArchiveIds.has(driveFile.id)) {
       summary.messagesSkipped += 1;
       continue;
     }
@@ -2434,7 +2519,7 @@ export async function importDrivePayments(
 
 export async function importDriveBankStatements(
   mailbox: BankImportMailboxRow,
-  options?: { billingWindow?: BillingWindow }
+  options?: { billingWindow?: BillingWindow; driveFiles?: DriveFile[] }
 ): Promise<BankImportRunSummary> {
   if (!mailbox.organization_id) {
     throw new Error(`Mailbox ${mailbox.email_address} is missing organization_id`);
@@ -2446,7 +2531,7 @@ export async function importDriveBankStatements(
   const bankUploadsRootId =
     DRIVE_BANK_UPLOADS_FOLDER_ID ??
     (await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER, DRIVE_BANK_UPLOADS_FOLDER]));
-  const driveFiles = await listFilesUnder(accessToken, bankUploadsRootId, {
+  const driveFiles = options?.driveFiles ?? await listFilesUnder(accessToken, bankUploadsRootId, {
     extensions: ['.pdf', '.csv', '.txt'],
     mimeTypes: ['application/pdf', 'text/csv', 'text/plain', 'application/vnd.ms-excel'],
   });
@@ -2714,6 +2799,8 @@ export async function runBankImport(input?: {
   mailboxId?: string;
   maxMessages?: number;
   gmailMessageIds?: string[];
+  driveFiles?: DriveFile[];
+  skipArchiveSweep?: boolean;
   billingPeriod?: string;
   pullAll?: boolean;
   source?: BankImportSource;
@@ -2755,14 +2842,14 @@ export async function runBankImport(input?: {
 
   // Drive can import archived PDFs back into the canonical bank-import pipeline,
   // then mirror any newly stored files into the same folder tree.
-  const needsDriveFallback = source === 'gmail' && !input?.gmailMessageIds?.length
+  const needsDriveFallback = source === 'gmail' && input?.gmailMessageIds === undefined
     && results.every((result) => result.paymentReferencesCreated === 0);
   if (source === 'drive' || source === 'both' || needsDriveFallback) {
     for (const mailbox of targetMailboxes) {
-      results.push(await importDrivePayments(mailbox, { billingWindow }));
+      results.push(await importDrivePayments(mailbox, { billingWindow, driveFiles: input?.driveFiles }));
     }
 
-    const archive = await archiveStoredFilesToDrive({ mailboxEmail: input?.mailboxEmail });
+    const archive = input?.skipArchiveSweep ? { filesArchived: 0 } : await archiveStoredFilesToDrive({ mailboxEmail: input?.mailboxEmail });
     if (results.length === 0) {
       const summary = emptyRunSummary(targetMailboxes[0].email_address, billingWindow);
       summary.filesArchivedToDrive = archive.filesArchived;
@@ -2776,9 +2863,34 @@ export async function runBankImport(input?: {
 
   if (source === 'bank') {
     for (const mailbox of targetMailboxes) {
-      results.push(await importDriveBankStatements(mailbox, { billingWindow }));
+      results.push(await importDriveBankStatements(mailbox, { billingWindow, driveFiles: input?.driveFiles }));
     }
   }
 
   return results;
+}
+
+
+export async function verifyBankImportEvidence(period: string) {
+  const window = getBillingWindowForPeriod(period);
+  const admin = getSupabaseAdmin();
+  const { data: rows, error } = await admin.from('bank_import_entries')
+    .select('amount,transaction_date,file_id,bank_import_files!inner(file_sha256,drive_file_id,bank_import_messages!inner(mailbox_id)),payment_references(id)')
+    .gte('transaction_date', window.startDate).lte('transaction_date', window.endDate).limit(6);
+  if (error) throw new Error(`Evidence probe query failed: ${error.message}`);
+  if (!rows?.length) throw new Error('No representative imported evidence in selected cycle');
+  const mailboxes = await listActiveBankImportMailboxes();
+  let verified = 0;
+  for (const row of rows as unknown as Array<{ amount: number; transaction_date: string; payment_references: Array<{ id: string }>; bank_import_files: { file_sha256: string; drive_file_id: string; bank_import_messages: { mailbox_id: string } } }>) {
+    const file = row.bank_import_files;
+    const mailbox = mailboxes.find((item) => item.id === file.bank_import_messages.mailbox_id) ?? mailboxes[0];
+    if (!file.drive_file_id || !row.payment_references.length || !mailbox) throw new Error('Evidence is missing an archive or receipt');
+    const { accessToken } = await getGoogleAccessToken(mailbox.email_address);
+    const bytes = await downloadDriveFile(accessToken, file.drive_file_id);
+    if (sha256(bytes) !== file.file_sha256) throw new Error('Archived original hash mismatch');
+    const parsed = parseCapitecTransactionText(await extractPdfText(bytes));
+    if (!parsed || parsed.amount !== Number(row.amount) || parsed.transactionDate !== row.transaction_date) throw new Error('Archive parser does not reproduce the stored transaction');
+    verified++;
+  }
+  return { verified, originalHashesVerified: verified, receiptsVerified: verified };
 }

@@ -1,8 +1,21 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from 'react';
 import { Download, ExternalLink, Loader2, MailCheck } from 'lucide-react';
 import Link from 'next/link';
+
+const JOB_KEY = 'hamba-bank-import-job-v1';
+function readJobId() { try { return window.localStorage.getItem(JOB_KEY); } catch { return null; } }
+function subscribeJob(callback: () => void) {
+  window.addEventListener('storage', callback);
+  window.addEventListener('hamba-import-job', callback);
+  return () => { window.removeEventListener('storage', callback); window.removeEventListener('hamba-import-job', callback); };
+}
+function setJobId(value: string | null) {
+  if (value) window.localStorage.setItem(JOB_KEY, value);
+  else window.localStorage.removeItem(JOB_KEY);
+  window.dispatchEvent(new Event('hamba-import-job'));
+}
 
 type BankImportSource = 'gmail' | 'drive' | 'bank' | 'both';
 
@@ -23,6 +36,10 @@ type BankImportControlsProps = {
 
 type ImportResponse = {
   success: boolean;
+  queued?: boolean;
+  workflowRunId?: string;
+  progress?: { stage?: string; completedBatches?: number; periodsChecked?: string[] };
+  autoMatch?: { matched: number; failed: number };
   error?: string;
   data?: Array<{
     mailboxEmail: string;
@@ -85,7 +102,9 @@ export function BankImportControls({
   const [source, setSource] = useState<BankImportSource>('both');
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [googleCloudStatus, setGoogleCloudStatus] = useState<GoogleCloudIntegrationResponse | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isStarting, startTransition] = useTransition();
+  const jobId = useSyncExternalStore(subscribeJob, readJobId, () => null);
+  const isPending = isStarting || Boolean(jobId);
   const [isConnecting, startConnecting] = useTransition();
 
   const activePeriod = selectedPeriod ?? internalSelectedPeriod;
@@ -143,25 +162,54 @@ export function BankImportControls({
     });
   }
 
+
+  useEffect(() => {
+    if (!jobId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/monthly-payments/import?runId=${encodeURIComponent(jobId)}`);
+        const payload = await response.json() as ImportResponse;
+        if (cancelled) return;
+        if (response.status === 404 || response.status === 401 || response.status === 403) {
+          setJobId(null);
+          setResult({ success: false, error: response.status === 404 ? 'This import job is no longer available. Check the import audit before starting again.' : 'Sign in again to check the import. The server job is not cancelled.' });
+          return;
+        }
+        if (!response.ok) throw new Error(payload.error || `Status check failed (${response.status})`);
+        setResult(payload);
+        if (!payload.queued) {
+          setJobId(null);
+          onImported?.();
+          return;
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setResult({ success: false, queued: true, error: `${error instanceof Error ? error.message : 'Status unavailable'}. The job may still be running; checking again.` });
+      }
+      timer = setTimeout(poll, 3000);
+    };
+    void poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [jobId, onImported]);
+
   function runImport(periodOverride?: string | Event) {
     const resolvedPeriod = typeof periodOverride === 'string' ? periodOverride : undefined;
     setResult(null);
     startTransition(async () => {
-      const response = await fetch('/api/monthly-payments/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          billingPeriod: resolvedPeriod ?? activePeriod,
-          pullAll: source === 'bank' ? true : pullAll,
-          source,
-          maxMessages: pullAll ? 100 : 50,
-        }),
-      });
-      const payload = (await response.json()) as ImportResponse;
-      setResult(payload);
-      // Pull the freshly-written rows from the database into the dashboard.
-      if (payload.success) {
-        onImported?.();
+      try {
+        const response = await fetch('/api/monthly-payments/import', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ billingPeriod: resolvedPeriod ?? activePeriod, pullAll: source === 'bank' ? true : pullAll, source }),
+        });
+        const payload = await response.json().catch(() => ({ success: false, error: `Import request failed (${response.status}). Refresh to check saved progress.` })) as ImportResponse;
+        setResult(payload);
+        if (response.ok && payload.queued && payload.workflowRunId) {
+          setJobId(payload.workflowRunId);
+        }
+      } catch (error) {
+        setResult({ success: false, error: error instanceof Error ? error.message : 'Import connection failed' });
       }
     });
   }
@@ -326,10 +374,13 @@ export function BankImportControls({
               : 'border-[#f3b0b0] bg-[#fbe7e7] text-[#b91c1c]'
           }`}
         >
-          {result.success && totals ? (
+          {result.queued ? (
+            <p role="status">{result.error || `Import ${result.progress?.periodsChecked?.filter(Boolean).join(', ') || ''} running: ${result.progress?.stage ?? 'queued'} · ${result.progress?.completedBatches ?? 0} batches saved. You can leave this page and return.`}</p>
+          ) : result.success && totals ? (
             <div className="space-y-1">
               <p>
                 {mailboxWarnings.length ? 'Import completed with mailbox warnings. ' : ''}
+                {result.autoMatch ? `${result.autoMatch.matched} automatically matched; sign-off remains manual. ` : ''}
                 Imported {totals.paymentReferencesCreated} references from {totals.messagesScanned} messages.
                 {totals.ignoredEntries ? ` ${totals.ignoredEntries} entries were ignored.` : ''}
                 {totals.duplicateFiles ? ` ${totals.duplicateFiles} duplicate files were skipped.` : ''}

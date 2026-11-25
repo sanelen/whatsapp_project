@@ -6,8 +6,8 @@ import { getApiUser } from './dal';
 //
 //   const denied = await requireApiAuth();
 //   if (denied) return denied;
-export async function requireApiAuth(): Promise<NextResponse | null> {
-  const user = await getApiUser();
+export async function requireApiAuth(request?: Request): Promise<NextResponse | null> {
+  const user = await getApiUser(request);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

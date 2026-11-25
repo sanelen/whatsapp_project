@@ -67,18 +67,19 @@ function writeHistory(threads: Thread[]) {
   fs.writeFileSync(HISTORY_FILE, JSON.stringify(payload, null, 2), 'utf-8');
 }
 
-export async function GET() {
-  const denied = await requireApiAuth();
+export async function GET(request: Request) {
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   return NextResponse.json({ threads: readHistory() });
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
-    const body = (await request.json()) as { threads?: Thread[] };
+    const body = (await request.json()) as { threads?: Thread[]; dryRun?: boolean };
     const threads = Array.isArray(body?.threads) ? body.threads : [];
+    if (body.dryRun === true) return NextResponse.json({ ok: true, dryRun: true, persisted: false, threadsValidated: threads.length });
     writeHistory(threads);
     return NextResponse.json({ ok: true });
   } catch {
@@ -86,10 +87,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function DELETE() {
-  const denied = await requireApiAuth();
+export async function DELETE(request: NextRequest) {
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
+    if (request.nextUrl.searchParams.get('dryRun') === 'true') return NextResponse.json({ ok: true, dryRun: true, persisted: false });
     writeHistory([]);
     return NextResponse.json({ ok: true });
   } catch {

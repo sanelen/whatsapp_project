@@ -30,7 +30,8 @@
     "test:e2e:headed": "npx playwright test --project=local --headed --workers=1 surplus-credit-scenarios match-flow-feedback",
     "test:e2e:ci": "CI=true npx playwright test --project=local",
     "test:e2e:vercel": "npx playwright test --project=vercel",
-    "test:e2e:report": "npx playwright show-report playwright-report"
+    "test:e2e:report": "npx playwright show-report playwright-report",
+    "test:release:api": "node release-tests/api/run.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.94.0",

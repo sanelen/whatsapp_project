@@ -283,7 +283,7 @@ async function persistKnowledgeSource(input: UploadPayload) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
 
   try {

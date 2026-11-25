@@ -7,7 +7,7 @@ import {
 } from '@/lib/overview-analytics';
 
 export async function GET(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
 
   const propertyId = request.nextUrl.searchParams.get('propertyId')?.trim();

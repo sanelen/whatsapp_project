@@ -11,7 +11,7 @@ import {
 } from '@/lib/kb/vector';
 
 export async function POST(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
     const body = await request.json();

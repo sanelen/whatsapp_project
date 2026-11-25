@@ -561,7 +561,7 @@ async function uploadMedia(formData: FormData, actor: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   const propertyId = request.nextUrl.searchParams.get('propertyId')?.trim() || '';
   if (!propertyId) return NextResponse.json({ success: false, error: 'propertyId is required.' }, { status: 400 });
@@ -583,9 +583,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
-  const user = await getApiUser();
+  const user = await getApiUser(request);
   if (!user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   const actor = user.email || user.id;
 

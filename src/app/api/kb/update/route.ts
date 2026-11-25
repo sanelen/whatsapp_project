@@ -5,7 +5,7 @@ import { requireApiAuth } from '@/lib/auth/api-guard';
 import { indexKnowledgeEntry, resolveOpenAiEmbeddingKey } from '@/lib/kb/vector';
 
 export async function PATCH(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
     const body = await request.json();

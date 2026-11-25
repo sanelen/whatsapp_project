@@ -1,3 +1,4 @@
+import { isReleaseCheckRequest } from '@/lib/auth/release-check';
 import { NextResponse, type NextRequest } from 'next/server';
 import { isAuthUserAllowed } from '@/lib/auth/access-control';
 import { isLocalAuthBypassEnabled } from '@/lib/auth/local-testing';
@@ -46,6 +47,11 @@ export async function proxy(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
+  if (await isReleaseCheckRequest(request)) {
+    const response = NextResponse.next();
+    if (process.env.VERCEL_GIT_COMMIT_SHA) response.headers.set('x-hamba-revision', process.env.VERCEL_GIT_COMMIT_SHA);
+    return response;
+  }
   if (isCronAuthorizedPath(pathname, request.headers.get('authorization'))) {
     return NextResponse.next();
   }
@@ -75,6 +81,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/staff', request.url));
   }
 
+  if (pathname.startsWith('/api/') && process.env.VERCEL_GIT_COMMIT_SHA) response.headers.set('x-hamba-revision', process.env.VERCEL_GIT_COMMIT_SHA);
   return response;
 }
 

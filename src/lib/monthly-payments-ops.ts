@@ -667,6 +667,8 @@ export async function matchReferenceToUnit(input: {
  * signed off automatically.
  */
 export async function autoMatchUnmatchedReferences(input: {
+  periods?: string[];
+  dryRun?: boolean;
   propertyId?: string;
   actor: string;
 }) {
@@ -678,6 +680,11 @@ export async function autoMatchUnmatchedReferences(input: {
     .is('unit_id', null)
     .eq('signed_off', false);
   if (input.propertyId) referenceQuery = referenceQuery.eq('property_id', input.propertyId);
+  if (input.periods?.length) {
+    const { getBillingWindowForPeriod } = await import('@/lib/bank-import');
+    const windows = input.periods.map(getBillingWindowForPeriod);
+    referenceQuery = referenceQuery.or(windows.map((window) => `and(received_at.gte.${window.startDate},received_at.lte.${window.endDate}T23:59:59.999Z)`).join(','));
+  }
   const { data: references, error: referencesError } = await referenceQuery;
   if (referencesError) throw new Error(`Failed to load unmatched references: ${referencesError.message}`);
   if (!references || references.length === 0) {
@@ -755,6 +762,8 @@ export async function autoMatchUnmatchedReferences(input: {
     });
     matchesByUnit.set(unitKey, unitMatches);
   }
+
+  if (input.dryRun) return { scanned: references.length, matched: [...matchesByUnit.values()].reduce((count, rows) => count + rows.length, 0), ambiguous, unmatched: unmatchedCount, failed: 0 };
 
   const unitGroups = Array.from(matchesByUnit.values());
   const groupBatchSize = 6;

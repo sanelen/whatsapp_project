@@ -14,7 +14,7 @@ function resolveRedirectUri(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
 
   const redirectUri = resolveRedirectUri(request);

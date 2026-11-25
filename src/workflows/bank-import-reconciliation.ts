@@ -1,3 +1,6 @@
+import { getWorkflowMetadata } from 'workflow';
+import type { BankImportRequest } from '@/lib/bank-import-request';
+import type { DriveFile } from '@/lib/google-drive';
 import type { BankImportRunSummary } from '@/lib/bank-import';
 import type { ReconciliationRunView } from '@/lib/bank-import-reconciliation';
 
@@ -17,6 +20,7 @@ type Preparation =
       trigger: Trigger;
       mailboxes: MailboxSpec[];
       periodsChecked: string[];
+      workflowRunId: string;
     };
 
 type SliceResult = {
@@ -41,65 +45,87 @@ type MessageChunk = {
   messageIds: string[];
 };
 
-export async function bankImportReconciliationWorkflow(force: boolean, trigger: Trigger) {
+export async function bankImportReconciliationWorkflow(force: boolean, trigger: Trigger, options?: BankImportRequest) {
   "use workflow";
 
-  const preparation = await prepareReconciliation(force, trigger);
+  const preparation = await prepareReconciliation(force, trigger, getWorkflowMetadata().workflowRunId, options);
   if (preparation.skipped) return preparation;
 
-  const listings = await Promise.all(
-    preparation.mailboxes.flatMap((mailbox) =>
-      preparation.periodsChecked.map((period) => listMailboxPeriodMessages(mailbox, period))
-    )
-  );
-  const listingFailures: SliceResult[] = listings
-    .filter((listing) => !listing.ok)
-    .map((listing) => ({
-      mailboxEmail: listing.mailbox.emailAddress,
-      period: listing.period,
-      ok: false,
-      error: listing.error,
-    }));
-  const messageChunkSize = 30;
-  const chunks: MessageChunk[] = listings.filter((listing) => listing.ok).flatMap((listing) => {
-    const messageIds = listing.messageIds ?? [];
-    if (messageIds.length === 0) return [{ mailbox: listing.mailbox, period: listing.period, messageIds: [] }];
-    const result: MessageChunk[] = [];
-    for (let offset = 0; offset < messageIds.length; offset += messageChunkSize) {
-      result.push({ mailbox: listing.mailbox, period: listing.period, messageIds: messageIds.slice(offset, offset + messageChunkSize) });
+  try {
+    const listings = options?.source === 'drive' || options?.source === 'bank' ? [] : await Promise.all(
+      preparation.mailboxes.flatMap((mailbox) =>
+        preparation.periodsChecked.map((period) => listMailboxPeriodMessages(mailbox, period))
+      )
+    );
+    const listingFailures: SliceResult[] = listings
+      .filter((listing) => !listing.ok)
+      .map((listing) => ({
+        mailboxEmail: listing.mailbox.emailAddress,
+        period: listing.period,
+        ok: false,
+        error: listing.error,
+      }));
+    const messageChunkSize = 8;
+    const chunks: MessageChunk[] = listings.filter((listing) => listing.ok).flatMap((listing) => {
+      const messageIds = listing.messageIds ?? [];
+      if (messageIds.length === 0) return [];
+      const result: MessageChunk[] = [];
+      for (let offset = 0; offset < messageIds.length; offset += messageChunkSize) {
+        result.push({ mailbox: listing.mailbox, period: listing.period, messageIds: messageIds.slice(offset, offset + messageChunkSize) });
+      }
+      return result;
+    });
+    const slices: SliceResult[] = [...listingFailures];
+    // Bound provider/DB concurrency, and persist each completed batch before moving on.
+    for (let offset = 0; offset < chunks.length; offset += 2) {
+      slices.push(...await Promise.all(chunks.slice(offset, offset + 2).map(importMailboxPeriodChunk)));
+      await recordProgress(preparation, slices, 'gmail');
     }
-    return result;
-  });
-  const slices = [
-    ...listingFailures,
-    ...(await Promise.all(chunks.map((chunk) => importMailboxPeriodChunk(chunk)))),
-  ];
+    if (options && options.source !== 'gmail') {
+      for (const mailbox of preparation.mailboxes) {
+        const source = options.source === 'bank' ? 'bank' : 'drive';
+        const listing = await listDriveEvidence(mailbox, source, options.pullAll ? undefined : options.billingPeriod);
+        if (!listing.ok) slices.push({ mailboxEmail: mailbox.emailAddress, period: options.billingPeriod ?? '', ok: false, error: listing.error });
+        for (let offset = 0; offset < listing.files.length; offset += 5) {
+          slices.push(await importDriveChunk(mailbox, options, listing.files.slice(offset, offset + 5)));
+          await recordProgress(preparation, slices, source);
+        }
+      }
+    }
+    await recordProgress(preparation, slices, 'matching');
+    const matching = await matchImportedPayments(preparation.periodsChecked, options?.pullAll === true);
+    if (matching.failed) slices.push({ mailboxEmail: preparation.mailboxes[0].emailAddress, period: '', ok: false, error: `${matching.failed} automatic matches failed` });
 
-  const mailboxResults: ReconciliationRunView['mailboxResults'] = preparation.mailboxes.map((mailbox) => {
-    const mailboxSlices = slices.filter((slice) => slice.mailboxEmail === mailbox.emailAddress);
-    const failures = mailboxSlices.filter((slice) => !slice.ok);
-    if (failures.length > 0) {
+    const mailboxResults: ReconciliationRunView['mailboxResults'] = preparation.mailboxes.map((mailbox) => {
+      const mailboxSlices = slices.filter((slice) => slice.mailboxEmail === mailbox.emailAddress);
+      const failures = mailboxSlices.filter((slice) => !slice.ok);
+      if (failures.length > 0) {
+        return {
+          mailboxEmail: mailbox.emailAddress,
+          ok: false,
+          error: failures.map((failure) => `${failure.period}: ${failure.error ?? 'Import failed'}`).join(' | '),
+          summaries: mailboxSlices.flatMap((slice) => slice.summaries ?? []),
+        };
+      }
       return {
         mailboxEmail: mailbox.emailAddress,
-        ok: false,
-        error: failures.map((failure) => `${failure.period}: ${failure.error ?? 'Import failed'}`).join(' | '),
+        ok: true,
+        summaries: mailboxSlices.flatMap((slice) => slice.summaries ?? []),
       };
-    }
-    return {
-      mailboxEmail: mailbox.emailAddress,
-      ok: true,
-      summaries: mailboxSlices.flatMap((slice) => slice.summaries ?? []),
-    };
-  });
+    });
 
-  const completed = await finalizeReconciliation(preparation, mailboxResults);
-  if (preparation.trigger === 'scheduled' && completed.status === 'completed') {
-    await deliverRentManagementAlert(preparation.runId);
+    const completed = await finalizeReconciliation(preparation, mailboxResults, matching);
+    if (preparation.trigger === 'scheduled' && completed.status === 'completed') {
+      await deliverRentManagementAlert(preparation.runId);
+    }
+    return completed;
+  } catch (error) {
+    await failReconciliation(preparation.runId, error instanceof Error ? error.message : String(error));
+    throw error;
   }
-  return completed;
 }
 
-async function prepareReconciliation(force: boolean, trigger: Trigger): Promise<Preparation> {
+async function prepareReconciliation(force: boolean, trigger: Trigger, workflowRunId: string, options?: BankImportRequest): Promise<Preparation> {
   "use step";
   console.log(`[bank-reconciliation:prepare] START trigger=${trigger} force=${force}`);
   const { getSupabaseAdmin } = await import('@/lib/supabase');
@@ -112,11 +138,18 @@ async function prepareReconciliation(force: boolean, trigger: Trigger): Promise<
   } = await import('@/lib/bank-import-reconciliation');
 
   const admin = getSupabaseAdmin();
-  const mailboxes = await listActiveBankImportMailboxes();
+  const mailboxes = (await listActiveBankImportMailboxes()).filter((mailbox) =>
+    (!options?.mailboxId || mailbox.id === options.mailboxId) &&
+    (!options?.mailboxEmail || mailbox.email_address.toLowerCase() === options.mailboxEmail.toLowerCase()));
   const organizationId = mailboxes.find((mailbox) => mailbox.organization_id)?.organization_id;
   if (!organizationId) throw new Error('No organization-scoped bank import mailbox is configured.');
 
   const latest = await readLatestReconciliationRun();
+  if (latest?.status === 'running' && latest.summary.workflowRunId === workflowRunId) return {
+    skipped: false, runId: latest.id, organizationId, trigger, workflowRunId,
+    mailboxes: mailboxes.map(mailbox => ({ id: mailbox.id, emailAddress: mailbox.email_address })),
+    periodsChecked: options ? [options.pullAll ? '' : options.billingPeriod!] : reconciliationPeriods(),
+  };
   if (!force && !isReconciliationDue(latest?.startedAt ?? null)) {
     console.log('[bank-reconciliation:prepare] SKIP cadence_not_due');
     return { skipped: true, reason: 'cadence_not_due', latest };
@@ -124,13 +157,19 @@ async function prepareReconciliation(force: boolean, trigger: Trigger): Promise<
 
   const { data: run, error } = await admin
     .from('bank_import_reconciliation_runs')
-    .insert({ organization_id: organizationId, trigger, status: 'running', cadence_hours: RECONCILIATION_CADENCE_HOURS })
+    .insert({ organization_id: organizationId, trigger, status: 'running', cadence_hours: RECONCILIATION_CADENCE_HOURS, reconciliation_summary: { workflowRunId, stage: 'listing', options } })
     .select('id')
     .single<{ id: string }>();
   if (error) {
     if (/one_running|duplicate key/i.test(error.message)) {
+      const existing = await readLatestReconciliationRun();
+      if (existing?.status === 'running' && existing.summary.workflowRunId === workflowRunId) return {
+        skipped: false, runId: existing.id, organizationId, trigger, workflowRunId,
+        mailboxes: mailboxes.map(mailbox => ({ id: mailbox.id, emailAddress: mailbox.email_address })),
+        periodsChecked: options ? [options.pullAll ? '' : options.billingPeriod!] : reconciliationPeriods(),
+      };
       console.log('[bank-reconciliation:prepare] SKIP already_running');
-      return { skipped: true, reason: 'already_running', latest };
+      return { skipped: true, reason: 'already_running', latest: existing };
     }
     throw new Error(`Failed to start bank reconciliation: ${error.message}`);
   }
@@ -141,7 +180,8 @@ async function prepareReconciliation(force: boolean, trigger: Trigger): Promise<
     organizationId,
     trigger,
     mailboxes: mailboxes.map((mailbox) => ({ id: mailbox.id, emailAddress: mailbox.email_address })),
-    periodsChecked: reconciliationPeriods(),
+    periodsChecked: options ? [options.pullAll ? '' : options.billingPeriod!] : reconciliationPeriods(),
+    workflowRunId,
   };
   console.log(`[bank-reconciliation:prepare] DONE runId=${run.id}`);
   return result;
@@ -152,7 +192,7 @@ async function listMailboxPeriodMessages(mailbox: MailboxSpec, period: string): 
   console.log(`[bank-reconciliation:list] START mailbox=${mailbox.emailAddress} period=${period}`);
   const { listBankImportGmailMessageIds } = await import('@/lib/bank-import');
   try {
-    const messageIds = await listBankImportGmailMessageIds({ mailboxId: mailbox.id, billingPeriod: period, maxMessages: 250 });
+    const messageIds = await listBankImportGmailMessageIds({ mailboxId: mailbox.id, billingPeriod: period || undefined, maxMessages: 250 });
     console.log(`[bank-reconciliation:list] DONE mailbox=${mailbox.emailAddress} period=${period} messages=${messageIds.length}`);
     return { mailbox, period, ok: true, messageIds };
   } catch (error) {
@@ -169,12 +209,14 @@ async function importMailboxPeriodChunk(chunk: MessageChunk): Promise<SliceResul
   try {
     const summaries = await runBankImport({
       mailboxId: chunk.mailbox.id,
-      billingPeriod: chunk.period,
+      billingPeriod: chunk.period || undefined,
+      pullAll: !chunk.period,
       source: 'gmail',
       gmailMessageIds: chunk.messageIds,
     });
     console.log(`[bank-reconciliation:import] DONE mailbox=${chunk.mailbox.emailAddress} period=${chunk.period} messages=${chunk.messageIds.length}`);
-    return { mailboxEmail: chunk.mailbox.emailAddress, period: chunk.period, ok: true, summaries };
+    const failed = summaries.reduce((count, summary) => count + summary.failedMessages, 0);
+    return { mailboxEmail: chunk.mailbox.emailAddress, period: chunk.period, ok: failed === 0, summaries, error: failed ? `${failed} messages failed` : undefined };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[bank-reconciliation:import] FAIL mailbox=${chunk.mailbox.emailAddress} period=${chunk.period} error=${message}`);
@@ -184,7 +226,8 @@ async function importMailboxPeriodChunk(chunk: MessageChunk): Promise<SliceResul
 
 async function finalizeReconciliation(
   preparation: Extract<Preparation, { skipped: false }>,
-  mailboxResults: ReconciliationRunView['mailboxResults']
+  mailboxResults: ReconciliationRunView['mailboxResults'],
+  autoMatch: { scanned: number; matched: number; ambiguous: number; unmatched: number; failed: number }
 ) {
   "use step";
   console.log(`[bank-reconciliation:finalize] START runId=${preparation.runId}`);
@@ -233,6 +276,9 @@ async function finalizeReconciliation(
     });
     const summary: ReconciliationRunView['summary'] = {
       ...coverage,
+      workflowRunId: preparation.workflowRunId,
+      stage: 'finished',
+      autoMatch,
       failedOrPendingFiles: problemFilesResult.count ?? 0,
       entriesMissingPaymentReference: entryIds.filter((id) => !referencedEntryIds.has(id)).length,
       periodsChecked: preparation.periodsChecked,
@@ -273,4 +319,51 @@ async function deliverRentManagementAlert(runId: string) {
     console.error('[rent-management-alert] Delivery blocked; inspect configuration and delivery ledger.');
     return { state: 'delivery_blocked', sent: 0 };
   }
+}
+
+async function recordProgress(preparation: Extract<Preparation, { skipped: false }>, slices: SliceResult[], stage: string) {
+  "use step";
+  const { getSupabaseAdmin } = await import('@/lib/supabase');
+  const { error } = await getSupabaseAdmin().from('bank_import_reconciliation_runs').update({
+    reconciliation_summary: { workflowRunId: preparation.workflowRunId, stage, periodsChecked: preparation.periodsChecked,
+      completedBatches: slices.length, updatedAt: new Date().toISOString() },
+    mailbox_results: slices.map((slice) => ({ mailboxEmail: slice.mailboxEmail, ok: slice.ok, summaries: slice.summaries, error: slice.error })),
+  }).eq('id', preparation.runId);
+  if (error) throw new Error(`Cannot persist import progress: ${error.message}`);
+}
+
+async function listDriveEvidence(mailbox: MailboxSpec, source: 'drive' | 'bank', billingPeriod?: string) {
+  "use step";
+  const { listBankImportDriveFiles } = await import('@/lib/bank-import');
+  try { return { ok: true, files: await listBankImportDriveFiles(mailbox.id, source, billingPeriod), error: undefined }; }
+  catch (error) { return { ok: false, files: [] as DriveFile[], error: error instanceof Error ? error.message : String(error) }; }
+}
+
+async function importDriveChunk(mailbox: MailboxSpec, options: BankImportRequest, files: DriveFile[]): Promise<SliceResult> {
+  "use step";
+  const { runBankImport } = await import('@/lib/bank-import');
+  const started = Date.now();
+  try {
+    const summaries = await runBankImport({ ...options, mailboxId: mailbox.id,
+      source: options.source === 'bank' ? 'bank' : 'drive', driveFiles: files, skipArchiveSweep: true });
+    const failed = summaries.reduce((count, summary) => count + summary.failedMessages, 0);
+    console.log('[bank-import:drive-batch]', { files: files.length, durationMs: Date.now() - started, failed });
+    return { mailboxEmail: mailbox.emailAddress, period: options.billingPeriod ?? '', summaries, ok: failed === 0,
+      error: failed ? `${failed} files failed` : undefined };
+  } catch (error) { return { mailboxEmail: mailbox.emailAddress, period: options.billingPeriod ?? '', ok: false, error: error instanceof Error ? error.message : String(error) }; }
+}
+
+async function matchImportedPayments(periods: string[], allPeriods: boolean) {
+  "use step";
+  const { ensurePaymentPeriodsForPeriod, autoMatchUnmatchedReferences } = await import('@/lib/monthly-payments-ops');
+  for (const periodKey of periods.filter(Boolean)) await ensurePaymentPeriodsForPeriod({ periodKey });
+  return autoMatchUnmatchedReferences({ actor: 'auto-match (bank import)', periods: allPeriods ? undefined : periods.filter(Boolean) });
+}
+
+async function failReconciliation(runId: string, message: string) {
+  "use step";
+  const { getSupabaseAdmin } = await import('@/lib/supabase');
+  const { error } = await getSupabaseAdmin().from('bank_import_reconciliation_runs')
+    .update({ status: 'failed', completed_at: new Date().toISOString(), error_message: message }).eq('id', runId);
+  if (error) throw new Error('Cannot persist failed import status');
 }

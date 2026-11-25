@@ -87,8 +87,8 @@ async function readWorkspace() {
   });
 }
 
-export async function GET() {
-  const denied = await requireApiAuth();
+export async function GET(request: Request) {
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
     const workspace = await readWorkspace();
@@ -106,7 +106,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
     const body = (await request.json()) as WorkspaceAction;

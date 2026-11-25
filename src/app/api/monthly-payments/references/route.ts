@@ -18,7 +18,7 @@ import {
 } from '@/lib/monthly-payments-ops';
 
 export async function POST(request: NextRequest) {
-  const user = await getApiUser();
+  const user = await getApiUser(request);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

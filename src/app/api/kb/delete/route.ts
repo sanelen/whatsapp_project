@@ -5,7 +5,7 @@ import { requireApiAuth } from '@/lib/auth/api-guard';
 import { DEFAULT_UPLOADS_BUCKET } from '@/lib/kb/sources';
 
 export async function DELETE(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
     const body = await request.json();

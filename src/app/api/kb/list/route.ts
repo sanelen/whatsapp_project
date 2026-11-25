@@ -4,7 +4,7 @@ import type { ApiResponse, KnowledgeBase } from '@/lib/types';
 import { requireApiAuth } from '@/lib/auth/api-guard';
 
 export async function GET(request: Request) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
     const url = new URL(request.url);

@@ -251,8 +251,9 @@ original Twilio implementation remains historical and is not restored.
 3. Several service-only tables have RLS enabled with no client policies (Supabase
    informational advisory). Keep them service-only or add explicit ownership policies
    before exposing them to authenticated browser clients.
-4. Bank import currently runs synchronously in the request path. Large statement
-   batches should move to a durable import-run/job model with retry and progress.
+4. Manual bank imports now queue the existing durable reconciliation workflow,
+   with bounded Gmail/Drive batches and persisted progress. Production acceptance
+   of the 2026-11-25 change remains tracked in its full-flow review.
 5. Import audit shows current file/transaction state but has no first-class import
    run ledger, and duplicate rows do not yet retain a durable link to the canonical
    transaction they were reconciled against.

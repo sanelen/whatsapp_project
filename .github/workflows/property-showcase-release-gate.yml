@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: property-showcase-${{ github.event_name }}-${{ github.ref || github.event.deployment.id }}
-  cancel-in-progress: true
+  group: property-showcase-${{ github.event_name }}-${{ github.event.deployment.id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'deployment_status' }}
 
 jobs:
   contract-and-build:
@@ -25,7 +25,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run test:release:contract
+      - run: npm test
       - run: npm run build
 
   deployed-browser-smoke:
@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.deployment.ref }}
+          ref: ${{ github.event.deployment.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -48,3 +48,31 @@ jobs:
         env:
           CI: 'true'
           RELEASE_BASE_URL: https://hambatrading.co.za
+
+  production-api:
+    if: >-
+      github.event_name == 'deployment_status' &&
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:release:api
+        env:
+          RELEASE_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+          RELEASE_EXPECTED_SHA: ${{ github.event.deployment.sha }}
+          RELEASE_CHECK_SECRET: ${{ secrets.RELEASE_CHECK_SECRET }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-api-${{ github.event.deployment.sha }}
+          path: test-results/production-api.json
+          if-no-files-found: error

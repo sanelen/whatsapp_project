@@ -4,8 +4,8 @@ import { getAdminBankAccounts } from '@/lib/server/bank-accounts';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const denied = await requireApiAuth();
+export async function GET(request: Request) {
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
 
   return NextResponse.json(
