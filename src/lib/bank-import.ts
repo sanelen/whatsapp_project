@@ -1119,6 +1119,7 @@ async function loadGmailAttachment(
 
 async function collectGmailAttachments(accessToken: string, gmailUserId: string, message: GmailMessage, completedIds = new Set<string>()) {
   const attachments: ImportedAttachment[] = [];
+  let skipped = 0;
 
   async function walk(part: GmailMessagePart | undefined): Promise<void> {
     if (!part) return;
@@ -1130,7 +1131,7 @@ async function collectGmailAttachments(accessToken: string, gmailUserId: string,
     const fileName = part.filename?.trim() ?? '';
     if (!fileName) return;
 
-    if (part.body?.attachmentId && completedIds.has(part.body.attachmentId)) return;
+    if (part.body?.attachmentId && completedIds.has(part.body.attachmentId)) { skipped++; return; }
 
     let data: Buffer | null = null;
     if (part.body?.data) {
@@ -1142,21 +1143,20 @@ async function collectGmailAttachments(accessToken: string, gmailUserId: string,
 
     const mimeType = part.mimeType?.trim() || 'application/octet-stream';
     if (mimeType === 'message/rfc822' || fileName.toLowerCase().endsWith('.eml')) {
-      attachments.push(...extractAttachmentsFromEml(data, fileName));
+      for (const attachment of extractAttachmentsFromEml(data, fileName)) {
+        if (completedIds.has(attachment.sourceId)) skipped++;
+        else attachments.push(attachment);
+      }
       return;
     }
 
-    attachments.push({
-      fileName,
-      mimeType,
-      data,
-      source: 'gmail',
-      sourceId: part.body?.attachmentId?.trim() || `gmail-inline:${fileName}:${sha256(data).slice(0, 16)}`,
-    });
+    const sourceId = part.body?.attachmentId?.trim() || `gmail-inline:${fileName}:${sha256(data).slice(0, 16)}`;
+    if (completedIds.has(sourceId)) { skipped++; return; }
+    attachments.push({ fileName, mimeType, data, source: 'gmail', sourceId });
   }
 
   await walk(message.payload);
-  return attachments;
+  return { attachments, skipped };
 }
 
 function matchesUnitMatchHint(entry: ParsedCapitecEntry, hint: BankImportUnitMatchHintRow) {
@@ -2328,8 +2328,8 @@ export async function importMailboxPayments(
         summary.messagesImported += 1;
 
         const completedIds = await completedGmailAttachments(messageRow.id, accessToken);
-        summary.duplicateFiles += completedIds.size;
-        const attachments = await collectGmailAttachments(accessToken, gmailUserId, message, completedIds);
+        const { attachments, skipped } = await collectGmailAttachments(accessToken, gmailUserId, message, completedIds);
+        summary.duplicateFiles += skipped;
         const attachmentErrors: string[] = [];
         for (const attachment of attachments) {
           summary.attachmentsProcessed += 1;

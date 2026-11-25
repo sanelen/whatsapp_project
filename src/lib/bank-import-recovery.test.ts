@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { PDFDocument } from 'pdf-lib';
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://recovery-test.invalid';
@@ -30,6 +31,7 @@ test('duplicate recovery completes a pending checkpoint only after receipt verif
   let archiveDownloads = 0;
   let storageWrites = 0;
   let directAttachment = false;
+  let storedAttachmentId = 'attachment-known';
   let archiveMissing = false;
   let financialInserts = 0;
   let receiptWrites = 0;
@@ -61,8 +63,8 @@ test('duplicate recovery completes a pending checkpoint only after receipt verif
         assert.equal(method, 'GET');
         if (url.searchParams.get('select')?.includes('bank_import_entries')) {
           assert.ok(url.searchParams.get('select')?.includes('payment_references!payment_references_bank_import_entry_id_fkey(id)'), 'Disambiguate the receipt backlink from the entry pointer');
-          const checkpoint = { ...file, gmail_attachment_id: 'attachment-known', bank_import_entries: [{ id: entry.id, payment_references: failReferenceRead ? [] : [{ id: reference.id }] }] };
-          return Response.json(url.searchParams.has('message_id') ? (directAttachment && file.parser_status === 'parsed' ? [checkpoint] : []) : checkpoint);
+          const checkpoint = { ...file, gmail_attachment_id: storedAttachmentId, bank_import_entries: [{ id: entry.id, payment_references: failReferenceRead ? [] : [{ id: reference.id }] }] };
+          return Response.json(url.searchParams.has('message_id') ? (file.parser_status === 'parsed' ? [checkpoint] : []) : checkpoint);
         }
         return Response.json(file);
       }
@@ -96,14 +98,21 @@ test('duplicate recovery completes a pending checkpoint only after receipt verif
   const savedWork = { archiveDownloads, storageWrites };
   const replay = await run();
   assert.equal(replay.failedMessages, 0);
+  assert.equal(replay.duplicateFiles, 1, 'Unrelated checkpoint IDs must not count as a second duplicate');
   assert.equal(replay.paymentReferencesCreated, 0);
   assert.deepEqual({ archiveDownloads, storageWrites }, savedWork, 'Hash replay must not download or upload completed evidence');
   directAttachment = true;
   const metadataReplay = await run();
   assert.equal(metadataReplay.failedMessages, 0);
+  assert.equal(metadataReplay.duplicateFiles, 1, 'A metadata skip counts the actual attachment once');
   assert.equal(metadataReplay.attachmentsProcessed, 0, 'Known Gmail attachment must be skipped before downloading');
   assert.deepEqual({ archiveDownloads, storageWrites }, savedWork);
   directAttachment = false;
+  storedAttachmentId = `gmail-inline:sample.pdf:${createHash('sha256').update(bytes).digest('hex').slice(0, 16)}`;
+  const inlineReplay = await run();
+  assert.equal(inlineReplay.duplicateFiles, 1);
+  assert.equal(inlineReplay.attachmentsProcessed, 0, 'Inline evidence skips processing after its stable hash is recognized');
+  assert.deepEqual({ archiveDownloads, storageWrites }, savedWork);
   archiveMissing = true;
   assert.equal((await run()).failedMessages, 1, 'A missing archived original cannot be reported as a successful duplicate');
   assert.equal(financialInserts, 0);
