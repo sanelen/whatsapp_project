@@ -67,6 +67,17 @@ test('provider uncertainty is recorded and never resent automatically', async ()
   await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now);
   assert.equal(attempts, 1); assert.deepEqual(h.states, ['unknown']);
 });
+test('alert room lines exclude fully pending rent and only request the partial shortfall', async () => {
+  const h = harness();
+  const rooms = h.snapshot.recentMonths.find(month => month.isCurrent)!.locations[0].rooms;
+  rooms[0].pendingAmount = 2200;
+  rooms[1].pendingAmount = 700;
+  await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now);
+  assert.equal(h.messages.length, 1);
+  assert.doesNotMatch(h.messages[0][2], /Room 0:/);
+  assert.match(h.messages[0][2], /Room 1:.*1[\s\u00a0]500/);
+  assert.match(h.messages[0][1], /Pending.*2[\s\u00a0]900/);
+});
 test('missing charges, due dates or import period prevent delivery', async () => {
   const h = harness();
   const month = h.snapshot.recentMonths.find(month => month.isCurrent)!;

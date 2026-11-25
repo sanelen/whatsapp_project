@@ -19,6 +19,15 @@ export type CollectionRoom = RentBalance & {
   periodId: string | null;
 };
 
+/** Pending rent still needs sign-off, but must not be requested from the tenant again. */
+export function rentToReceive(room: Pick<RentBalance, 'outstandingAmount' | 'pendingAmount'>) {
+  return roundMoney(Math.max(0, room.outstandingAmount - room.pendingAmount));
+}
+
+export function overdueRentToReceive(room: RentBalance) {
+  return room.overdueAmount > 0 ? rentToReceive(room) : 0;
+}
+
 export function southAfricaDate(now: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
@@ -61,10 +70,12 @@ export function sumRentBalances(rows: RentBalance[]) {
     pendingAmount: roundMoney(total.pendingAmount + row.pendingAmount),
     outstandingAmount: roundMoney(total.outstandingAmount + row.outstandingAmount),
     overdueAmount: roundMoney(total.overdueAmount + row.overdueAmount),
+    unreceivedAmount: roundMoney(total.unreceivedAmount + rentToReceive(row)),
+    overdueUnreceivedAmount: roundMoney(total.overdueUnreceivedAmount + overdueRentToReceive(row)),
     excessAmount: roundMoney(total.excessAmount + row.excessAmount),
     chargeMissingCount: total.chargeMissingCount + Number(row.chargeMissing),
     unknownDueDateCount: total.unknownDueDateCount + Number(row.outstandingAmount > 0 && !row.dueDate),
-  }), { expectedAmount: 0, confirmedAmount: 0, pendingAmount: 0, outstandingAmount: 0, overdueAmount: 0, excessAmount: 0, chargeMissingCount: 0, unknownDueDateCount: 0 });
+  }), { expectedAmount: 0, confirmedAmount: 0, pendingAmount: 0, outstandingAmount: 0, overdueAmount: 0, unreceivedAmount: 0, overdueUnreceivedAmount: 0, excessAmount: 0, chargeMissingCount: 0, unknownDueDateCount: 0 });
 }
 
 export const rentCurrency = (amount: number) => `R ${amount.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -74,20 +85,21 @@ export function buildManagementSummary(input: {
   asOf: string; unmatchedAmount: number; unmatchedCount: number;
 }) {
   const total = sumRentBalances(input.rooms);
-  const overdue = input.rooms.filter(room => room.overdueAmount > 0).sort((a, b) =>
+  const overdue = input.rooms.filter(room => overdueRentToReceive(room) > 0).sort((a, b) =>
     (a.dueDate ?? '').localeCompare(b.dueDate ?? '') || a.label.localeCompare(b.label, undefined, { numeric: true }));
   return [
     `*Hamba rent briefing*`,
     `*${input.building} · ${input.period}*`,
     `As of ${input.asOf} (South Africa)`,
     '',
-    `*Overdue: ${rentCurrency(total.overdueAmount)} · ${overdue.length} ${overdue.length === 1 ? 'room' : 'rooms'}*`,
-    ...overdue.slice(0, 5).map(room => `• ${input.building === 'All buildings' ? `${room.propertyName} / ` : ''}${room.label}: *${rentCurrency(room.overdueAmount)}* · due ${room.dueDate}${room.pendingAmount > 0 ? ` · ${rentCurrency(room.pendingAmount)} pending: verify first` : ''}`),
+    `*Overdue: ${rentCurrency(total.overdueUnreceivedAmount)} · ${overdue.length} ${overdue.length === 1 ? 'room' : 'rooms'}*`,
+    ...overdue.slice(0, 5).map(room => `• ${input.building === 'All buildings' ? `${room.propertyName} / ` : ''}${room.label}: *${rentCurrency(overdueRentToReceive(room))}* · due ${room.dueDate}${room.pendingAmount > 0 ? ` · ${rentCurrency(room.pendingAmount)} pending: verify first` : ''}`),
     ...(overdue.length > 5 ? [`+ ${overdue.length - 5} more overdue rooms in the review link.`] : []),
-    ...(overdue.length ? [] : ['No saved charges are overdue.']),
+    ...(overdue.length ? [] : ['No overdue rent remains to receive.']),
     '',
     `*Awaiting sign-off: ${rentCurrency(total.pendingAmount)}*`,
     'Verify matched receipts before following up.',
+    `Still to receive: ${rentCurrency(total.unreceivedAmount)} (excludes matched pending rent).`,
     `Outstanding: ${rentCurrency(total.outstandingAmount)} (includes pending sign-off).`,
     `Unmatched to review: ${input.unmatchedCount} · ${rentCurrency(input.unmatchedAmount)}.`,
     ...(total.chargeMissingCount ? [`*Incomplete:* ${total.chargeMissingCount} rooms have no saved charge.`] : []),

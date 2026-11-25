@@ -23,6 +23,19 @@ status below. No deployment or unattended payment repair is authorized here.
 - Optional scheduled alerts remain disabled until recipient opt-in, provider
   template, scope, migration, and owner authorization are supplied.
 
+## Pending receipts and tenant follow-up — 25 November 2026
+
+The owner requested reconciliation of live December receipts with this page.
+FR-2.5 still defines paid/confirmed as signed-off only. However, fully received
+pending rent must be excluded from tenant chase lists. Still owed, Overdue,
+room amounts, and management room lines now use the remaining amount to receive:
+`max(0, outstanding - pending)`. Pending remains visible under Waiting for
+confirmation. Partial pending receipts reduce only the amount requested again.
+The accounting identity remains `expected = confirmed + outstanding`; the
+follow-up presentation is `expected = confirmed + pending + still to receive`.
+No sign-off, credit allocation, or alert activation is implied by either display.
+See [pending-receipt review](../reviews/full-flow-review-2026-11-25-pending-rent.md).
+
 ## Accounting boundary
 
 Saved `unit_payment_periods` charges are historical truth; today's rent or vacancy

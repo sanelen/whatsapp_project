@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { MonthlyPaymentsDashboardSnapshot } from './monthly-payments';
-import { rentCurrency, sumRentBalances } from './rent-collections';
+import { rentCurrency, rentToReceive, overdueRentToReceive, sumRentBalances } from './rent-collections';
 
 export type ManagementAlertConfig = {
   recipient: string; organizationId: string; propertyId: string;
@@ -56,15 +56,15 @@ export async function deliverManagementAlert(run: AlertImportRun, config: Manage
   const url = new URL('/monthly-payments/follow-up', config.dashboardOrigin);
   url.search = new URLSearchParams({ building: property.id, period: month.key, filter: 'outstanding' }).toString();
   const title = `${property.name} ${month.key}; as of ${dashboard.asOf} SAST`;
-  const totals = `Expected ${rentCurrency(total.expectedAmount)}, confirmed ${rentCurrency(total.confirmedAmount)}, outstanding ${rentCurrency(total.outstandingAmount)}, overdue ${rentCurrency(total.overdueAmount)}. Pending ${rentCurrency(total.pendingAmount)}: verify before follow-up. Unmatched ${property.unmatchedReferenceCount}: ${rentCurrency(property.unmatchedCollectedAmount)}.`;
-  const lines = property.rooms.filter(room => room.outstandingAmount > 0).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })).map(room =>
-    `${room.label}: ${rentCurrency(room.outstandingAmount)} due ${room.dueDate}${room.overdueAmount ? ' overdue' : ''}${room.pendingAmount ? ` (${rentCurrency(room.pendingAmount)} pending)` : ''}`);
+  const totals = `Expected ${rentCurrency(total.expectedAmount)}, confirmed ${rentCurrency(total.confirmedAmount)}, still to receive ${rentCurrency(total.unreceivedAmount)}, overdue ${rentCurrency(total.overdueUnreceivedAmount)}. Pending ${rentCurrency(total.pendingAmount)}: verify before follow-up. Unmatched ${property.unmatchedReferenceCount}: ${rentCurrency(property.unmatchedCollectedAmount)}.`;
+  const lines = property.rooms.filter(room => rentToReceive(room) > 0).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })).map(room =>
+    `${room.label}: ${rentCurrency(rentToReceive(room))} due ${room.dueDate}${overdueRentToReceive(room) ? ' overdue' : ''}${room.pendingAmount ? ` (${rentCurrency(room.pendingAmount)} pending)` : ''}`);
   const roomChunks: string[] = [];
   let chunk = '';
   // Bound the complete substituted body, including labels/static text in the documented template.
   const roomBudget = 900 - title.length - totals.length - url.toString().length;
   if (roomBudget < 80) return { state: 'template_too_long', sent: 0 };
-  for (const line of lines.length ? lines : ['No outstanding saved charges.']) {
+  for (const line of lines.length ? lines : ['No rent remains to receive.']) {
     if (line.length > roomBudget) return { state: 'template_too_long', sent: 0 };
     if (chunk && chunk.length + line.length + 3 > roomBudget) { roomChunks.push(chunk); chunk = ''; }
     chunk += `${chunk ? ' | ' : ''}${line}`;

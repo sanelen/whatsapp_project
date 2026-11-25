@@ -139,6 +139,15 @@ try {
     await page.getByLabel('Building', { exact: true }).selectOption('test-property');
     const totals = page.getByRole('region', { name: 'Monthly rent breakdown' });
     assert.match(await totals.innerText(), /4[\s\u00a0]400/);
+    await page.getByRole('status').filter({ hasText: '1 of 2 rooms shown' }).waitFor();
+    assert.equal(await page.getByRole('heading', { name: 'Room 2', exact: true }).count(), 0);
+    assert.match(await page.getByRole('button', { name: /^Still owed R/ }).innerText(), /1[\s\u00a0]200/);
+    await page.getByRole('button', { name: 'Waiting for confirmation', exact: true }).click();
+    const pendingRoom = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Room 2', exact: true }) });
+    await pendingRoom.getByText(/awaiting confirmation.*fully received/).waitFor();
+    assert.equal(await pendingRoom.getByText('Overdue', { exact: true }).count(), 0);
+    assert.match(await pendingRoom.innerText(), /R 0[,.]00/);
+    await page.screenshot({ path: `${output}/collections-pending-${viewport.width}.png`, fullPage: true });
     await page.getByRole('button', { name: /^Overdue R/ }).click();
     await page.getByRole('status').filter({ hasText: '1 of 2 rooms shown' }).waitFor();
     assert.equal(await page.getByRole('heading', { name: 'Room 2', exact: true }).count(), 0);
