@@ -1780,7 +1780,7 @@ export async function saveImportEvidenceToDrive(input: {
 async function completedGmailAttachments(messageId: string, accessToken: string) {
   const admin = getSupabaseAdmin();
   const { data, error } = await admin.from('bank_import_files')
-    .select('gmail_attachment_id,drive_file_id,bank_import_entries(id,payment_references(id))')
+    .select('gmail_attachment_id,drive_file_id,bank_import_entries(id,payment_references!payment_references_bank_import_entry_id_fkey(id))')
     .eq('message_id', messageId).eq('parser_status', 'parsed').not('drive_archived_at', 'is', null);
   if (error) throw new Error(`Cannot verify Gmail checkpoints: ${error.message}`);
   const ids = new Set<string>();
@@ -1845,7 +1845,7 @@ async function processImportedAttachment(input: {
 
   if (duplicate) {
     const { data: checkpoint, error } = await getSupabaseAdmin().from('bank_import_files')
-      .select('id,drive_file_id,parser_status,drive_archived_at,bank_import_entries(id,payment_references(id))')
+      .select('id,drive_file_id,parser_status,drive_archived_at,bank_import_entries(id,payment_references!payment_references_bank_import_entry_id_fkey(id))')
       .eq('id', file.id).single();
     if (error) throw new Error(`Cannot verify duplicate evidence: ${error.message}`);
     if (checkpoint.parser_status === 'parsed' && checkpoint.drive_archived_at && checkpoint.drive_file_id
@@ -2418,7 +2418,7 @@ async function completedArchiveIds(files: DriveFile[]) {
   for (let offset = 0; offset < files.length; offset += 100) {
     const ids = files.slice(offset, offset + 100).map((file) => file.id);
     const { data: evidence, error } = await admin.from('bank_import_files')
-      .select('id,drive_file_id,bank_import_entries(id,payment_references(id))')
+      .select('id,drive_file_id,bank_import_entries(id,payment_references!payment_references_bank_import_entry_id_fkey(id))')
       .in('drive_file_id', ids).eq('parser_status', 'parsed').not('drive_archived_at', 'is', null);
     if (error) throw new Error(`Cannot verify archive checkpoints: ${error.message}`);
     for (const file of evidence ?? []) {
@@ -2875,7 +2875,7 @@ export async function verifyBankImportEvidence(period: string) {
   const window = getBillingWindowForPeriod(period);
   const admin = getSupabaseAdmin();
   const { data: rows, error } = await admin.from('bank_import_entries')
-    .select('amount,transaction_date,file_id,bank_import_files!inner(file_sha256,drive_file_id,bank_import_messages!inner(mailbox_id)),payment_references(id)')
+    .select('amount,transaction_date,file_id,bank_import_files!inner(file_sha256,drive_file_id,bank_import_messages!inner(mailbox_id)),payment_references!payment_references_bank_import_entry_id_fkey(id)')
     .gte('transaction_date', window.startDate).lte('transaction_date', window.endDate).limit(6);
   if (error) throw new Error(`Evidence probe query failed: ${error.message}`);
   if (!rows?.length) throw new Error('No representative imported evidence in selected cycle');

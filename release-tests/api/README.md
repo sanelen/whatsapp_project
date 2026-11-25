@@ -1,6 +1,6 @@
 # Production API checks
 
-Every successful Production deployment triggers `production-api` in the release workflow. Checkout uses the deployment SHA. Every response must carry that same `x-hamba-revision`; redirects, authentication failures, missing configuration, semantic failures and duration overruns fail the job. The report is an Actions artifact, with route, method, mode, duration and failure reason. Response bodies and tenant data are not logged.
+A main-branch push also waits up to ten minutes for the exact revision to become live and runs the API gate, so delayed provider deployment events do not silently omit normal releases. Every successful Production deployment triggers `production-api` in the release workflow. Checkout uses the deployment SHA. Every response must carry that same `x-hamba-revision`; redirects, authentication failures, missing configuration, semantic failures and duration overruns fail the job. The report is an Actions artifact, with route, method, mode, duration and failure reason. Response bodies and tenant data are not logged.
 
 ## Provisioning
 
@@ -8,13 +8,13 @@ Generate a dedicated random secret (at least 32 bytes) and store the identical v
 
 The release principal is checked independently in proxy and DAL. A 60-second HMAC binds method, full path/query and body hash. A server-side allowlist accepts fixed dry runs, invalid-input validation and specified reads. Real imports, matching mutations, sign-off, rent/credit changes, OAuth exchange, arbitrary chat prompts and outbound sends are denied. Provider probes accept three fixed operations and a non-secret scope read only, and expose neither tokens nor arbitrary signing. Prompt settings redact the provider key for this principal.
 
-`RELEASE_BASE_URL`, `RELEASE_EXPECTED_SHA` and `RELEASE_CHECK_SECRET` are required by the runner. The billing cycle defaults to the current 9th–8th cycle; `RELEASE_BILLING_PERIOD` can select a cycle with representative archived PDF evidence. Absence of suitable evidence fails explicitly. A protected deployment URL must be made available through the project's existing approved automation access; an authentication wall is a failure, not proof of API health.
+`RELEASE_BASE_URL`, `RELEASE_EXPECTED_SHA` and `RELEASE_CHECK_SECRET` are required by the runner. The billing cycle defaults to the current 9th–8th cycle; `RELEASE_BILLING_PERIOD` can select a cycle with representative archived PDF evidence. Absence of suitable evidence fails explicitly. The gate targets the public production custom domain and verifies the exact deployment SHA. Protected immutable deployment URLs are not used; an authentication wall or a different live revision is a failure, not proof of API health.
 
 ## Coverage and limits
 
 `coverage.mjs` inventories function, variable and named re-exports for every HTTP method in `src/app/api/**/route.ts`. Missing or stale manifest coverage fails CI. Wildcard exports fail closed. Framework-owned Workflow endpoints are exercised by starting and polling real durable verification workflows.
 
-The manifest covers all application methods. Read cases validate response shape; chat must return READY; KB must use vector retrieval (text fallback fails). The import/reconcile cases must enqueue a real durable job, expose persisted completed source/evidence/matching steps, and finish within 180 seconds. Gmail listing, Drive original SHA-256, PDF reparse, receipt existence and matching-rule evaluation run against real services. Matching is a non-mutating dry run; evidence sampling is bounded to six files. API response budgets are 15–60 seconds, depending on operation.
+The manifest covers all application methods. Read cases validate response shape; chat must return READY; KB must successfully run embeddings and the vector RPC (provider/RPC failures fail; a healthy empty vector result may use scoped text fallback). The import/reconcile cases must enqueue a real durable job, expose persisted completed source/evidence/matching steps, and finish within 180 seconds. Gmail listing, Drive original SHA-256, PDF reparse, receipt existence and matching-rule evaluation run against real services. Matching is a non-mutating dry run; evidence sampling is bounded to six files. API response budgets are 15–60 seconds, depending on operation.
 
 Meta GET verifies the actual challenge route; POST signs an empty event and checks acknowledgement. Enabled waiting-list Flow verifies a real encrypted ping. Disabled Flow is reported as disabled, not passed. No tenant event, outgoing message or Sheet submission is created. Unused LLM providers are not checked.
 

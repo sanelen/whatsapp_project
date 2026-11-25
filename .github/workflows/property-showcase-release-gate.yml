@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: property-showcase-${{ github.event_name }}-${{ github.event.deployment.id || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'deployment_status' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   contract-and-build:
@@ -51,15 +51,16 @@ jobs:
 
   production-api:
     if: >-
-      github.event_name == 'deployment_status' &&
+      github.event_name == 'push' ||
+      (github.event_name == 'deployment_status' &&
       github.event.deployment_status.state == 'success' &&
-      github.event.deployment.environment == 'Production'
+      github.event.deployment.environment == 'Production')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.deployment.sha }}
+          ref: ${{ github.event.deployment.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -67,12 +68,13 @@ jobs:
       - run: npm ci
       - run: npm run test:release:api
         env:
-          RELEASE_BASE_URL: ${{ github.event.deployment_status.environment_url }}
-          RELEASE_EXPECTED_SHA: ${{ github.event.deployment.sha }}
+          RELEASE_BASE_URL: https://hambatrading.co.za
+          RELEASE_WAIT_FOR_DEPLOYMENT: ${{ github.event_name == 'push' }}
+          RELEASE_EXPECTED_SHA: ${{ github.event.deployment.sha || github.sha }}
           RELEASE_CHECK_SECRET: ${{ secrets.RELEASE_CHECK_SECRET }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: production-api-${{ github.event.deployment.sha }}
+          name: production-api-${{ github.event.deployment.sha || github.sha }}
           path: test-results/production-api.json
           if-no-files-found: error

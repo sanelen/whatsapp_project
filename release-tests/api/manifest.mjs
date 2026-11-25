@@ -11,7 +11,7 @@ export const cases = [
   { method: 'DELETE', route: '/api/history', query: '?dryRun=true', status: 200, shape: 'dryRun:true', mode: 'dry-run', budgetMs: 15000, limitation: 'No history is removed.' },
   invalid('DELETE', '/api/kb/delete', 'KB id or sourceId required'),
   read('/api/kb/list', 'data:array', '?propertyId=$PROPERTY'),
-  { method: 'POST', route: '/api/kb/search', body: { query: 'Deployment availability check', propertyId: '$PROPERTY', matchCount: 1 }, status: 200, shape: 'data:array', mode: 'provider', budgetMs: 60000, limitation: 'Text fallback fails the integration check; result contents are never logged.' },
+  { method: 'POST', route: '/api/kb/search', body: { query: 'Deployment availability check', propertyId: '$PROPERTY', matchCount: 1 }, status: 200, shape: 'data:array', mode: 'provider', budgetMs: 60000, limitation: 'Embedding or vector RPC failure fails the integration check; healthy empty matches are allowed. Result contents are never logged.' },
   invalid('PATCH', '/api/kb/update', 'KB ID required'),
   invalid('POST', '/api/kb/upload', 'Missing required fields'),
   read('/api/models', 'models:array', '?provider=openai'),

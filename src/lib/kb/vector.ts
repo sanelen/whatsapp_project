@@ -328,6 +328,7 @@ export async function searchKnowledgeVectors(input: SearchKnowledgeInput): Promi
 export type KnowledgeRetrieval = {
   retrieval: 'vector' | 'text';
   results: KnowledgeSearchResult[];
+  vectorStatus: 'available' | 'unavailable';
 };
 
 /**
@@ -336,11 +337,14 @@ export type KnowledgeRetrieval = {
  * the chat route so neither pays an internal HTTP round-trip.
  */
 export async function retrieveKnowledge(input: SearchKnowledgeInput): Promise<KnowledgeRetrieval> {
+  let vectorStatus: KnowledgeRetrieval['vectorStatus'] = 'unavailable';
   try {
     const vectorMatches = await searchKnowledgeVectors(input);
+    vectorStatus = 'available';
     if (vectorMatches.length > 0) {
       return {
         retrieval: 'vector',
+        vectorStatus,
         results: vectorMatches.map((match) => ({
           id: match.id,
           category: match.metadata?.category || match.source_type,
@@ -379,6 +383,7 @@ export async function retrieveKnowledge(input: SearchKnowledgeInput): Promise<Kn
 
   return {
     retrieval: 'text',
+    vectorStatus,
     results: ((data || []) as KnowledgeBase[]).map((entry) => ({
       id: entry.id,
       category: entry.category,

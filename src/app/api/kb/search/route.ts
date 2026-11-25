@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     const admin = getSupabaseAdmin();
 
-    const { retrieval, results } = await retrieveKnowledge({
+    const { retrieval, results, vectorStatus } = await retrieveKnowledge({
       admin,
       apiKey: resolveOpenAiEmbeddingKey(),
       query,
@@ -51,10 +51,11 @@ export async function POST(request: NextRequest) {
       propertyId,
     });
 
-    return NextResponse.json<ApiResponse<KnowledgeSearchResult[]> & { retrieval: 'vector' | 'text' }>(
+    return NextResponse.json<ApiResponse<KnowledgeSearchResult[]> & { retrieval: 'vector' | 'text'; vectorStatus: 'available' | 'unavailable' }>(
       {
         success: true,
         retrieval,
+        vectorStatus,
         data: results,
         timestamp: new Date().toISOString(),
       },
