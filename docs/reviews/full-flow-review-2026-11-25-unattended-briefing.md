@@ -76,3 +76,27 @@ in Import audit; no separate failure-alert infrastructure is claimed or added.
 Local ignored evidence: `.runtime/unattended-tests.log`,
 `.runtime/unattended-build.log`, `.runtime/unattended-browser.log`, and
 `.runtime/payment-workspace-check/drive-source-{390,1440}.png`.
+
+## Production acceptance and configuration recovery
+
+Revision 5357fa7 deployed with all 29 production API and 10 deployed-browser
+checks passing. Direct Vercel verification then allowed the owner-authorized
+production enable flag to be saved. The scheduled current-cycle Both run completed
+in 87 seconds with zero current evidence exceptions, zero missing references and
+no matching failures. Historical exceptions remained in the separate total.
+
+The management step stopped before contacting Meta because the pre-existing
+APP_URL still named an HTTP localhost address. The delivery ledger remained empty.
+The setting is corrected to the canonical public HTTPS origin. A narrow recovery
+path now allows a repeated scheduler invocation to reuse the latest completed
+scheduled audit when the previous alert was disabled or lacked transport settings.
+It does not repeat imports, bypass the two-hour freshness check, or retry a claimed,
+unknown, or previously attempted delivery. The existing daily claim remains final.
+
+Architecture: reuse the existing workflow and source audit, with no alternate
+sender endpoint or new job. QA: 313 tests, build, six artifact checks and focused
+lint pass; recovery is tested for one delivery, duplicate prevention and stale-audit
+refusal. UI: no new screen or interaction; the existing monitor records the outcome.
+Roadmap: this completes the authorized PAY-7 activation path while preserving
+manual financial approval. No new cross-lens disagreement; handset receipt remains
+an explicit pending acceptance until the corrected configuration is deployed.

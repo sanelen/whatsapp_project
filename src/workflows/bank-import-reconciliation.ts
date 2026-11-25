@@ -51,7 +51,18 @@ export async function bankImportReconciliationWorkflow(force: boolean, trigger: 
 
   if (trigger === 'scheduled' && !options) options = await scheduledImportOptions();
   const preparation = await prepareReconciliation(force, trigger, getWorkflowMetadata().workflowRunId, options);
-  if (preparation.skipped) return preparation;
+  if (preparation.skipped) {
+    const previous = preparation.latest;
+    // A configuration correction may resume an unattempted briefing without
+    // repeating today's import. The delivery step still verifies freshness and
+    // claims the daily ledger key before making any provider request.
+    if (trigger === 'scheduled' && preparation.reason === 'cadence_not_due' &&
+        previous?.trigger === 'scheduled' && previous.status === 'completed' &&
+        ['disabled', 'transport_unconfigured'].includes(previous.summary.managementAlert?.state ?? '')) {
+      await deliverRentManagementAlert(previous.id);
+    }
+    return preparation;
+  }
 
   try {
     const listings = options?.source === 'drive' || options?.source === 'bank' ? [] : await Promise.all(
