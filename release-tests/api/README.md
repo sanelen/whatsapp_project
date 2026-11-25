@@ -8,7 +8,7 @@ Generate a dedicated random secret (at least 32 bytes) and store the identical v
 
 The release principal is checked independently in proxy and DAL. A 60-second HMAC binds method, full path/query and body hash. A server-side allowlist accepts fixed dry runs, invalid-input validation and specified reads. Real imports, matching mutations, sign-off, rent/credit changes, OAuth exchange, arbitrary chat prompts and outbound sends are denied. Provider probes accept three fixed operations and a non-secret scope read only, and expose neither tokens nor arbitrary signing. Prompt settings redact the provider key for this principal.
 
-`RELEASE_BASE_URL`, `RELEASE_EXPECTED_SHA` and `RELEASE_CHECK_SECRET` are required by the runner. The billing cycle defaults to the current 9th–8th cycle; `RELEASE_BILLING_PERIOD` can select a cycle with representative archived PDF evidence. Absence of suitable evidence fails explicitly. A protected deployment URL must be made available through the project's existing approved automation access; an authentication wall is a failure, not proof of API health.
+`RELEASE_BASE_URL`, `RELEASE_EXPECTED_SHA` and `RELEASE_CHECK_SECRET` are required by the runner. The billing cycle defaults to the current 9th–8th cycle; `RELEASE_BILLING_PERIOD` can select a cycle with representative archived PDF evidence. Absence of suitable evidence fails explicitly. The gate targets the public production custom domain and verifies the exact deployment SHA. Protected immutable deployment URLs are not used; an authentication wall or a different live revision is a failure, not proof of API health.
 
 ## Coverage and limits
 
