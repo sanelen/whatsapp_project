@@ -95,7 +95,7 @@ export function ImportAuditViewPanel({ view }: { view: ImportAuditView }) {
 
         <p className="mt-2 text-[11.5px] text-slate-500">Rent window: {view.billingWindowLabel}</p>
 
-        <ReconciliationControl initialRun={view.reconciliation} />
+        <ReconciliationControl initialRun={view.reconciliation} scheduledRun={view.scheduledReconciliation} />
 
         <div className="mt-4 grid gap-px overflow-hidden rounded-[12px] border border-slate-200 bg-slate-200 sm:grid-cols-2 xl:grid-cols-6">
           {[

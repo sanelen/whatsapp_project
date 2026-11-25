@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { sourceCheckState } from '@/lib/bank-import-automation';
+import Link from 'next/link';
 import type { ReconciliationRunView } from '@/lib/bank-import-reconciliation';
 
 function formatTimestamp(value: string) {
@@ -10,7 +12,7 @@ function formatTimestamp(value: string) {
   }).format(new Date(value));
 }
 
-export function ReconciliationControl({ initialRun }: { initialRun: ReconciliationRunView | null }) {
+export function ReconciliationControl({ initialRun, scheduledRun }: { initialRun: ReconciliationRunView | null; scheduledRun?: ReconciliationRunView | null }) {
   const [run, setRun] = useState(initialRun);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -53,14 +55,14 @@ export function ReconciliationControl({ initialRun }: { initialRun: Reconciliati
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.08em] text-sky-800">
-            <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> Three-day reconciliation
+            <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> Daily source check
           </p>
           {run ? (
             <p className="mt-1 text-[12px] text-slate-700">
               Last run {formatTimestamp(run.startedAt)} · <span className="font-bold">{run.status}</span>
               {run.summary.comparisonReady
                 ? ` · ${run.summary.missingFromDestination} source files missing from the destination inbox`
-                : ' · second mailbox connection still required for inbox-to-inbox comparison'}
+                : ' · connected business inbox and archive'}
             </p>
           ) : (
             <p className="mt-1 text-[12px] text-slate-700">No reconciliation run has been recorded yet.</p>
@@ -69,6 +71,13 @@ export function ReconciliationControl({ initialRun }: { initialRun: Reconciliati
         <button type="button" disabled={busy} onClick={checkNow} className="h-9 rounded-[9px] bg-slate-950 px-3.5 text-[11.5px] font-bold text-white disabled:cursor-wait disabled:opacity-60">
           {busy ? 'Checking…' : 'Check now'}
         </button>
+      </div>
+      <div className="mt-3 text-sm text-slate-700" role="status">
+        <p>Automatic Gmail + Drive check: daily 07:00–08:00 SAST. Imports continue when this page is closed. Financial sign-off stays manual.</p>
+        <p className="mt-1 font-semibold">Scheduled source status: {sourceCheckState(scheduledRun ?? null).replaceAll('_', ' ')}{scheduledRun ? ` · ${formatTimestamp(scheduledRun.startedAt)}` : ''}</p>
+        {scheduledRun?.summary.currentCycle && <p>Current cycle exceptions: {scheduledRun.summary.currentCycle.failedOrPendingFiles} files · {scheduledRun.summary.currentCycle.entriesMissingPaymentReference} receipts missing. Historical/global file backlog: {scheduledRun.summary.failedOrPendingFiles}.</p>}
+        {scheduledRun?.summary.managementAlert && <p>Management briefing: {scheduledRun.summary.managementAlert.state === 'sent' ? 'provider accepted (delivery tracked separately)' : scheduledRun.summary.managementAlert.state.replaceAll('_', ' ')}.</p>}
+        <Link className="mt-1 inline-block font-semibold text-sky-800 underline" href={`/monthly-payments/follow-up?period=${scheduledRun?.summary.currentCycle?.period ?? ''}&filter=pending`}>Review payments awaiting sign-off</Link>
       </div>
       {error || run?.errorMessage ? (
         <p className="mt-2 rounded-[8px] border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">

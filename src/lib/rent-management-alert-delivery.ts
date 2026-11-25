@@ -7,8 +7,8 @@ export async function sendPostImportManagementAlert(runId: string) {
   const config = managementAlertConfig(process.env);
   if (!config) return { state: 'disabled', sent: 0 };
   const runtime = getChannelRuntimeConfig();
-  const meta = runtime.providers.meta;
-  if (!meta.enabled || !meta.outboundEnabled) return { state: 'transport_disabled', sent: 0 };
+  // Management opt-in, enable flag and dedicated credentials govern this sender.
+  // Shared chat outbound flags do not grant or block this separately authorized route.
   const transport = managementAlertTransportConfig(process.env);
   if (!transport) return { state: 'transport_unconfigured', sent: 0 };
   const { token, phoneId } = transport;
@@ -21,9 +21,16 @@ export async function sendPostImportManagementAlert(runId: string) {
   if (propertyError || !property) return { state: 'property_not_authorized', sent: 0 };
   return deliverManagementAlert(run as AlertImportRun, config, {
     readDashboard: () => readMonthlyPaymentsDashboard({ readOnly: true }),
-    async claim(key, id, settings) {
+    async claim(key, id, settings, contentHash) {
+      const { data: previous, error: previousError } = await admin.from('rent_management_alert_deliveries')
+        .select('id,status,content_hash').eq('organization_id', settings.organizationId).eq('property_id', settings.propertyId)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (previousError) throw new Error('Cannot verify previous briefing; delivery remains blocked.');
+      if (previous?.status === 'claimed' || previous?.status === 'unknown') return 'delivery_needs_review';
+      if (previous?.id === key) return false;
+      if (previous?.content_hash === contentHash) return 'unchanged';
       const { error } = await admin.from('rent_management_alert_deliveries').insert({
-        id: key, import_run_id: id, organization_id: settings.organizationId, property_id: settings.propertyId, status: 'claimed',
+        id: key, import_run_id: id, organization_id: settings.organizationId, property_id: settings.propertyId, status: 'claimed', content_hash: contentHash,
       });
       if (error?.code === '23505') return false;
       if (error) throw new Error('Cannot claim management alert. Delivery remains blocked.');

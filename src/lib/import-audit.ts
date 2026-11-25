@@ -65,6 +65,7 @@ export type ImportAuditView = {
     unprocessed: number;
   };
   reconciliation: ReconciliationRunView | null;
+  scheduledReconciliation?: ReconciliationRunView | null;
 };
 
 function monthKey(value: Date) {
@@ -198,7 +199,7 @@ export async function readImportAuditView(input?: {
   const sourceFilter = validSources.has(input?.source ?? '')
     ? (input?.source as ImportAuditView['sourceFilter'])
     : 'all';
-  const [entriesResult, filesResult, reconciliation] = await Promise.all([
+  const [entriesResult, filesResult, reconciliation, scheduledReconciliation] = await Promise.all([
     admin
       .from('bank_import_entries')
       .select('id,file_id,transaction_date,reference,amount,destination_account_suffix,property_id')
@@ -212,6 +213,7 @@ export async function readImportAuditView(input?: {
       .order('created_at', { ascending: false })
       .limit(300),
     readLatestReconciliationRun(),
+    readLatestReconciliationRun('scheduled'),
   ]);
   if (entriesResult.error) throw new Error(`Failed to load import audit entries: ${entriesResult.error.message}`);
   if (filesResult.error) throw new Error(`Failed to load import audit files: ${filesResult.error.message}`);
@@ -375,6 +377,6 @@ export async function readImportAuditView(input?: {
       incomplete: transactions.filter((transaction) => transaction.matchStatus === 'incomplete').length,
       unprocessed: filteredFiles.filter((file) => file.needsOperatorReview).length,
     },
-    reconciliation,
+    reconciliation, scheduledReconciliation,
   };
 }
