@@ -176,6 +176,10 @@ try {
     await page.screenshot({ path: `${output}/collections-draft-${viewport.width}.png`, fullPage: true });
     await page.goto(`${origin}/audit`);
     await page.getByRole('heading', { name: 'Source-to-database validation' }).waitFor();
+    await page.getByText('Daily source check', { exact: false }).waitFor();
+    await page.getByText(/Automatic Gmail.*Drive check: daily 07:00/).waitFor();
+    await page.getByText('Scheduled source status: not started', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('link', { name: 'Review payments awaiting sign-off' }).count(), 1);
     for (const details of await page.locator('details').all()) {
       if (await details.getAttribute('open') === null) await details.locator('summary').click();
     }

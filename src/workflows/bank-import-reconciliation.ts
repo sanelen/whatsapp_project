@@ -21,6 +21,7 @@ type Preparation =
       mailboxes: MailboxSpec[];
       periodsChecked: string[];
       workflowRunId: string;
+      sources: string[];
     };
 
 type SliceResult = {
@@ -48,6 +49,7 @@ type MessageChunk = {
 export async function bankImportReconciliationWorkflow(force: boolean, trigger: Trigger, options?: BankImportRequest) {
   "use workflow";
 
+  if (trigger === 'scheduled' && !options) options = await scheduledImportOptions();
   const preparation = await prepareReconciliation(force, trigger, getWorkflowMetadata().workflowRunId, options);
   if (preparation.skipped) return preparation;
 
@@ -125,6 +127,13 @@ export async function bankImportReconciliationWorkflow(force: boolean, trigger: 
   }
 }
 
+async function scheduledImportOptions(): Promise<BankImportRequest> {
+  "use step";
+  const { getBillingPeriodForDate } = await import('@/lib/bank-import');
+  const { southAfricaDate } = await import('@/lib/rent-collections');
+  return { source: 'both', billingPeriod: getBillingPeriodForDate(southAfricaDate(new Date())), pullAll: false };
+}
+
 async function prepareReconciliation(force: boolean, trigger: Trigger, workflowRunId: string, options?: BankImportRequest): Promise<Preparation> {
   "use step";
   console.log(`[bank-reconciliation:prepare] START trigger=${trigger} force=${force}`);
@@ -145,26 +154,31 @@ async function prepareReconciliation(force: boolean, trigger: Trigger, workflowR
   if (!organizationId) throw new Error('No organization-scoped bank import mailbox is configured.');
 
   const latest = await readLatestReconciliationRun();
+  const sources = options?.source === 'both' ? ['gmail', 'drive'] : [options?.source ?? 'gmail'];
+  const { scheduledImportDue } = await import('@/lib/bank-import-automation');
+  const cadenceDue = trigger === 'scheduled'
+    ? scheduledImportDue(await readLatestReconciliationRun('scheduled'))
+    : isReconciliationDue(latest?.startedAt ?? null);
   if (latest?.status === 'running' && latest.summary.workflowRunId === workflowRunId) return {
-    skipped: false, runId: latest.id, organizationId, trigger, workflowRunId,
+    skipped: false, runId: latest.id, organizationId, trigger, workflowRunId, sources,
     mailboxes: mailboxes.map(mailbox => ({ id: mailbox.id, emailAddress: mailbox.email_address })),
     periodsChecked: options ? [options.pullAll ? '' : options.billingPeriod!] : reconciliationPeriods(),
   };
-  if (!force && !isReconciliationDue(latest?.startedAt ?? null)) {
+  if (!force && !cadenceDue) {
     console.log('[bank-reconciliation:prepare] SKIP cadence_not_due');
     return { skipped: true, reason: 'cadence_not_due', latest };
   }
 
   const { data: run, error } = await admin
     .from('bank_import_reconciliation_runs')
-    .insert({ organization_id: organizationId, trigger, status: 'running', cadence_hours: RECONCILIATION_CADENCE_HOURS, reconciliation_summary: { workflowRunId, stage: 'listing', options } })
+    .insert({ organization_id: organizationId, trigger, status: 'running', cadence_hours: trigger === 'scheduled' ? 24 : RECONCILIATION_CADENCE_HOURS, reconciliation_summary: { workflowRunId, stage: 'listing', options } })
     .select('id')
     .single<{ id: string }>();
   if (error) {
     if (/one_running|duplicate key/i.test(error.message)) {
       const existing = await readLatestReconciliationRun();
       if (existing?.status === 'running' && existing.summary.workflowRunId === workflowRunId) return {
-        skipped: false, runId: existing.id, organizationId, trigger, workflowRunId,
+        skipped: false, runId: existing.id, organizationId, trigger, workflowRunId, sources,
         mailboxes: mailboxes.map(mailbox => ({ id: mailbox.id, emailAddress: mailbox.email_address })),
         periodsChecked: options ? [options.pullAll ? '' : options.billingPeriod!] : reconciliationPeriods(),
       };
@@ -181,7 +195,7 @@ async function prepareReconciliation(force: boolean, trigger: Trigger, workflowR
     trigger,
     mailboxes: mailboxes.map((mailbox) => ({ id: mailbox.id, emailAddress: mailbox.email_address })),
     periodsChecked: options ? [options.pullAll ? '' : options.billingPeriod!] : reconciliationPeriods(),
-    workflowRunId,
+    workflowRunId, sources,
   };
   console.log(`[bank-reconciliation:prepare] DONE runId=${run.id}`);
   return result;
@@ -193,6 +207,7 @@ async function listMailboxPeriodMessages(mailbox: MailboxSpec, period: string): 
   const { listBankImportGmailMessageIds } = await import('@/lib/bank-import');
   try {
     const messageIds = await listBankImportGmailMessageIds({ mailboxId: mailbox.id, billingPeriod: period || undefined, maxMessages: 250 });
+    if (messageIds.length >= 250) throw new Error('Gmail result limit reached; source completeness needs review.');
     console.log(`[bank-reconciliation:list] DONE mailbox=${mailbox.emailAddress} period=${period} messages=${messageIds.length}`);
     return { mailbox, period, ok: true, messageIds };
   } catch (error) {
@@ -233,6 +248,10 @@ async function finalizeReconciliation(
   console.log(`[bank-reconciliation:finalize] START runId=${preparation.runId}`);
   const { getSupabaseAdmin } = await import('@/lib/supabase');
   const { summarizeMailboxCoverage } = await import('@/lib/bank-import-reconciliation');
+  const { countCurrentProblemFiles } = await import('@/lib/bank-import-automation');
+  const { getBillingPeriodForDate, getBillingWindowForPeriod } = await import('@/lib/bank-import');
+  const { southAfricaDate } = await import('@/lib/rent-collections');
+  const { readAllRows } = await import('@/lib/read-all-rows');
   const admin = getSupabaseAdmin();
 
   try {
@@ -241,9 +260,9 @@ async function finalizeReconciliation(
     since.setUTCDate(since.getUTCDate() - 120);
     const [occurrencesResult, problemFilesResult, evidenceFilesResult, entriesResult] = await Promise.all([
       admin.from('bank_import_file_occurrences').select('mailbox_id,file_id,file_sha256').in('mailbox_id', mailboxIds).gte('last_seen_at', since.toISOString()),
-      admin.from('bank_import_files').select('id', { count: 'exact', head: true }).in('parser_status', ['pending', 'failed']),
+      readAllRows((from, to) => admin.from('bank_import_files').select('id,bank_import_entries(transaction_date)').in('parser_status', ['pending', 'failed']).order('id').range(from, to)),
       admin.from('bank_import_files').select('id').eq('parser_status', 'parsed'),
-      admin.from('bank_import_entries').select('id,file_id').eq('organization_id', preparation.organizationId).ilike('transaction_type', 'incoming funds'),
+      readAllRows((from, to) => admin.from('bank_import_entries').select('id,file_id,transaction_date').eq('organization_id', preparation.organizationId).ilike('transaction_type', 'incoming funds').order('id').range(from, to)),
     ]);
     if (occurrencesResult.error) throw new Error(`Failed to compare mailbox files: ${occurrencesResult.error.message}`);
     if (problemFilesResult.error) throw new Error(`Failed to count problem import files: ${problemFilesResult.error.message}`);
@@ -274,12 +293,19 @@ async function finalizeReconciliation(
         fileSha256: row.file_sha256 as string,
       })),
     });
+    const currentPeriod = getBillingPeriodForDate(southAfricaDate(new Date()));
+    const window = getBillingWindowForPeriod(currentPeriod);
     const summary: ReconciliationRunView['summary'] = {
       ...coverage,
       workflowRunId: preparation.workflowRunId,
       stage: 'finished',
       autoMatch,
-      failedOrPendingFiles: problemFilesResult.count ?? 0,
+      failedOrPendingFiles: problemFilesResult.data?.length ?? 0,
+      currentCycle: preparation.periodsChecked.includes(currentPeriod) ? {
+        period: currentPeriod, sources: preparation.sources, checkedAt: new Date().toISOString(),
+        failedOrPendingFiles: countCurrentProblemFiles(problemFilesResult.data ?? [], window),
+        entriesMissingPaymentReference: (entriesResult.data ?? []).filter(entry => entry.transaction_date >= window.startDate && entry.transaction_date <= window.endDate && !referencedEntryIds.has(entry.id)).length,
+      } : undefined,
       entriesMissingPaymentReference: entryIds.filter((id) => !referencedEntryIds.has(id)).length,
       periodsChecked: preparation.periodsChecked,
     };
@@ -313,11 +339,17 @@ async function deliverRentManagementAlert(runId: string) {
     const { sendPostImportManagementAlert } = await import('@/lib/rent-management-alert-delivery');
     const result = await sendPostImportManagementAlert(runId);
     console.log(`[rent-management-alert] ${result.state}; sent=${result.sent}`);
+    await recordAlertOutcome(runId, result);
     return result;
   } catch {
     // Import remains completed; alert delivery is a separately auditable outcome.
     console.error('[rent-management-alert] Delivery blocked; inspect configuration and delivery ledger.');
-    return { state: 'delivery_blocked', sent: 0 };
+    const result = { state: 'delivery_blocked', sent: 0 };
+    await recordAlertOutcome(runId, result).catch(() => {
+      // Monitoring storage must not reclassify a successful financial import.
+      console.error('[rent-management-alert] Cannot persist alert outcome; inspect delivery ledger.');
+    });
+    return result;
   }
 }
 
@@ -366,4 +398,15 @@ async function failReconciliation(runId: string, message: string) {
   const { error } = await getSupabaseAdmin().from('bank_import_reconciliation_runs')
     .update({ status: 'failed', completed_at: new Date().toISOString(), error_message: message }).eq('id', runId);
   if (error) throw new Error('Cannot persist failed import status');
+}
+
+async function recordAlertOutcome(runId: string, result: { state: string; sent: number }) {
+  const { getSupabaseAdmin } = await import('@/lib/supabase');
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin.from('bank_import_reconciliation_runs').select('reconciliation_summary').eq('id', runId).single();
+  if (error) throw new Error('Cannot read alert monitoring state');
+  const { error: updateError } = await admin.from('bank_import_reconciliation_runs').update({ reconciliation_summary: {
+    ...data.reconciliation_summary, managementAlert: { ...result, checkedAt: new Date().toISOString() },
+  } }).eq('id', runId);
+  if (updateError) throw new Error('Cannot persist alert monitoring state');
 }

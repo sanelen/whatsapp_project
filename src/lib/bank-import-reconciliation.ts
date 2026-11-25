@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getBillingPeriodForDate, listActiveBankImportMailboxes, runBankImport, type BankImportRunSummary } from '@/lib/bank-import';
 import { autoMatchUnmatchedReferences, ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
+import type { CurrentCycleImportAudit } from './bank-import-automation';
 
 export const RECONCILIATION_CADENCE_HOURS = 72;
 
@@ -29,6 +30,8 @@ export type ReconciliationRunView = {
     periodsChecked: string[];
     workflowRunId?: string;
     stage?: string;
+    currentCycle?: CurrentCycleImportAudit;
+    managementAlert?: { state: string; sent: number; checkedAt: string };
     autoMatch?: { scanned: number; matched: number; ambiguous: number; unmatched: number; failed: number };
   };
 };
@@ -84,11 +87,13 @@ function publicRun(row: Record<string, unknown>): ReconciliationRunView {
   };
 }
 
-export async function readLatestReconciliationRun(): Promise<ReconciliationRunView | null> {
+export async function readLatestReconciliationRun(trigger?: 'scheduled'): Promise<ReconciliationRunView | null> {
   const admin = getSupabaseAdmin();
-  const { data, error } = await admin
+  let query = admin
     .from('bank_import_reconciliation_runs')
-    .select('id,status,trigger,started_at,completed_at,error_message,mailbox_results,reconciliation_summary')
+    .select('id,status,trigger,started_at,completed_at,error_message,mailbox_results,reconciliation_summary');
+  if (trigger) query = query.eq('trigger', trigger);
+  const { data, error } = await query
     .order('started_at', { ascending: false })
     .limit(1)
     .maybeSingle();

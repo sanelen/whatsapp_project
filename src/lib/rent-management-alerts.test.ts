@@ -12,19 +12,20 @@ test('alerts require their own complete credential pair and never borrow shared 
   assert.equal(managementAlertTransportConfig({ ...shared, RENT_MANAGEMENT_ALERT_META_PHONE_NUMBER_ID: 'alert-sender' }), null);
   assert.deepEqual(managementAlertTransportConfig({ ...shared, RENT_MANAGEMENT_ALERT_META_ACCESS_TOKEN: ' alert-token ', RENT_MANAGEMENT_ALERT_META_PHONE_NUMBER_ID: ' alert-sender ' }), { token: 'alert-token', phoneId: 'alert-sender' });
 });
-const run: AlertImportRun = { id: 'run-1', organization_id: 'org', status: 'completed', trigger: 'scheduled', completed_at: now.toISOString(), reconciliation_summary: { failedOrPendingFiles: 0, entriesMissingPaymentReference: 0, periodsChecked: ['2026-11'] } };
+const run: AlertImportRun = { id: 'run-1', organization_id: 'org', status: 'completed', trigger: 'scheduled', completed_at: now.toISOString(), reconciliation_summary: { failedOrPendingFiles: 0, entriesMissingPaymentReference: 0, periodsChecked: ['2026-11'], currentCycle: { period: '2026-11', sources: ['gmail', 'drive'], checkedAt: now.toISOString(), failedOrPendingFiles: 0, entriesMissingPaymentReference: 0 } } };
 function harness(count = 2) {
   let reads = 0;
   const messages: string[][] = [];
   const states: string[] = [];
   const keys = new Set<string>();
+  let lastContentHash: string | undefined;
   const snapshot = buildMonthlyPaymentsDashboardSnapshot({ organizations: [{ id: 'org', name: 'Test' }], properties: [{ id: 'p', name: 'Test building', organization_id: 'org', location: 'Test' }],
     units: Array.from({ length: count }, (_, i) => ({ id: `u${i}`, property_id: 'p', label: `Room ${i}`, rent_amount: 2200, occupancy_status: 'occupied' as const, is_blocked: false })),
     periods: Array.from({ length: count }, (_, i) => ({ id: `period${i}`, unit_id: `u${i}`, expected_amount: 2200, period_start: '2026-11-01', due_date: '2026-11-05', status: 'unpaid' as const, is_blocked: false })), references: [],
   }, { currentDate: now });
   const deps: AlertDependencies = {
     async readDashboard() { reads++; return snapshot; },
-    async claim(key) { if (keys.has(key)) return false; keys.add(key); return true; },
+    async claim(key, _run, _config, contentHash) { if (keys.has(key)) return false; if (lastContentHash === contentHash) return 'unchanged'; keys.add(key); lastContentHash = contentHash; return true; },
     async send(_config, parameters) { messages.push(parameters); return `message-${messages.length}`; },
     async record(_key, state) { states.push(state); },
   };
@@ -44,21 +45,22 @@ test('no data is read for disabled, partial, manual, stale, wrong-organization o
     { ...run, status: 'partial' }, { ...run, trigger: 'manual' }, { ...run, organization_id: 'other' },
     { ...run, completed_at: '2026-11-06T12:00:00Z' }, { ...run, completed_at: 'invalid' },
     { ...run, completed_at: '2026-11-08T12:00:00Z' },
-    { ...run, reconciliation_summary: { ...run.reconciliation_summary, failedOrPendingFiles: 1 } },
+    { ...run, reconciliation_summary: { ...run.reconciliation_summary, currentCycle: { ...run.reconciliation_summary!.currentCycle!, failedOrPendingFiles: 1 } } },
     { ...run, reconciliation_summary: null },
   ]) await deliverManagementAlert(invalid, managementAlertConfig(env), h.deps, now);
   assert.equal(h.reads(), 0); assert.equal(h.messages.length, 0);
 });
-test('successful scheduled import sends scoped template parts once even on replay', async () => {
+test('successful scheduled import sends one compact briefing per day even across runs', async () => {
   const h = harness(40);
   const result = await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now);
-  assert.equal(result.state, 'sent'); assert.ok(h.messages.length > 1);
-  assert.match(h.messages[0][2], /Room 0:.*due 2026-11-05 overdue/);
+  assert.equal(result.state, 'sent'); assert.equal(h.messages.length, 1);
+  assert.match(h.messages[0][2], /Room 0:.*overdue; due 2026-11-05/);
   assert.ok(h.messages.every(parameters => parameters.join('').length < 1024));
   assert.ok(h.messages.every(parameters => new URL(parameters[3]).searchParams.get('building') === 'p'));
   const count = h.messages.length;
   assert.equal((await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now)).state, 'already_claimed');
   assert.equal(h.messages.length, count);
+  assert.equal((await deliverManagementAlert({ ...run, id: 'another-run' }, managementAlertConfig(env), h.deps, now)).state, 'already_claimed');
 });
 test('provider uncertainty is recorded and never resent automatically', async () => {
   const h = harness(); let attempts = 0;
@@ -88,4 +90,37 @@ test('missing charges, due dates or import period prevent delivery', async () =>
   assert.equal((await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now)).state, 'balances_incomplete');
   assert.equal((await deliverManagementAlert({ ...run, reconciliation_summary: { ...run.reconciliation_summary, periodsChecked: [] } }, managementAlertConfig(env), h.deps, now)).state, 'period_not_refreshed');
   assert.equal(h.messages.length, 0);
+});
+
+test('proven historical backlog does not block clean current cycle; missing source audit does', async () => {
+  const h = harness();
+  assert.equal((await deliverManagementAlert({ ...run, reconciliation_summary: { ...run.reconciliation_summary, failedOrPendingFiles: 33 } }, managementAlertConfig(env), h.deps, now)).sent, 1);
+  for (const currentCycle of [undefined, { ...run.reconciliation_summary!.currentCycle!, sources: ['gmail'] }, { ...run.reconciliation_summary!.currentCycle!, checkedAt: 'invalid' }]) {
+    const blocked = harness();
+    assert.equal((await deliverManagementAlert({ ...run, reconciliation_summary: { ...run.reconciliation_summary, currentCycle } }, managementAlertConfig(env), blocked.deps, now)).state, 'import_not_ready');
+    assert.equal(blocked.messages.length, 0);
+  }
+});
+test('future due rent is explicitly separate from overdue and pending confirmation', async () => {
+  const h = harness();
+  const rooms = h.snapshot.recentMonths.find(month => month.isCurrent)!.locations[0].rooms;
+  for (const room of rooms) { room.dueDate = '2026-11-08'; room.overdueAmount = 0; }
+  rooms[0].pendingAmount = 2200;
+  await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now);
+  assert.equal(h.messages.length, 1);
+  assert.match(h.messages[0][2], /1 rooms still to pay; due 2026-11-08/);
+  assert.match(h.messages[0][2], /1 rooms await sign-off. 0 overdue/);
+  assert.doesNotMatch(h.messages[0][2], /Room 0:/);
+});
+
+test('unchanged content is suppressed across dates while a changed pending balance produces a new briefing', async () => {
+  const h = harness();
+  assert.equal((await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now)).sent, 1);
+  const tomorrow = new Date('2026-11-08T12:00:00Z');
+  h.snapshot.asOf = '2026-11-08';
+  const next = { ...run, id: 'next-day', completed_at: tomorrow.toISOString(), reconciliation_summary: { ...run.reconciliation_summary, currentCycle: { ...run.reconciliation_summary!.currentCycle!, checkedAt: tomorrow.toISOString() } } };
+  assert.equal((await deliverManagementAlert(next, managementAlertConfig(env), h.deps, tomorrow)).state, 'unchanged');
+  h.snapshot.recentMonths.find(month => month.isCurrent)!.locations[0].rooms[0].pendingAmount = 2200;
+  assert.equal((await deliverManagementAlert(next, managementAlertConfig(env), h.deps, tomorrow)).sent, 1);
+  assert.equal(h.messages.length, 2);
 });

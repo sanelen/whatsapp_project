@@ -1,9 +1,11 @@
 # Rent Follow-up — owner request, 2026-11-25
 
-Status: implemented on `codex/rent-collections-dashboard` for owner review only.
-Automatic delivery remains disabled. The owner subsequently authorized private
-sender/recipient routing and submission of the management template; see setup
-status below. No deployment or unattended payment repair is authorized here.
+Status: Rent Follow-up and the pending-receipt correction are deployed. The owner
+subsequently authorized one real-data Quarry Heights management briefing and
+ongoing meaningful updates to the already opted-in pamphlet manager number.
+The unattended upgrade is locally verified; deployment, enablement and the
+real-data delivery receipt remain pending. Earlier setup-only evidence below is
+historical and does not prove a financial briefing was delivered.
 
 ## Acceptance
 
@@ -56,43 +58,61 @@ Local browser evidence uses sample data and real client components. Live databas
 balances, authentication, financial mutations, and provider delivery were not
 revalidated by this fixture. Linear mapping remains pending; no issue was changed.
 
-## Optional post-import alerts: deployment runbook
+## Authorized unattended source checks and management briefings
 
-The existing scheduled bank-reconciliation workflow calls the alert step after a
-successful import. No extra cron or automation is installed. Existing cadence and
-import gates remain unchanged. The initial scope is one configured building and
-the current billing cycle (which rolls after the ninth), not all historical debt.
+Reuse the existing Vercel cron (`0 5 * * *`) and durable reconciliation workflow.
+The live Hobby schedule is active: daily 07:00–08:00 SAST, with provider jitter.
+Replace the old 72-hour gate with one South African calendar-day source check.
+Manual imports do not postpone the scheduled check. Read current-cycle Gmail and
+Drive in the existing bounded batches, then run matching and persist review state.
+The browser may be closed; financial sign-off remains manual. No second scheduler,
+paid service, tenant notification, or historical decision repair is authorized.
 
-Before enabling in a reviewed environment:
+The initial message scope is Quarry Heights and the current billing cycle. The
+single approved template has four single-line body parameters: building/month/
+as-of, totals, compact room summary, and scoped review URL. Show pending receipts
+separately from still-to-receive rent, and future due dates separately from overdue.
+Include at most five overdue room lines and link to the remaining detail.
 
-1. Review/apply `20261125122956_rent_management_alert_deliveries.sql` through the
-   normal migration process. It adds a service-role-only delivery ledger.
-2. Obtain management recipient opt-in and an approved Meta template with four
-   body variables, in order: building/month/as-of/part, totals, room lines, review
-   URL. Suggested body: `Hamba rent briefing: {{1}}. {{2}} Rooms: {{3}} Review: {{4}}`.
-   Keep static text below 100 characters; each parameter is single-line. The
-   implementation bounds the substituted message and splits large room lists.
-3. Configure `RENT_MANAGEMENT_ALERT_ORGANIZATION_ID`,
-   `RENT_MANAGEMENT_ALERT_PROPERTY_ID`, `RENT_MANAGEMENT_ALERT_RECIPIENT` (country
-   code and digits), `RENT_MANAGEMENT_ALERT_TEMPLATE`, optional
-   `RENT_MANAGEMENT_ALERT_LANGUAGE` (default `en_US`), and an HTTPS `APP_URL`.
-   Existing Meta outbound configuration/token/phone ID must also be enabled.
-4. Only with owner authorization, set both `RENT_MANAGEMENT_ALERT_OPT_IN=true`
-   and `RENT_MANAGEMENT_ALERTS_ENABLED=true`. Validate with an authorized test
-   recipient before relying on operational delivery. The private branch routing
-   now records opt-in; the delivery-enabled flag remains false.
+Deployment requirements:
 
-Delivery requires a scheduled completed import less than two hours old, zero
-failed/pending files, zero entries missing references, refreshed current cycle,
-and complete saved charges/due dates. Property ownership is checked. A database
-claim keyed by run/building/recipient/part precedes the provider request. Replays
-skip claimed parts. `sent` means provider acceptance, not handset delivery.
-`unknown` or an old `claimed` row requires provider/operator investigation; never
-delete a claim to force retry without checking for an already-delivered message.
-Alert failure does not turn a completed bank import into a failed import.
+1. Apply `20261125122956_rent_management_alert_deliveries.sql` and
+   `20261125173351_management_briefing_content_dedupe.sql`. Both were applied live
+   on 25 November; RLS is enabled and client roles cannot read the delivery ledger.
+2. Keep the approved template, existing opted-in recipient and authorized property/
+   organization scope in Vercel. Use the dedicated management sender identifier and
+   Secret access token. Shared chat outbound flags are independent and stay off.
+3. Set `RENT_MANAGEMENT_ALERTS_ENABLED=true` in Production after reviewing this
+   release. `RENT_MANAGEMENT_ALERT_OPT_IN=true` is also required. The token stays
+   exclusively in Vercel; do not export it or paste it in chat.
+4. Deploy through the usual revision-bound gates, trigger the existing cron once,
+   and verify one current-data briefing plus its delivered/read webhook. A setup
+   message or provider acceptance alone does not satisfy this acceptance criterion.
 
-Disable by clearing `RENT_MANAGEMENT_ALERTS_ENABLED`; retain the delivery ledger.
-The migration and real provider transport have not been exercised in this branch.
+Delivery requires a completed scheduled import and current-cycle audit under two
+hours old, both Gmail and Drive checked, zero current failed/pending files, zero
+current incoming entries without references, and complete saved charges/due dates.
+Only files with all known transaction dates outside the current window may be
+excluded from the current audit. Unknown dates/evidence still block. Historical
+exceptions remain visible in the separate total; none are silently marked parsed.
+
+A database claim precedes the provider request. A unique daily scope key caps
+attempts at one per building/recipient/SAST day. A content fingerprint excludes
+the as-of date, suppressing unchanged briefings across days. This is a change
+alert, not an optional daily digest. Pending/confirmed balances, overdue state,
+review counts and due dates can trigger the next briefing. `claimed` or `unknown`
+outcomes block later sends until investigated; never delete a claim to force retry.
+`sent` means provider acceptance; handset delivery requires its separate receipt.
+
+Import audit shows the scheduled source check, current exceptions, historical
+backlog and alert outcome. A completed check older than 36 hours is stale; a run
+still running after two hours is stalled. This is an operator-visible monitor,
+not an independent failure-notification service. Alert or monitoring failures
+must not reclassify an otherwise completed import. Disable future delivery by
+clearing `RENT_MANAGEMENT_ALERTS_ENABLED`, retaining the ledger.
+
+See [unattended-flow review](../reviews/full-flow-review-2026-11-25-unattended-briefing.md)
+for local evidence and the outstanding live acceptance.
 
 ## Management alert setup — 25 November 2026
 
