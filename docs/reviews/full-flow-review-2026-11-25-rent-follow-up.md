@@ -139,6 +139,23 @@ Live database reads confirm scheduled imports: latest run completed on 25 Novemb
 at 07:53 SAST, but its audit has 36 failed/pending files, so alerts would be blocked.
 The configured daily cron check is gated by a 72-hour cadence; actual recorded
 runs are three to four days apart. The alert ledger is unavailable via REST
-(404 / PGRST205). There are three properties and no selected alert property yet.
+(404 / PGRST205); SQL later confirmed the table does not exist. Quarry Heights
+is now saved as the private branch/test scope. Its 18 rooms have complete saved
+charges and due dates for November and the current December cycle.
 Five focused alert tests passed, including duplicate replay and ambiguous-send
 handling. Detailed findings and exact remaining prerequisites are in the runbook.
+
+Further diagnosis found all 36 exceptions are stale `pending` file checkpoints:
+all have entries, references and archive checkpoints. Thirty receipts are signed
+off and six are unmatched. The duplicate recovery path omitted `parsed` completion;
+the branch now records it after successful receipt recovery. A fail-closed HTTP
+regression test proves failure retention, recovery, replay and preservation of
+existing signed-off receipts. All 55 focused tests, type checking and focused lint
+pass. A guarded live single-message replay stopped before mutation because local
+Google OAuth returns 401 `invalid_client`. All 36 references remain unchanged;
+no status was directly cleared in SQL and no financial sign-off was performed.
+
+At the owner's immediate request, Meta's recipient country was set to South Africa
+and the confirmed recipient ending 4647 entered. The generated request preview
+verifies the complete international destination. Send was not pressed. The token
+field is still empty; Meta's generic integration-test template must not be sent.

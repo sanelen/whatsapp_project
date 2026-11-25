@@ -138,11 +138,14 @@ or infer successful handset receipt from provider acceptance.
 - Latest run audit: 36 failed/pending files, zero entries missing a payment
   reference. Despite status `completed`, these files prevent this branch's
   automatic alert. Do not bypass that safeguard or silently repair imports.
-- Three properties belong to one organization. Alert scope is still unset;
-  this implementation supports one explicitly configured building. Saved charge,
-  due-date and confirmed-payment parity still need acceptance for that scope.
+- Three properties belong to one organization. The owner context selects Quarry
+  Heights as the initial branch/test scope, now saved privately. Read-only live
+  dashboard checks found 18 rooms, zero missing saved charges and zero missing
+  due dates for November and the current December cycle. This checks completeness;
+  it does not replace accounting acceptance of confirmed-payment allocations.
 - The delivery ledger returned REST 404 / PGRST205 (not available in the schema
-  cache). No migration was applied. Local production-snapshot Meta/outbound
+  cache); a subsequent SQL `to_regclass` check confirms the table does not exist.
+  No migration was applied. Local production-snapshot Meta/outbound
   flags are false; current deployed flags were not independently verified.
 - Duplicate handling is at-most-once per run/organization/property/recipient/
   part, enforced by a primary-key claim before the provider request. Unknown
@@ -156,3 +159,36 @@ or infer successful handset receipt from provider acceptance.
 
 No credential was generated, no message sent, and no production deployment,
 financial mutation, schedule change or activation was performed in this check.
+
+### Import checkpoint investigation and branch repair
+
+All 36 audit exceptions are `pending` files, not parser failures. Each already
+has one bank entry, one payment reference and a Drive archive checkpoint. Thirty
+references are signed off; six are unmatched, with no partially populated
+unit/period matches. Twelve parent messages retain historical Gmail per-user
+quota errors; 24 are marked processed.
+
+The duplicate attachment branch verified/recovered the receipt but never changed
+the file's parser checkpoint to `parsed`. A file first seen outside a requested
+billing window could therefore remain pending after a later successful recovery.
+The branch now marks that checkpoint only after archive verification and receipt
+recovery finish. A failure before receipt verification leaves it pending.
+
+The regression test exercises the public mailbox importer with isolated HTTP
+providers: reference-read failure, successful recovery and replay. It verifies no
+financial inserts or writes to existing signed-off references. All 55 focused
+import/alert tests, type checking and focused lint pass.
+
+A single-message live recovery attempt through `importMailboxPayments` was
+guarded against receipt writes, new bank entries and changes to existing entry
+amounts/identity. It stopped before database mutation because the locally stored
+Google OAuth client is rejected with HTTP 401 `invalid_client` (client not found).
+All 36 references were re-read and remain unchanged. No direct SQL checkpoint
+clearing or financial sign-off was performed; the 36 pending statuses remain.
+Use valid existing Google integration credentials with the reviewed recovery
+path, then require a fresh successful scheduled audit rather than rewriting the
+historical reconciliation summary. Do not reconnect Google through chat secrets.
+
+The Meta credential field was rechecked and is still empty. The production setup
+page is foregrounded at **Generate token**, with browser takeover requested for
+the owner's direct credential issuance. No additional building choice is needed.
