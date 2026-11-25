@@ -12,7 +12,7 @@ export function releaseRequestAllowed(method: string, url: URL, body: unknown, p
   const allowedQuery = new Set(['propertyId', 'window', 'channel', 'provider', 'runId', 'status', 'dryRun']);
   if (keys.some(key => !allowedQuery.has(key))) return false;
   if (url.searchParams.has('propertyId') && url.searchParams.get('propertyId') !== propertyId) return false;
-  if (route === '/api/release-check') return method === 'POST' && ['webhook-get', 'webhook-post', 'flow-ping'].some(probe => exact(body, { probe }));
+  if (route === '/api/release-check') return method === 'POST' && ['configuration', 'webhook-get', 'webhook-post', 'flow-ping'].some(probe => exact(body, { probe }));
   if (method === 'GET') {
     if (!readRoutes.has(route)) return false;
     if (route === '/api/monthly-payments/import') return Boolean(url.searchParams.get('runId'));

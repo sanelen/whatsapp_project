@@ -9,8 +9,13 @@ export async function POST(request: Request) {
   const denied = await requireApiAuth(request);
   if (denied) return denied;
   const body = await request.json().catch(() => null);
-  if (!body || Object.keys(body).length !== 1 || !['webhook-get', 'webhook-post', 'flow-ping'].includes(body.probe)) return NextResponse.json({ error: 'Unsupported release probe' }, { status: 400 });
+  if (!body || Object.keys(body).length !== 1 || !['configuration', 'webhook-get', 'webhook-post', 'flow-ping'].includes(body.probe)) return NextResponse.json({ error: 'Unsupported release probe' }, { status: 400 });
   try {
+    if (body.probe === 'configuration') {
+      const propertyId = process.env.RELEASE_TEST_PROPERTY_ID;
+      if (!propertyId) throw new Error('RELEASE_TEST_PROPERTY_ID is missing');
+      return NextResponse.json({ success: true, propertyId });
+    }
     const origin = new URL(process.env.APP_URL || 'https://hambatrading.co.za');
     if (origin.protocol !== 'https:' || origin.hostname !== 'hambatrading.co.za') throw new Error('Production probe origin is not configured');
     const target = new URL(body.probe === 'flow-ping' ? '/api/whatsapp/flows/waiting-list' : '/api/whatsapp/webhook', origin);

@@ -7,7 +7,7 @@ assertCoverage(await inventory(), cases);
 const base = process.env.RELEASE_BASE_URL;
 const revision = process.env.RELEASE_EXPECTED_SHA;
 
-const property = process.env.RELEASE_PROPERTY_ID;
+let property = process.env.RELEASE_PROPERTY_ID;
 const now = new Date();
 if (now.getUTCDate() >= 9) now.setUTCMonth(now.getUTCMonth() + 1, 1);
 const period = process.env.RELEASE_BILLING_PERIOD || now.toISOString().slice(0, 7);
@@ -61,7 +61,11 @@ for (const item of [...cases].sort((a, b) => Number(a.mode === 'job-status') - N
   const check = { route: item.route, method: item.method, mode: item.mode, limitation: item.limitation };
   try {
     needed('RELEASE_BASE_URL'); needed('RELEASE_EXPECTED_SHA'); needed('RELEASE_CHECK_SECRET');
-    if (JSON.stringify(item).includes('$PROPERTY')) needed('RELEASE_PROPERTY_ID');
+    if (JSON.stringify(item).includes('$PROPERTY') && !property) {
+      const { data } = await request({ method: 'POST', route: '/api/release-check', body: { probe: 'configuration' }, status: 200, budgetMs: 15000 });
+      if (!data.success || typeof data.propertyId !== 'string' || !data.propertyId) throw new Error('Production release property scope is missing');
+      property = data.propertyId;
+    }
     let extra = {};
     if (['webhook-challenge', 'signed-webhook', 'encrypted-ping'].includes(item.mode)) {
       const probe = item.mode === 'webhook-challenge' ? 'webhook-get' : item.mode === 'signed-webhook' ? 'webhook-post' : 'flow-ping';

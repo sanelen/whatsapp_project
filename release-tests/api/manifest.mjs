@@ -29,7 +29,7 @@ export const cases = [
   { method: 'GET', route: '/api/whatsapp/webhook', mode: 'webhook-challenge', status: 200, budgetMs: 15000 },
   { method: 'POST', route: '/api/whatsapp/webhook', body: { object: 'whatsapp_business_account', entry: [] }, mode: 'signed-webhook', status: 200, budgetMs: 15000, limitation: 'Signature and acknowledgement only; no real inbound event or tenant send.' },
   { method: 'POST', route: '/api/whatsapp/flows/waiting-list', mode: 'encrypted-ping', status: 200, budgetMs: 15000, limitation: 'Encryption and ping only; Google Sheets submission is not written.' },
-  { method: 'POST', route: '/api/release-check', body: { probe: 'webhook-post' }, status: 200, shape: 'success:true', mode: 'provider-probe', budgetMs: 30000 },
+  { method: 'POST', route: '/api/release-check', body: { probe: 'configuration' }, status: 200, shape: 'propertyId:string', mode: 'read', budgetMs: 15000 },
   read('/api/workspace', 'data:object'),
   { method: 'POST', route: '/api/workspace', body: { action: 'validateOnly', payload: {} }, status: 200, shape: 'data:object', mode: 'dry-run', budgetMs: 15000, limitation: 'Current workspace is read; organizational mutations are not executed.' },
 ];
