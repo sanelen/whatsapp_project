@@ -1,12 +1,11 @@
 # Rent Follow-up — owner request, 2026-11-25
 
-Status: deployed and operationally verified on 25 November 2026. The daily
-Gmail + Drive workflow and management alerts are active. Exactly one real-data
-Quarry Heights briefing was delivered to the authorized manager at 20:18:56 SAST,
-verified by a matching Meta webhook. Its content fingerprint matches the refreshed
-post-import balances, including pending receipts. Financial sign-off remains manual.
-The earlier setup-only evidence below is historical and is separate from this test.
-See the final acceptance section in the linked unattended-flow review.
+Status: owner-authorized recurring schedule revised on 25 November 2026. Daily
+Gmail + Drive imports remain; management briefings now run on the **1st and 7th**
+of each month in South Africa for **Quarry Heights, Berea and West Rich** (called
+West Ridge by the owner), to the existing manager ending 4647. This supersedes the
+previous daily change-triggered scope. Financial sign-off remains manual.
+See [scheduled briefing review](../reviews/full-flow-review-2026-11-25-scheduled-briefings.md).
 
 ## Acceptance
 
@@ -42,7 +41,8 @@ See [pending-receipt review](../reviews/full-flow-review-2026-11-25-pending-rent
 ## Explicit one-off building briefings
 
 The owner authorized one current December briefing each for Berea and West Rich
-on 25 November. The recurring property remains Quarry Heights. Rent Follow-up
+on 25 November. At that point the recurring property was Quarry Heights; the later
+owner request above explicitly enrolls all three buildings. Rent Follow-up
 supports an explicit connected-manager send for one selected current-month building.
 The destination and approved template stay server-owned; no recipient override or
 recurring enrollment is accepted. A completed, clean and fresh latest Both audit
@@ -76,12 +76,15 @@ revalidated by this fixture. Linear mapping remains pending; no issue was change
 Reuse the existing Vercel cron (`0 5 * * *`) and durable reconciliation workflow.
 The live Hobby schedule is active: daily 07:00–08:00 SAST, with provider jitter.
 Replace the old 72-hour gate with one South African calendar-day source check.
-Manual imports do not postpone the scheduled check. Read current-cycle Gmail and
+A completed, clean current-period manual Both import with matching completed
+satisfies that SAST day. Failed, partial, single-source or unfinished matching does
+not satisfy the daily source check. Read current-cycle Gmail and
 Drive in the existing bounded batches, then run matching and persist review state.
 The browser may be closed; financial sign-off remains manual. No second scheduler,
 paid service, tenant notification, or historical decision repair is authorized.
 
-The initial message scope is Quarry Heights and the current billing cycle. The
+The current message scope is the explicit three-building allowlist in
+`RENT_MANAGEMENT_ALERT_PROPERTY_IDS`, and the current billing cycle. The
 single approved template has four single-line body parameters: building/month/
 as-of, totals, compact room summary, and scoped review URL. Show pending receipts
 separately from still-to-receive rent, and future due dates separately from overdue.
@@ -98,27 +101,42 @@ Deployment requirements:
 3. Set `RENT_MANAGEMENT_ALERTS_ENABLED=true` in Production after reviewing this
    release. `RENT_MANAGEMENT_ALERT_OPT_IN=true` is also required. The token stays
    exclusively in Vercel; do not export it or paste it in chat.
-4. Deploy through the usual revision-bound gates, trigger the existing cron once,
-   and verify one current-data briefing plus its delivered/read webhook. A setup
-   message or provider acceptance alone does not satisfy this acceptance criterion.
+4. Deploy through revision-bound gates. Verify effective production scope and
+   provider receipts read-only; do not generate additional live messages on 25
+   November. Future scheduled delivery is not claimed before its real webhook.
 
-Delivery requires a completed scheduled import and current-cycle audit under two
+Delivery requires a completed manual or scheduled import, completed automatic
+matching with zero failures, and a current-cycle audit under two
 hours old, both Gmail and Drive checked, zero current failed/pending files, zero
 current incoming entries without references, and complete saved charges/due dates.
 Only files with all known transaction dates outside the current window may be
 excluded from the current audit. Unknown dates/evidence still block. Historical
 exceptions remain visible in the separate total; none are silently marked parsed.
 
-A repeated scheduler invocation may resume only a previously disabled or
-transport-unconfigured briefing from the latest completed scheduled audit, without
-re-importing. The same two-hour freshness and clean-source gates still apply.
-A database claim precedes the provider request. A unique daily scope key caps
-attempts at one per building/recipient/SAST day. A content fingerprint excludes
-the as-of date, suppressing unchanged briefings across days. This is a change
-alert, not an optional daily digest. Pending/confirmed balances, overdue state,
-review counts and due dates can trigger the next briefing. `claimed` or `unknown`
-outcomes block later sends until investigated; never delete a claim to force retry.
-`sent` means provider acceptance; handset delivery requires its separate receipt.
+Both manual and scheduled imports settle all Gmail/Drive batches, match only
+unambiguous rules, finalize the audit, then evaluate the briefing date. No separate
+five-minute timer runs. Matches remain Waiting for confirmation. Automatic match
+writes require the reference still to be unmatched and unsigned at write time;
+replays and overlapping runs do not double-match or overwrite staff decisions.
+
+A repeated scheduler invocation can evaluate the same clean same-day audit without
+re-importing. The date gate still permits only the 1st and 7th. No catch-up send is
+created on another date. A database claim precedes every provider request, with one
+attempt per property/recipient/SAST date. Identical content is intentionally sent on
+both requested dates; fingerprints suppress only unchanged one-off sends. Claims
+and unknown outcomes block unsafe retries. Actual sent/delivered/read/failed status
+comes from the signed webhook for the exact provider message, recipient and sender;
+provider acceptance alone is not delivery. Rent Follow-up exposes a read-only status
+check. Error 131049 is visible and blocks another attempt for at least 24 hours;
+scheduled evaluation still occurs only on the requested dates.
+
+Next opportunities after 25 November: **1 December and 7 December 2026**, following
+the clean source check/matching. The automatic import starts 07:00–08:00 SAST on
+Hobby; delivery follows completion, so there is no exact delivery-minute promise.
+An eligible manual import on those dates may complete earlier. West Rich's current
+briefing is prepared but its 25 November attempt failed with Meta 131049; it must not
+be resent today. The next scheduled opportunity is 1 December, subject to provider
+acceptance and a fresh audit. No third retry date is scheduled.
 
 Import audit shows the scheduled source check, current exceptions, historical
 backlog and alert outcome. A completed check older than 36 hours is stale; a run

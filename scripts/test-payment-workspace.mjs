@@ -40,6 +40,10 @@ try {
     page.on('pageerror', (error) => errors.push(error.message));
     await page.route('**/*', async (route) => {
       const request = route.request();
+      if (request.url().startsWith(`${origin}/api/monthly-payments/management-briefing?`) && request.method() === 'GET') {
+        await route.fulfill({ json: { success: true, data: { nextScheduledDate: '2026-09-01', properties: [{ scheduled: true, state: 'failed', errorCode: 131049, occurredAt: '2026-08-25T18:49:05Z' }] } } });
+        return;
+      }
       if (request.url() === `${origin}/api/monthly-payments/management-briefing` && request.method() === 'POST') {
         briefings.push(request.postDataJSON());
         await route.fulfill({ json: { success: true, data: { state: 'sent', sent: 1 } } });
@@ -183,6 +187,10 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Send manager briefing', exact: true }).count(), 0, 'Historical months cannot use the connected sender');
     await page.getByLabel('Billing month', { exact: true }).selectOption('2026-08');
     await page.getByRole('region', { name: 'Connected management briefing' }).getByText(/manager ending 0000/).waitFor();
+    await page.getByText(/Automatic briefings: 1st and 7th/).waitFor();
+    await page.getByText(/Not delivered by WhatsApp.*Error 131049/).waitFor();
+    await page.getByRole('button', { name: 'Check delivery status', exact: true }).click();
+    assert.equal(briefings.length, 0, 'Checking receipts never sends');
     await page.getByRole('button', { name: 'Send manager briefing', exact: true }).click();
     await page.getByText('Briefing accepted by WhatsApp. Delivery confirmation is tracked separately.', { exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Send manager briefing', exact: true }).isEnabled(), false);

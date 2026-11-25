@@ -3,9 +3,17 @@ import { readMonthlyPaymentsDashboard } from './monthly-payments';
 import { getChannelRuntimeConfig } from './channels/runtime-config';
 import { deliverManagementAlert, managementAlertConfig, managementAlertTransportConfig, type AlertImportRun } from './rent-management-alerts';
 import { oneOffManagementConfig, type ManagementBriefingRequest } from './management-briefing-request';
+import { dispatchScheduledBriefings, managementBriefingDue, scheduledManagementConfigs, nextManagementBriefingDate, managementBriefingDays } from './management-briefing-schedule';
+import { managementBriefingOutcome, managementBriefingClaimDecision, type BriefingAttempt } from './management-briefing-status';
+import type { ManagementAlertConfig } from './rent-management-alerts';
+import { southAfricaDate } from './rent-collections';
 
 export async function sendPostImportManagementAlert(runId: string) {
-  return sendManagementAlert(runId);
+  const now = new Date();
+  if (!managementBriefingDue(now)) return { state: 'not_scheduled_today', sent: 0, properties: [] };
+  const config = managementAlertConfig(process.env);
+  if (!config) return { state: 'disabled', sent: 0, properties: [] };
+  return dispatchScheduledBriefings(scheduledManagementConfigs(config, process.env), settings => sendManagementAlert(runId, undefined, settings, now), now);
 }
 
 export async function sendOneOffManagementAlert(input: ManagementBriefingRequest) {
@@ -16,10 +24,43 @@ export async function sendOneOffManagementAlert(input: ManagementBriefingRequest
   return sendManagementAlert(latest.id, input);
 }
 
-async function sendManagementAlert(runId: string, oneOff?: ManagementBriefingRequest) {
+async function readProviderOutcome(attempt: BriefingAttempt | null, config: ManagementAlertConfig, phoneId: string) {
+  if (!attempt?.provider_message_id) return managementBriefingOutcome(attempt, [], config.recipient, phoneId);
+  const { data, error } = await getSupabaseAdmin().from('channel_events').select('occurred_at,payload')
+    .eq('provider', 'meta').eq('event_type', 'message.status').eq('provider_message_id', attempt.provider_message_id);
+  if (error) throw new Error('Cannot verify provider delivery status.');
+  return managementBriefingOutcome(attempt, data ?? [], config.recipient, phoneId);
+}
+
+export async function readManagementBriefingStatus(propertyId?: string) {
+  const config = managementAlertConfig(process.env);
+  const transport = managementAlertTransportConfig(process.env);
+  const now = new Date();
+  if (!config || !transport) return { configured: false, properties: [] };
+  const configs = scheduledManagementConfigs(config, process.env);
+  const ids = propertyId ? [propertyId] : configs.map(item => item.propertyId);
+  const admin = getSupabaseAdmin();
+  const properties = [];
+  for (const id of ids) {
+    const { data: property, error: propertyError } = await admin.from('properties').select('id,name').eq('id', id).eq('organization_id', config.organizationId).maybeSingle();
+    if (propertyError || !property) continue;
+    const { data: attempt, error } = await admin.from('rent_management_alert_deliveries').select('id,status,provider_message_id,content_hash,created_at')
+      .eq('organization_id', config.organizationId).eq('property_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (error) throw new Error('Cannot read management briefing status.');
+    const attemptedToday = Boolean(attempt && southAfricaDate(new Date(attempt.created_at)) === southAfricaDate(now));
+    properties.push({ propertyId: id, name: property.name, scheduled: configs.some(item => item.propertyId === id), attemptedToday,
+      nextScheduledDate: nextManagementBriefingDate(now, !attemptedToday),
+      attemptAt: attempt?.created_at ?? null, ...await readProviderOutcome(attempt, config, transport.phoneId) });
+  }
+  return { configured: true, recipientSuffix: config.recipient.slice(-4), days: managementBriefingDays, timezone: 'Africa/Johannesburg',
+    importCron: '0 5 * * *', importStartWindow: '07:00–08:00 SAST', afterCleanImportAndMatching: true,
+    nextScheduledDate: nextManagementBriefingDate(now), scheduledPropertyIds: configs.map(item => item.propertyId), properties };
+}
+
+async function sendManagementAlert(runId: string, oneOff?: ManagementBriefingRequest, scheduledConfig?: ManagementAlertConfig, now = new Date()) {
   const configured = managementAlertConfig(process.env);
   if (!configured) return { state: 'disabled', sent: 0 };
-  const config = oneOff ? oneOffManagementConfig(configured, oneOff) : configured;
+  const config = oneOff ? oneOffManagementConfig(configured, oneOff) : scheduledConfig ?? configured;
   const runtime = getChannelRuntimeConfig();
   // Management opt-in, enable flag and dedicated credentials govern this sender.
   // Shared chat outbound flags do not grant or block this separately authorized route.
@@ -35,14 +76,15 @@ async function sendManagementAlert(runId: string, oneOff?: ManagementBriefingReq
   if (propertyError || !property) return { state: 'property_not_authorized', sent: 0 };
   return deliverManagementAlert(run as AlertImportRun, config, {
     readDashboard: () => readMonthlyPaymentsDashboard({ readOnly: true }),
-    async claim(key, id, settings, contentHash) {
+    async claim(key, id, settings, contentHash, scheduled) {
       const { data: previous, error: previousError } = await admin.from('rent_management_alert_deliveries')
-        .select('id,status,content_hash').eq('organization_id', settings.organizationId).eq('property_id', settings.propertyId)
+        .select('id,status,content_hash,provider_message_id,created_at').eq('organization_id', settings.organizationId).eq('property_id', settings.propertyId)
         .order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (previousError) throw new Error('Cannot verify previous briefing; delivery remains blocked.');
-      if (previous?.status === 'claimed' || previous?.status === 'unknown') return 'delivery_needs_review';
-      if (previous?.id === key) return false;
-      if (previous?.content_hash === contentHash) return 'unchanged';
+      const outcome = await readProviderOutcome(previous, settings, phoneId);
+      const decision = managementBriefingClaimDecision(previous, key, contentHash, scheduled, outcome, now);
+      if (decision === 'already_claimed') return false;
+      if (decision !== 'claim') return decision;
       const { error } = await admin.from('rent_management_alert_deliveries').insert({
         id: key, import_run_id: id, organization_id: settings.organizationId, property_id: settings.propertyId, status: 'claimed', content_hash: contentHash,
       });
@@ -69,5 +111,5 @@ async function sendManagementAlert(runId: string, oneOff?: ManagementBriefingReq
       const { error } = await admin.from('rent_management_alert_deliveries').update({ status, provider_message_id: providerId ?? null, updated_at: new Date().toISOString() }).eq('id', key);
       if (error) throw new Error('Management delivery needs operator verification.');
     },
-  }, new Date(), oneOff?.period);
+  }, now, oneOff?.period);
 }

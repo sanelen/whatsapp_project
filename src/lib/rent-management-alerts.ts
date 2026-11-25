@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { MonthlyPaymentsDashboardSnapshot } from './monthly-payments';
-import { rentCurrency, rentToReceive, overdueRentToReceive, sumRentBalances } from './rent-collections';
+import { rentCurrency, rentToReceive, overdueRentToReceive, sumRentBalances, southAfricaDate } from './rent-collections';
+import { managementBriefingDue } from './management-briefing-schedule';
 import type { CurrentCycleImportAudit } from './bank-import-automation';
 
 export type ManagementAlertConfig = {
@@ -9,7 +10,7 @@ export type ManagementAlertConfig = {
 };
 export type AlertImportRun = {
   id: string; organization_id: string; status: string; trigger: string; completed_at: string | null;
-  reconciliation_summary: { failedOrPendingFiles?: number; entriesMissingPaymentReference?: number; periodsChecked?: string[]; currentCycle?: CurrentCycleImportAudit } | null;
+  reconciliation_summary: { failedOrPendingFiles?: number; entriesMissingPaymentReference?: number; periodsChecked?: string[]; currentCycle?: CurrentCycleImportAudit; autoMatch?: { failed: number } } | null;
 };
 /** Dedicated credentials prevent management alerts from using another channel's sender. */
 export function managementAlertTransportConfig(env: Record<string, string | undefined>) {
@@ -35,7 +36,7 @@ export function managementAlertConfig(env: Record<string, string | undefined>): 
 
 export type AlertDependencies = {
   readDashboard(): Promise<MonthlyPaymentsDashboardSnapshot>;
-  claim(key: string, runId: string, config: ManagementAlertConfig, contentHash: string): Promise<boolean | 'unchanged' | 'delivery_needs_review'>;
+  claim(key: string, runId: string, config: ManagementAlertConfig, contentHash: string, scheduled: boolean): Promise<boolean | 'unchanged' | 'delivery_needs_review' | 'provider_cooldown'>;
   send(config: ManagementAlertConfig, parameters: string[]): Promise<string>;
   record(key: string, status: 'sent' | 'unknown', providerId?: string): Promise<void>;
 };
@@ -43,11 +44,12 @@ export type AlertDependencies = {
 /** At-most-once attempts: an ambiguous provider timeout is retained for operator review, never blindly retried. */
 export async function deliverManagementAlert(run: AlertImportRun, config: ManagementAlertConfig | null, deps: AlertDependencies, now = new Date(), oneOffPeriod?: string) {
   if (!config) return { state: 'disabled', sent: 0 };
+  if (!oneOffPeriod && !managementBriefingDue(now)) return { state: 'not_scheduled_today', sent: 0 };
   const age = now.getTime() - Date.parse(run.completed_at ?? '');
   const audit = run.reconciliation_summary;
   const current = audit?.currentCycle;
   const sourceAge = now.getTime() - Date.parse(current?.checkedAt ?? '');
-  if (run.organization_id !== config.organizationId || (run.trigger !== 'scheduled' && !(oneOffPeriod && run.trigger === 'manual')) || run.status !== 'completed' ||
+  if (run.organization_id !== config.organizationId || !['scheduled', 'manual'].includes(run.trigger) || run.status !== 'completed' || audit?.autoMatch?.failed !== 0 ||
       !Number.isFinite(age) || age < 0 || age > 2 * 60 * 60 * 1000 ||
       !Number.isFinite(sourceAge) || sourceAge < 0 || sourceAge > 2 * 60 * 60 * 1000 ||
       !current || !current.sources.includes('gmail') || !current.sources.includes('drive') ||
@@ -57,6 +59,7 @@ export async function deliverManagementAlert(run: AlertImportRun, config: Manage
   if (dashboard.setupState !== 'ready' || !month || !audit?.periodsChecked?.includes(month.key) || current.period !== month.key || (oneOffPeriod && oneOffPeriod !== month.key)) return { state: 'period_not_refreshed', sent: 0 };
   const property = month.locations.find(item => item.id === config.propertyId);
   if (!property || !property.rooms.length || property.balances.chargeMissingCount || property.balances.unknownDueDateCount) return { state: 'balances_incomplete', sent: 0 };
+  if (dashboard.asOf !== southAfricaDate(now) || (!oneOffPeriod && southAfricaDate(new Date(run.completed_at!)) !== southAfricaDate(now))) return { state: 'import_not_ready', sent: 0 };
   const total = sumRentBalances(property.rooms);
   const url = new URL('/monthly-payments/follow-up', config.dashboardOrigin);
   url.search = new URLSearchParams({ building: property.id, period: month.key, filter: 'outstanding' }).toString();
@@ -76,9 +79,9 @@ export async function deliverManagementAlert(run: AlertImportRun, config: Manage
   if (roomChunk.length > roomBudget) return { state: 'template_too_long', sent: 0 };
   const parameters = [title, totals, roomChunk, url.toString()].map(text => text.replace(/\s+/g, ' ').trim());
   // One briefing per building/recipient/South African date, even across repeated runs.
-  const key = createHash('sha256').update(JSON.stringify([config.organizationId, config.propertyId, config.recipient, month.key, dashboard.asOf])).digest('hex');
+  const key = createHash('sha256').update(JSON.stringify([config.organizationId, config.propertyId, config.recipient, month.key, southAfricaDate(now)])).digest('hex');
   const contentHash = createHash('sha256').update(JSON.stringify([config.organizationId, config.propertyId, config.recipient, month.key, totals, roomChunk])).digest('hex');
-  const claim = await deps.claim(key, run.id, config, contentHash);
+  const claim = await deps.claim(key, run.id, config, contentHash, !oneOffPeriod);
   if (claim !== true) return { state: claim || 'already_claimed', sent: 0 };
   try {
     const providerId = await deps.send(config, parameters);

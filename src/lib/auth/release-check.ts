@@ -3,7 +3,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 // A dedicated service identity, deliberately not a staff account. Even possession
 // of its key cannot authorize tenant mutations, source imports or outbound sends.
 const emptyValidation = new Set(['/api/kb/delete', '/api/kb/update', '/api/kb/upload', '/api/monthly-payments/references', '/api/monthly-payments/rooms', '/api/monthly-payments/management-briefing', '/api/property-content']);
-const readRoutes = new Set(['/api/admin/bank-accounts', '/api/analytics/overview', '/api/history', '/api/kb/list', '/api/models', '/api/monthly-payments/import', '/api/monthly-payments/import/google-cloud', '/api/monthly-payments/import/reconcile', '/api/property-content', '/api/settings/prompt', '/api/workspace']);
+const readRoutes = new Set(['/api/monthly-payments/management-briefing', '/api/admin/bank-accounts', '/api/analytics/overview', '/api/history', '/api/kb/list', '/api/models', '/api/monthly-payments/import', '/api/monthly-payments/import/google-cloud', '/api/monthly-payments/import/reconcile', '/api/property-content', '/api/settings/prompt', '/api/workspace']);
 const allowedMethods: Record<string, string> = { '/api/kb/delete': 'DELETE', '/api/kb/update': 'PATCH', '/api/kb/upload': 'POST', '/api/monthly-payments/references': 'POST', '/api/monthly-payments/rooms': 'POST', '/api/monthly-payments/management-briefing': 'POST', '/api/property-content': 'POST' };
 function exact(actual: unknown, expected: unknown) { return JSON.stringify(actual) === JSON.stringify(expected); }
 export function releaseRequestAllowed(method: string, url: URL, body: unknown, propertyId: string) {

@@ -8,11 +8,15 @@ export type CurrentCycleImportAudit = {
   entriesMissingPaymentReference: number;
 };
 
-export function scheduledImportDue(last: { startedAt: string; summary: { currentCycle?: CurrentCycleImportAudit } } | null, now = new Date()) {
+export function scheduledImportDue(last: { startedAt: string; status?: string; summary: { currentCycle?: CurrentCycleImportAudit; autoMatch?: { failed: number } } } | null, now = new Date(), period?: string) {
+  if (!last) return true;
   // The old Gmail-only reconciliation is not a completed daily source check.
-  if (!last?.summary.currentCycle?.sources.includes('drive')) return true;
-  if (!Number.isFinite(Date.parse(last.startedAt))) return true;
-  return southAfricaDate(new Date(last.startedAt)) < southAfricaDate(now);
+  const audit = last?.summary.currentCycle;
+  if (!audit?.sources.includes('drive') || !audit.sources.includes('gmail')) return true;
+  if (last?.status && (last.status !== 'completed' || last.summary.autoMatch?.failed !== 0)) return true;
+  if (audit.failedOrPendingFiles || audit.entriesMissingPaymentReference || (period && audit.period !== period)) return true;
+  if (!Number.isFinite(Date.parse(last.startedAt)) || !Number.isFinite(Date.parse(audit.checkedAt)) || Date.parse(audit.checkedAt) > now.getTime()) return true;
+  return southAfricaDate(new Date(audit.checkedAt)) !== southAfricaDate(now);
 }
 
 /** Only proven out-of-window evidence is historical. Unknown dates fail closed. */

@@ -57,8 +57,7 @@ export async function bankImportReconciliationWorkflow(force: boolean, trigger: 
     // repeating today's import. The delivery step still verifies freshness and
     // claims the daily ledger key before making any provider request.
     if (trigger === 'scheduled' && preparation.reason === 'cadence_not_due' &&
-        previous?.trigger === 'scheduled' && previous.status === 'completed' &&
-        ['disabled', 'transport_unconfigured'].includes(previous.summary.managementAlert?.state ?? '')) {
+        previous?.status === 'completed') {
       await deliverRentManagementAlert(previous.id);
     }
     return preparation;
@@ -128,7 +127,7 @@ export async function bankImportReconciliationWorkflow(force: boolean, trigger: 
     });
 
     const completed = await finalizeReconciliation(preparation, mailboxResults, matching);
-    if (preparation.trigger === 'scheduled' && completed.status === 'completed') {
+    if (completed.status === 'completed') {
       await deliverRentManagementAlert(preparation.runId);
     }
     return completed;
@@ -168,7 +167,7 @@ async function prepareReconciliation(force: boolean, trigger: Trigger, workflowR
   const sources = options?.source === 'both' ? ['gmail', 'drive'] : [options?.source ?? 'gmail'];
   const { scheduledImportDue } = await import('@/lib/bank-import-automation');
   const cadenceDue = trigger === 'scheduled'
-    ? scheduledImportDue(await readLatestReconciliationRun('scheduled'))
+    ? scheduledImportDue(latest, new Date(), options?.billingPeriod)
     : isReconciliationDue(latest?.startedAt ?? null);
   if (latest?.status === 'running' && latest.summary.workflowRunId === workflowRunId) return {
     skipped: false, runId: latest.id, organizationId, trigger, workflowRunId, sources,
