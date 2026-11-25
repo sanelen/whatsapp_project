@@ -10,6 +10,7 @@ import {
 
 export type MonthlyPaymentsNavigationSection =
   | 'dashboard'
+  | 'collections'
   | 'locations'
   | 'units'
   | 'reference-pool'
@@ -19,6 +20,8 @@ export type MonthlyPaymentsNavigationSection =
 
 type MonthlyPaymentsNavigationProps = {
   active: MonthlyPaymentsNavigationSection;
+  overviewHref?: string;
+  collectionsHref?: string;
   operationsHref?: string;
   referencePoolHref?: string;
   importAuditHref?: string;
@@ -26,19 +29,22 @@ type MonthlyPaymentsNavigationProps = {
 
 const navItems = [
   { id: 'overview', label: 'Overview', href: '/monthly-payments', icon: LayoutDashboard },
+  { id: 'collections', label: 'Rent Follow-up', href: '/monthly-payments/follow-up', icon: ReceiptText },
   { id: 'reconcile', label: 'Reconcile', href: '/monthly-payments/reconcile', icon: ReceiptText },
   { id: 'properties', label: 'Properties', href: '/monthly-payments/locations', icon: Building2 },
 ] as const;
 
 export function MonthlyPaymentsNavigation({
   active,
+  overviewHref = '/monthly-payments',
+  collectionsHref,
   referencePoolHref = '/monthly-payments/reconcile',
   importAuditHref = '/monthly-payments/import-audit',
 }: MonthlyPaymentsNavigationProps) {
   const activeId =
     active === 'dashboard'
       ? 'overview'
-      : active === 'units' || active === 'reference-pool'
+      : active === 'collections' ? 'collections' : active === 'units' || active === 'reference-pool'
         ? 'reconcile'
         : active === 'locations' || active === 'room-manager'
           ? 'properties'
@@ -46,6 +52,8 @@ export function MonthlyPaymentsNavigation({
   const isAdminActive = active === 'import-audit' || active === 'import-configuration';
 
   function itemHref(itemId: (typeof navItems)[number]['id'], defaultHref: string) {
+    if (itemId === 'collections') return collectionsHref ?? `/monthly-payments/follow-up${referencePoolHref.includes('?') ? referencePoolHref.slice(referencePoolHref.indexOf('?')) : ''}`;
+    if (itemId === 'overview') return overviewHref;
     if (itemId === 'reconcile') return referencePoolHref;
     if (itemId === 'properties') return '/monthly-payments/locations';
     return defaultHref;

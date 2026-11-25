@@ -11,6 +11,8 @@ type MonthlyPaymentsShellSection = MonthlyPaymentsNavigationSection;
 type MonthlyPaymentsShellProps = {
   active: MonthlyPaymentsShellSection;
   children: ReactNode;
+  overviewHref?: string;
+  collectionsHref?: string;
   operationsHref?: string;
   referencePoolHref?: string;
   importAuditHref?: string;
@@ -19,6 +21,8 @@ type MonthlyPaymentsShellProps = {
 export function MonthlyPaymentsShell({
   active,
   children,
+  overviewHref,
+  collectionsHref,
   operationsHref = '/monthly-payments/locations',
   referencePoolHref = '/monthly-payments/reconcile',
   importAuditHref = '/monthly-payments/import-audit',
@@ -28,6 +32,8 @@ export function MonthlyPaymentsShell({
       <div className="flex min-h-screen flex-col lg:flex-row">
         <MonthlyPaymentsNavigation
           active={active}
+          overviewHref={overviewHref}
+          collectionsHref={collectionsHref}
           operationsHref={operationsHref}
           referencePoolHref={referencePoolHref}
           importAuditHref={importAuditHref}

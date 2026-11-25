@@ -77,6 +77,8 @@ Approved product boundary after the 2026-07-17 production review:
 
 ## 2. Monthly Payments (operator loop)
 
+Owner addition (2026-11-25): [Rent Follow-up](./requirements/RENT-FOLLOW-UP.md), an additional page preserving Overview, with reconciled room balances and an explicit management WhatsApp draft. Branch review only; optional scheduled delivery is disabled.
+
 ### Functional
 
 - FR-2.1 **Shipped** — Dashboard shows month-stepper, rolling totals, and

@@ -1869,11 +1869,16 @@ async function processImportedAttachment(input: {
       paymentReferenceCreated = referenceResult === 'inserted';
     }
 
+    const referenceRecovered = paymentReferenceCreated || (await backfillPaymentReferenceForExistingFile(file.id));
+    // A previous window or interrupted attempt may have left this file pending.
+    // Complete its checkpoint only after archive verification and receipt recovery.
+    if (!integrityError) await markBankImportFile({ fileId: file.id, parserStatus: 'parsed' });
+
     return {
       duplicate: true,
       fileStored: false,
       entryCreated: false,
-      paymentReferenceCreated: paymentReferenceCreated || (await backfillPaymentReferenceForExistingFile(file.id)),
+      paymentReferenceCreated: referenceRecovered,
       ignored: false,
       fileArchivedToDrive: archive.newlyArchived,
     };

@@ -1123,6 +1123,7 @@ export function UnitsTable({
             <p className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-[#a39d8d]">Rent coverage</p>
             <p className="mt-1 text-[13px] text-[#292524]">
               {rentCoverage !== null ? `R ${formatRand(rentCoverage)}` : '-'}
+              {row.rentBalance ? <span className="block text-sm text-slate-700">Confirmed rent R {formatRand(row.rentBalance.confirmedAmount)} · Outstanding R {formatRand(row.rentBalance.outstandingAmount)} · Due {row.rentBalance.dueDate ?? 'not set'}{row.rentBalance.overdueAmount > 0 ? ' · Overdue' : ''}</span> : null}
               {row.status === 'partial' && row.outstandingAmount !== null ? (
                 <span className="font-semibold text-[#b45309]"> · {formatRand(row.outstandingAmount)} outstanding</span>
               ) : null}
@@ -1389,6 +1390,7 @@ export function UnitsTable({
       <div className="flex min-h-screen flex-col lg:flex-row">
         <MonthlyPaymentsNavigation
           active="units"
+          collectionsHref={`/monthly-payments/follow-up?period=${table.periodKey}&building=${table.propertyId}`}
           operationsHref={`${base}?period=${table.periodKey}`}
           referencePoolHref={`/monthly-payments/reconcile?period=${table.periodKey}`}
           importAuditHref={`/monthly-payments/import-audit?period=${table.periodKey}`}
@@ -1397,7 +1399,7 @@ export function UnitsTable({
         <div className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
           <div className="mx-auto max-w-[960px]">
             <nav className="text-[13px] text-[#8a8578]">
-              <Link href="/monthly-payments" className="hover:text-[#292524]">
+              <Link href={`/monthly-payments/follow-up?period=${table.periodKey}&building=${table.propertyId}`} className="hover:text-[#292524]">
                 {table.organizationLabel}
               </Link>
               <span className="mx-1.5 text-[#c7c2b4]">›</span>
@@ -1452,7 +1454,7 @@ export function UnitsTable({
 
             <div className="mt-5 grid overflow-hidden rounded-lg border border-[#e7e3d6] bg-white sm:grid-cols-3">
               <UnitStat label="Signed-off rent" value={`R ${formatRand(table.totals.collected)}`} subValue={`${table.totals.paidCount} paid unit${table.totals.paidCount === 1 ? '' : 's'}`} valueClassName="text-[#0f7b53]" />
-              <UnitStat label="Rent awaiting sign-off" value={`R ${formatRand(table.totals.pendingAmount)}`} subValue={`${table.totals.pendingCount} fully covered unit${table.totals.pendingCount === 1 ? '' : 's'}`} valueClassName="text-[#0369a1]" />
+              <UnitStat label="Rent awaiting sign-off" value={`R ${formatRand(table.totals.pendingAmount)}`} subValue={`${table.totals.pendingCount} units with pending rent`} valueClassName="text-[#0369a1]" />
               <UnitStat label="Expected rent" value={`R ${formatRand(table.totals.expected)}`} subValue={`${table.totals.dueCount} due units (${table.totals.overdueCount} overdue)`} isLast />
             </div>
 

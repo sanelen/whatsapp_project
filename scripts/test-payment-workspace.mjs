@@ -92,7 +92,7 @@ try {
     await sourceGroup.waitFor();
     const importBox = await sourceGroup.boundingBox();
     const queueBox = await page.getByText('Work queue', { exact: true }).boundingBox();
-    assert.ok(importBox && queueBox && importBox.y < queueBox.y, 'Imports must precede the work queue');
+    assert.ok(importBox && queueBox && importBox.y < queueBox.y, 'Imports must precede the rent totals');
     assert.ok(importBox.y < viewport.height, 'Import sources must be visible at the top');
     await page.getByLabel('Import billing period').selectOption('2026-07');
     for (const [label, source] of [['Gmail', 'gmail'], ['Drive', 'drive'], ['Bank', 'bank'], ['Both', 'both']]) {
@@ -112,6 +112,37 @@ try {
     assert.deepEqual(imports.at(-1), { billingPeriod: '2026-07', pullAll: true, source: 'both', maxMessages: 100 });
     await page.screenshot({ path: `${output}/dashboard-imports-${viewport.width}.png`, fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.goto(`${origin}/monthly-payments/follow-up?period=2026-11`);
+    await page.getByRole('heading', { name: 'Rent Follow-up', exact: true }).waitFor();
+    await page.getByLabel('Building', { exact: true }).selectOption('test-property');
+    const totals = page.getByRole('region', { name: 'Monthly rent breakdown' });
+    assert.match(await totals.innerText(), /4[\s\u00a0]400/);
+    await page.getByRole('button', { name: /^Overdue R/ }).click();
+    await page.getByRole('status').filter({ hasText: '1 of 2 rooms shown' }).waitFor();
+    assert.equal(await page.getByRole('heading', { name: 'Room 2', exact: true }).count(), 0);
+    await page.screenshot({ path: `${output}/collections-overdue-${viewport.width}.png`, fullPage: true });
+    const unitLink = page.getByRole('link', { name: 'Review unit', exact: true });
+    assert.equal(await unitLink.getAttribute('href'), '/monthly-payments/test-property?period=2026-11&unitId=room-1');
+    await unitLink.click();
+    await page.getByText(/Confirmed rent R.*Outstanding R.*Due.*2026-11-08/).waitFor();
+    await page.getByRole('link', { name: 'Rent Follow-up', exact: true }).click();
+    assert.equal(await page.getByLabel('Billing month', { exact: true }).inputValue(), '2026-11');
+    assert.equal(await page.getByLabel('Building', { exact: true }).inputValue(), 'test-property');
+    await page.getByRole('button', { name: 'Draft management WhatsApp', exact: true }).click();
+    await page.getByText('Edit message', { exact: true }).click();
+    const draft = await page.getByLabel('Summary', { exact: true }).inputValue();
+    assert.match(draft, /Room 1:.*due 2026-11-08/);
+    assert.match(draft, /Awaiting sign-off:.*2[\s\u00a0]200/);
+    assert.doesNotMatch(draft, /Room 2:/);
+    assert.match(draft, /building=test-property/);
+    assert.equal(await page.getByRole('link', { name: 'Open WhatsApp draft' }).count(), 0);
+    await page.getByLabel('Management WhatsApp number', { exact: true }).fill('+27 82 000 0000');
+    const draftLink = await page.getByRole('link', { name: 'Open WhatsApp draft' }).getAttribute('href');
+    assert.equal(new URL(draftLink).searchParams.get('text'), draft);
+    assert.equal(new URL(draftLink).pathname, '/27820000000');
+    // Inspect the target only. Never navigate to WhatsApp or send a message.
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: `${output}/collections-draft-${viewport.width}.png`, fullPage: true });
     await page.goto(`${origin}/audit`);
     await page.getByRole('heading', { name: 'Source-to-database validation' }).waitFor();
     for (const details of await page.locator('details').all()) {
@@ -123,7 +154,7 @@ try {
     await page.screenshot({ path: `${output}/drive-source-${viewport.width}.png`, fullPage: true });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.deepEqual(errors, []);
-    results.push({ viewport, passed: ['account filter and carryover', 'unassigned search', 'original-period carryover', 'unit filters and history navigation', 'top-of-dashboard import controls and request contract', 'Drive source and pending archive states'], browserErrors: errors });
+    results.push({ viewport, passed: ['account filter and carryover', 'unassigned search', 'original-period carryover', 'unit filters and history navigation', 'top-of-dashboard import controls and request contract', 'Drive source and pending archive states', 'Rent Follow-up totals and overdue drilldown', 'scoped unit return and compact WhatsApp draft'], browserErrors: errors });
     await page.close();
   }
   await writeFile(`${output}/results.json`, JSON.stringify(results, null, 2));

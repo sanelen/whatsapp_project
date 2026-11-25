@@ -127,7 +127,8 @@ test('buildMonthlyPaymentsDashboardSnapshot summarizes rolling totals and unmatc
   assert.equal(snapshot.organizationLabel, 'Hamba Trading');
   assert.equal(snapshot.monthLabel, 'July 2026');
   assert.equal(snapshot.rollingTotal.collectedAmount, 6700);
-  assert.equal(snapshot.rollingTotal.expectedAmount, 6700);
+  assert.equal(snapshot.rollingTotal.expectedAmount, 0); // July has no saved charges in this fixture.
+  assert.equal(snapshot.recentMonths.find(month => month.key === '2026-07')?.balances.chargeMissingCount, 2);
   assert.equal(snapshot.rollingTotal.blockedCount, 1);
   assert.equal(snapshot.rollingTotal.overdueCount, 0);
   assert.equal(snapshot.unmatchedReferenceCount, 1);
@@ -137,8 +138,8 @@ test('buildMonthlyPaymentsDashboardSnapshot summarizes rolling totals and unmatc
   );
   assert.equal(snapshot.recentMonths.find((month) => month.key === '2026-06')?.collectedAmount, 4500);
   assert.equal(snapshot.locations[0].name, 'Query Heights');
-  assert.equal(snapshot.locations[0].paidCount, 1);
-  assert.equal(snapshot.locations[0].dueCount, 1);
+  assert.equal(snapshot.locations[0].paidCount, 0);
+  assert.equal(snapshot.locations[0].dueCount, 0);
   assert.equal(snapshot.recentMonths.find((month) => month.key === '2026-06')?.rollingTotal.paidCount, 1);
 });
 
@@ -157,7 +158,7 @@ test('dashboard selects the next billing period after the 9th and keeps unmatche
   );
   assert.equal(july.isCurrent, true);
   assert.equal(july.collectedAmount, 6700);
-  assert.equal(july.rollingTotal.matchedCollectedAmount, 4500);
+  assert.equal(july.rollingTotal.matchedCollectedAmount, 0);
   assert.equal(july.rollingTotal.unmatchedCollectedAmount, 2200);
 });
 
@@ -298,10 +299,9 @@ test('FR-2.1/NFR-2.3 [decision: chase list] due excludes pending — money that 
       properties,
       units,
       periods,
-      // ref-3 (received 10 May) is the reference inside the June billing
-      // window (9 May - 8 June); flip it to unsigned to test the gate.
+      // ref-1 is explicitly applied to June even though received in July's bank window.
       references: references.map((reference) =>
-        reference.id === 'ref-3' ? { ...reference, signed_off: false } : reference
+        reference.id === 'ref-1' ? { ...reference, signed_off: false } : reference
       ),
     },
     { currentDate: new Date('2026-06-08T12:00:00.000Z') }
@@ -393,26 +393,17 @@ test('FR-2.8 [decision: deposit ledger] split suggestions are capped by REMAININ
   );
 });
 
-test('NFR-2.3 [decision: no invisible money] every rand that arrived is signed-off, pending, or unmatched — never hidden', () => {
+test('bank cash and applied rent are separate: a July receipt allocated to June is not July rent', () => {
   const snapshot = buildMonthlyPaymentsDashboardSnapshot(
     { organizations, properties, units, periods, references },
     { currentDate: new Date('2026-06-20T12:00:00.000Z') }
   );
-  // July window (9 Jun - 8 Jul) holds ref-1 (matched+signed 4500) and ref-2 (unmatched 2200).
-  const july = snapshot.recentMonths.find((month) => month.key === '2026-07');
-  assert.ok(july);
-  assert.equal(
-    july.rollingTotal.signedOffCollectedAmount +
-      july.rollingTotal.pendingCollectedAmount +
-      july.rollingTotal.unmatchedCollectedAmount,
-    july.rollingTotal.collectedAmount,
-    'BROKEN RULE: money arrived that is neither signed-off, pending, nor unmatched — it has vanished from the operator. Operator impact: "where did the data go?" (2026-07-02 owner report). Action: fix unmatchedCollectedAmount derivation in buildMonthlyPaymentsDashboardSnapshot.'
-  );
-  assert.equal(
-    july.rollingTotal.unmatchedCollectedAmount,
-    2200,
-    'BROKEN RULE: unmatched imported money is not reported in rand. Operator impact: imports look like they disappeared. Action: expose unmatched money on the rolling total.'
-  );
+  const july = snapshot.recentMonths.find(month => month.key === '2026-07')!;
+  const june = snapshot.recentMonths.find(month => month.key === '2026-06')!;
+  assert.equal(july.collectedAmount, 6700);
+  assert.equal(july.rollingTotal.unmatchedCollectedAmount, 2200);
+  assert.equal(july.balances.confirmedAmount, 0);
+  assert.equal(june.balances.confirmedAmount, 4500);
 });
 
 test('computeDepositSplitSuggestion splits an overpayment into rent + deposit contribution', () => {

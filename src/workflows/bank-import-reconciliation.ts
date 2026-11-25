@@ -92,7 +92,11 @@ export async function bankImportReconciliationWorkflow(force: boolean, trigger: 
     };
   });
 
-  return finalizeReconciliation(preparation, mailboxResults);
+  const completed = await finalizeReconciliation(preparation, mailboxResults);
+  if (preparation.trigger === 'scheduled' && completed.status === 'completed') {
+    await deliverRentManagementAlert(preparation.runId);
+  }
+  return completed;
 }
 
 async function prepareReconciliation(force: boolean, trigger: Trigger): Promise<Preparation> {
@@ -253,5 +257,20 @@ async function finalizeReconciliation(
       .eq('id', preparation.runId);
     console.error(`[bank-reconciliation:finalize] FAIL runId=${preparation.runId} error=${errorMessage}`);
     throw error;
+  }
+}
+
+async function deliverRentManagementAlert(runId: string) {
+  "use step";
+  console.log('[rent-management-alert] Checking post-import delivery');
+  try {
+    const { sendPostImportManagementAlert } = await import('@/lib/rent-management-alert-delivery');
+    const result = await sendPostImportManagementAlert(runId);
+    console.log(`[rent-management-alert] ${result.state}; sent=${result.sent}`);
+    return result;
+  } catch {
+    // Import remains completed; alert delivery is a separately auditable outcome.
+    console.error('[rent-management-alert] Delivery blocked; inspect configuration and delivery ledger.');
+    return { state: 'delivery_blocked', sent: 0 };
   }
 }
