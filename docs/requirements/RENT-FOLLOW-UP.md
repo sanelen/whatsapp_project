@@ -3,8 +3,9 @@
 Status: Rent Follow-up and the pending-receipt correction are deployed. The owner
 subsequently authorized one real-data Quarry Heights management briefing and
 ongoing meaningful updates to the already opted-in pamphlet manager number.
-The unattended upgrade is locally verified; deployment, enablement and the
-real-data delivery receipt remain pending. Earlier setup-only evidence below is
+The unattended upgrade is deployed and verified. Production enablement is saved;
+the real-data delivery receipt remains pending after correcting a legacy HTTP
+localhost review origin. Earlier setup-only evidence below is
 historical and does not prove a financial briefing was delivered.
 
 ## Acceptance
@@ -96,6 +97,9 @@ Only files with all known transaction dates outside the current window may be
 excluded from the current audit. Unknown dates/evidence still block. Historical
 exceptions remain visible in the separate total; none are silently marked parsed.
 
+A repeated scheduler invocation may resume only a previously disabled or
+transport-unconfigured briefing from the latest completed scheduled audit, without
+re-importing. The same two-hour freshness and clean-source gates still apply.
 A database claim precedes the provider request. A unique daily scope key caps
 attempts at one per building/recipient/SAST day. A content fingerprint excludes
 the as-of date, suppressing unchanged briefings across days. This is a change

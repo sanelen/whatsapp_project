@@ -69,6 +69,17 @@ test('provider uncertainty is recorded and never resent automatically', async ()
   await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now);
   assert.equal(attempts, 1); assert.deepEqual(h.states, ['unknown']);
 });
+test('configuration recovery uses the same fresh audit once and refuses an expired audit', async () => {
+  const h = harness();
+  assert.equal((await deliverManagementAlert(run, null, h.deps, now)).state, 'disabled');
+  assert.equal(h.messages.length, 0);
+  assert.equal((await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now)).sent, 1);
+  assert.equal((await deliverManagementAlert(run, managementAlertConfig(env), h.deps, now)).state, 'already_claimed');
+  assert.equal(h.messages.length, 1);
+  const stale = harness();
+  assert.equal((await deliverManagementAlert(run, managementAlertConfig(env), stale.deps, new Date('2026-11-07T15:00:00Z'))).state, 'import_not_ready');
+  assert.equal(stale.messages.length, 0);
+});
 test('alert room lines exclude fully pending rent and only request the partial shortfall', async () => {
   const h = harness();
   const rooms = h.snapshot.recentMonths.find(month => month.isCurrent)!.locations[0].rooms;
