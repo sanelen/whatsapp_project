@@ -52,7 +52,7 @@ function resolveApiKey(provider: string, dbKey: string): string {
 }
 
 export async function POST(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
     const body = (await request.json()) as ChatRequest;

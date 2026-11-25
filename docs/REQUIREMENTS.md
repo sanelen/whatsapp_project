@@ -157,6 +157,8 @@ Owner addition (2026-11-25): [Rent Follow-up](./requirements/RENT-FOLLOW-UP.md),
     - Live motivating case: ESSEXROOM1 July — R9,067 received, R3,800 rent,
       deposit fully funded, R1,467 surplus currently stuck.
   - Still open: tenant-visible deposit statements.
+Owner addition (2026-11-25): manual imports must survive request timeouts through durable batches and recoverable progress; manual and scheduled ingestion must immediately evaluate existing matching rules, while sign-off remains manual. Every production deployment must run authenticated, revision-bound API/integration checks with route inventory drift detection, explicit duration/semantic assertions and safe dry-run limits. See [release-check documentation](../release-tests/api/README.md) and [review](./reviews/full-flow-review-2026-11-25-import-reliability.md).
+
 - FR-2.9 **Shipped** — Bank import pulls from Gmail and/or Google Drive, parses
   forwarded Capitec PDF notifications, and only imports `Incoming Funds` entries.
 - FR-2.10 **Shipped** — Billing window is 9th-of-previous-month through

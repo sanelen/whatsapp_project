@@ -64,10 +64,10 @@ function cleanDate(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
 
-  const user = await getApiUser();
+  const user = await getApiUser(request);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

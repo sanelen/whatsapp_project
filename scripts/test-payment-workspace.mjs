@@ -35,6 +35,7 @@ try {
     const page = await browser.newPage({ viewport });
     const errors = [];
     const imports = [];
+    const polls = new Map();
     page.on('pageerror', (error) => errors.push(error.message));
     await page.route('**/*', async (route) => {
       const request = route.request();
@@ -44,7 +45,17 @@ try {
       }
       if (request.url() === `${origin}/api/monthly-payments/import` && request.method() === 'POST') {
         imports.push(request.postDataJSON());
-        await route.fulfill({ json: { success: true, data: [] } });
+        await route.fulfill({ status: 202, json: { success: true, queued: true, workflowRunId: `fixture-${imports.length}` } });
+        return;
+      }
+      if (request.url().startsWith(`${origin}/api/monthly-payments/import?runId=`)) {
+        const id = new URL(request.url()).searchParams.get('runId');
+        if (id === 'missing') { await route.fulfill({ status: 404, json: { error: 'Import not found' } }); return; }
+        const count = (polls.get(id) ?? 0) + 1;
+        polls.set(id, count);
+        await route.fulfill({ json: count === 1
+          ? { success: true, queued: true, progress: { stage: 'gmail', completedBatches: 1 } }
+          : { success: true, queued: false, status: 'completed', data: [], autoMatch: { matched: 2, failed: 0 } } });
         return;
       }
       if (!request.url().startsWith(`${origin}/`) || request.method() !== 'GET') {
@@ -98,19 +109,30 @@ try {
     for (const [label, source] of [['Gmail', 'gmail'], ['Drive', 'drive'], ['Bank', 'bank'], ['Both', 'both']]) {
       const before = imports.length;
       await sourceGroup.getByRole('button', { name: label, exact: true }).click();
+      if (source !== 'bank') await page.getByLabel('Import billing period').selectOption('2026-07');
       assert.equal(imports.length, before, 'Selecting a source must not run an import');
       const command = page.getByRole('button', { name: 'Import', exact: true });
       assert.equal(await command.isEnabled(), true);
       await command.click();
+      if (source === 'gmail') {
+        await page.getByRole('status').filter({ hasText: '1 batches saved' }).waitFor();
+        assert.equal(await command.isDisabled(), true);
+        await page.reload();
+      }
       await page.waitForFunction(() => document.documentElement.dataset.refreshed === 'true');
       await page.evaluate(() => delete document.documentElement.dataset.refreshed);
-      assert.deepEqual(imports.at(-1), { billingPeriod: '2026-07', pullAll: source === 'bank', source, maxMessages: 50 });
+      assert.deepEqual(imports.at(-1), { billingPeriod: '2026-07', pullAll: source === 'bank', source });
     }
     await page.getByLabel('Pull everything').check();
     await page.getByRole('button', { name: 'Import', exact: true }).click();
     await page.waitForFunction(() => document.documentElement.dataset.refreshed === 'true');
-    assert.deepEqual(imports.at(-1), { billingPeriod: '2026-07', pullAll: true, source: 'both', maxMessages: 100 });
+    assert.deepEqual(imports.at(-1), { billingPeriod: '2026-07', pullAll: true, source: 'both' });
+    await page.getByText('2 automatically matched; sign-off remains manual.', { exact: false }).waitFor();
     await page.screenshot({ path: `${output}/dashboard-imports-${viewport.width}.png`, fullPage: true });
+    await page.evaluate(() => localStorage.setItem('hamba-bank-import-job-v1', 'missing'));
+    await page.reload();
+    await page.getByText('This import job is no longer available.', { exact: false }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Import', exact: true }).isEnabled(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.goto(`${origin}/monthly-payments/follow-up?period=2026-11`);
     await page.getByRole('heading', { name: 'Rent Follow-up', exact: true }).waitFor();

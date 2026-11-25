@@ -27,6 +27,10 @@ test('duplicate recovery completes a pending checkpoint only after receipt verif
   const reference = { id: 'reference-1', signed_off: true, unit_id: 'operator-unit', amount: 2200 };
   let failReferenceRead = true;
   let messageStatus = '';
+  let archiveDownloads = 0;
+  let storageWrites = 0;
+  let directAttachment = false;
+  let archiveMissing = false;
   let financialInserts = 0;
   let receiptWrites = 0;
   t.mock.method(console, 'error', () => {});
@@ -38,11 +42,12 @@ test('duplicate recovery completes a pending checkpoint only after receipt verif
       if (url.pathname.endsWith('/profile')) return Response.json({ emailAddress: 'business@example.com' });
       if (url.pathname.endsWith('/messages/message-1')) return Response.json({ id: 'message-1',
         internalDate: '1782133200000', payload: { mimeType: 'application/pdf', filename: 'sample.pdf',
-          body: { data: bytes.toString('base64url') } } });
+          body: directAttachment ? { attachmentId: 'attachment-known' } : { data: bytes.toString('base64url') } } });
     }
-    if (url.hostname === 'www.googleapis.com' && url.searchParams.get('alt') === 'media') return new Response(bytes);
+    if (url.hostname === 'www.googleapis.com' && url.searchParams.has('fields')) return archiveMissing ? new Response('', { status: 404 }) : Response.json({ id: 'drive-1', trashed: false });
+    if (url.hostname === 'www.googleapis.com' && url.searchParams.get('alt') === 'media') { archiveDownloads++; return archiveMissing ? new Response('', { status: 404 }) : new Response(bytes); }
     if (url.hostname === 'recovery-test.invalid') {
-      if (url.pathname.startsWith('/storage/v1/object/uploads/')) return Response.json({ Key: 'stored' });
+      if (url.pathname.startsWith('/storage/v1/object/uploads/')) { storageWrites++; return Response.json({ Key: 'stored' }); }
       const table = url.pathname.split('/').at(-1);
       if (table === 'bank_import_property_mappings' || table === 'bank_import_unit_match_hints') return Response.json([]);
       if (table === 'bank_import_messages') {
@@ -54,6 +59,10 @@ test('duplicate recovery completes a pending checkpoint only after receipt verif
       if (table === 'bank_import_files') {
         if (method === 'PATCH') { Object.assign(file, JSON.parse(String(init?.body))); return new Response(null, { status: 204 }); }
         assert.equal(method, 'GET');
+        if (url.searchParams.get('select')?.includes('bank_import_entries')) {
+          const checkpoint = { ...file, gmail_attachment_id: 'attachment-known', bank_import_entries: [{ id: entry.id, payment_references: failReferenceRead ? [] : [{ id: reference.id }] }] };
+          return Response.json(url.searchParams.has('message_id') ? (directAttachment && file.parser_status === 'parsed' ? [checkpoint] : []) : checkpoint);
+        }
         return Response.json(file);
       }
       if (table === 'bank_import_entries') {
@@ -83,9 +92,19 @@ test('duplicate recovery completes a pending checkpoint only after receipt verif
   assert.equal(recovered.paymentReferencesCreated, 0);
   assert.equal(file.parser_status, 'parsed');
   assert.equal(messageStatus, 'processed');
+  const savedWork = { archiveDownloads, storageWrites };
   const replay = await run();
   assert.equal(replay.failedMessages, 0);
   assert.equal(replay.paymentReferencesCreated, 0);
+  assert.deepEqual({ archiveDownloads, storageWrites }, savedWork, 'Hash replay must not download or upload completed evidence');
+  directAttachment = true;
+  const metadataReplay = await run();
+  assert.equal(metadataReplay.failedMessages, 0);
+  assert.equal(metadataReplay.attachmentsProcessed, 0, 'Known Gmail attachment must be skipped before downloading');
+  assert.deepEqual({ archiveDownloads, storageWrites }, savedWork);
+  directAttachment = false;
+  archiveMissing = true;
+  assert.equal((await run()).failedMessages, 1, 'A missing archived original cannot be reported as a successful duplicate');
   assert.equal(financialInserts, 0);
   assert.equal(receiptWrites, 0, 'Signed-off money and room decisions must remain untouched');
 });

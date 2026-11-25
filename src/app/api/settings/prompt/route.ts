@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import type { ApiResponse, PromptSettings } from '@/lib/types';
 import { requireApiAuth } from '@/lib/auth/api-guard';
+import { isReleaseCheckRequest } from '@/lib/auth/release-check';
 
 const SETTINGS_NAME = 'default';
 
 // GET /api/settings/prompt — fetch current prompt settings
-export async function GET() {
-  const denied = await requireApiAuth();
+export async function GET(request: Request) {
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
     const admin = getSupabaseAdmin();
@@ -44,6 +45,7 @@ export async function GET() {
       );
     }
 
+    if (await isReleaseCheckRequest(request)) data.llm_api_key = '';
     return NextResponse.json<ApiResponse<PromptSettings>>(
       { success: true, data, timestamp: new Date().toISOString() },
       { status: 200 }
@@ -59,10 +61,11 @@ export async function GET() {
 
 // PUT /api/settings/prompt — upsert prompt settings
 export async function PUT(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
   try {
     const body = await request.json() as Partial<{
+      dryRun: boolean;
       system_prompt: string;
       temperature: number;
       llm_provider: string;
@@ -84,6 +87,11 @@ export async function PUT(request: NextRequest) {
     if (typeof body.llm_base_url === 'string') updates.llm_base_url = body.llm_base_url.trim();
 
     const admin = getSupabaseAdmin();
+    if (body.dryRun === true) {
+      const { error } = await admin.from('prompt_settings').select('id,name').eq('name', SETTINGS_NAME).limit(1);
+      if (error) throw new Error('Settings validation could not read target schema');
+      return NextResponse.json({ success: true, dryRun: true, fields: Object.keys(updates).filter(key => key !== 'updated_at'), persisted: false });
+    }
     const { data, error } = await admin
       .from('prompt_settings')
       .upsert(updates, { onConflict: 'name' })

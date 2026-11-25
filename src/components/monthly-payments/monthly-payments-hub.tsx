@@ -40,7 +40,7 @@ function coverageLabel(month: MonthlyPaymentsDashboardSnapshot['recentMonths'][n
   if (month.expectedAmount > 0 && month.rollingTotal.matchedCollectedAmount > month.expectedAmount) {
     return `${formatCompactCurrency(month.rollingTotal.matchedCollectedAmount - month.expectedAmount)} above rent`;
   }
-  return `${formatPercent(month.coverageRate)} matched`;
+  return `${formatPercent(month.coverageRate)} rent covered`;
 }
 
 function progressWidth(value: number): string {

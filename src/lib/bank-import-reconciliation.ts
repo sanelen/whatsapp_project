@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getBillingPeriodForDate, listActiveBankImportMailboxes, runBankImport, type BankImportRunSummary } from '@/lib/bank-import';
-import { ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
+import { autoMatchUnmatchedReferences, ensurePaymentPeriodsForPeriod } from '@/lib/monthly-payments-ops';
 
 export const RECONCILIATION_CADENCE_HOURS = 72;
 
@@ -27,6 +27,9 @@ export type ReconciliationRunView = {
     failedOrPendingFiles: number;
     entriesMissingPaymentReference: number;
     periodsChecked: string[];
+    workflowRunId?: string;
+    stage?: string;
+    autoMatch?: { scanned: number; matched: number; ambiguous: number; unmatched: number; failed: number };
   };
 };
 
@@ -136,6 +139,7 @@ export async function runBankImportReconciliation(input?: { force?: boolean; tri
       }
     }));
     await ensurePeriodsPromise;
+    await autoMatchUnmatchedReferences({ actor: 'auto-match (scheduled bank import)', periods: periodsChecked });
 
     const mailboxIds = mailboxes.map((mailbox) => mailbox.id);
     const since = new Date();

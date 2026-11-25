@@ -6,7 +6,7 @@ import { requireApiAuth } from '@/lib/auth/api-guard';
 // does not accept API keys in query strings and does not need a provider network
 // call merely to render settings.
 export async function GET(request: NextRequest) {
-  const denied = await requireApiAuth();
+  const denied = await requireApiAuth(request);
   if (denied) return denied;
 
   const providerId = request.nextUrl.searchParams.get('provider') || 'openai';
