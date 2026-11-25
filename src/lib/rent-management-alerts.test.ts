@@ -135,3 +135,25 @@ test('unchanged content is suppressed across dates while a changed pending balan
   assert.equal((await deliverManagementAlert(next, managementAlertConfig(env), h.deps, tomorrow)).sent, 1);
   assert.equal(h.messages.length, 2);
 });
+
+test('explicit one-off mode accepts a fresh manual Both audit but not a different month or failed import', async () => {
+  const manual = { ...run, trigger: 'manual' };
+  const h = harness();
+  assert.equal((await deliverManagementAlert(manual, managementAlertConfig(env), h.deps, now)).state, 'import_not_ready');
+  assert.equal((await deliverManagementAlert(manual, managementAlertConfig(env), h.deps, now, '2026-10')).state, 'period_not_refreshed');
+  assert.equal((await deliverManagementAlert({ ...manual, status: 'failed' }, managementAlertConfig(env), h.deps, now, '2026-11')).state, 'import_not_ready');
+  assert.equal((await deliverManagementAlert(manual, managementAlertConfig(env), h.deps, now, '2026-11')).sent, 1);
+});
+test('one-off buildings have independent daily claims and share dedupe with scheduled messages', async () => {
+  const h = harness();
+  const month = h.snapshot.recentMonths.find(month => month.isCurrent)!;
+  month.locations.push({ ...month.locations[0], id: 'second', name: 'Second building' });
+  const first = managementAlertConfig(env)!;
+  const second = { ...first, propertyId: 'second' };
+  assert.equal((await deliverManagementAlert(run, first, h.deps, now, '2026-11')).sent, 1);
+  assert.equal((await deliverManagementAlert(run, second, h.deps, now, '2026-11')).sent, 1);
+  assert.equal((await deliverManagementAlert(run, first, h.deps, now)).state, 'already_claimed');
+  assert.equal(h.messages.length, 2);
+  assert.match(h.messages[0][3], /building=p/);
+  assert.match(h.messages[1][3], /building=second/);
+});

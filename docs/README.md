@@ -81,6 +81,8 @@ is now the visual reference, not a separate competing plan.
 
 ## Full flow reviews
 
+- [One-off management briefings — 2026-11-25](./reviews/full-flow-review-2026-11-25-one-off-briefings.md) — explicit building sends through the existing manager, with shared duplicate protection and unchanged recurring scope.
+
 - [Unattended checks and management briefing — 2026-11-25](./reviews/full-flow-review-2026-11-25-unattended-briefing.md) — daily durable source checks, current-cycle gates, unchanged suppression, daily cap and monitoring.
 
 - [Pending rent and follow-up — 2026-11-25](./reviews/full-flow-review-2026-11-25-pending-rent.md) — separates staff confirmation from rent still to receive.

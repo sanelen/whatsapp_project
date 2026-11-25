@@ -7,12 +7,13 @@ import { RefreshCw, MessageCircle, ChevronDown } from 'lucide-react';
 import type { MonthlyPaymentsDashboardSnapshot } from '@/lib/monthly-payments';
 import { buildManagementSummary, managementWhatsAppUrl, rentCurrency, rentToReceive, overdueRentToReceive, sumRentBalances } from '@/lib/rent-collections';
 import { MonthlyPaymentsNavigation } from './monthly-payments-navigation';
+import { ManagerBriefingAction } from './manager-briefing-action';
 
 type RoomFilter = 'all' | 'outstanding' | 'overdue' | 'pending';
-type Props = { dashboard: MonthlyPaymentsDashboardSnapshot; initialPeriod?: string; initialBuilding?: string; initialFilter?: string };
+type Props = { dashboard: MonthlyPaymentsDashboardSnapshot; initialPeriod?: string; initialBuilding?: string; initialFilter?: string; managerRecipientSuffix?: string };
 const control = 'min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700';
 
-export function RentCollectionsDashboard({ dashboard, initialPeriod, initialBuilding, initialFilter }: Props) {
+export function RentCollectionsDashboard({ dashboard, initialPeriod, initialBuilding, initialFilter, managerRecipientSuffix }: Props) {
   const currentPeriod = dashboard.recentMonths.find(month => month.isCurrent)?.key ?? '';
   const [period, setPeriod] = useState(dashboard.recentMonths.some(month => month.key === initialPeriod) ? initialPeriod! : currentPeriod);
   const [building, setBuilding] = useState(dashboard.locations.some(location => location.id === initialBuilding) ? initialBuilding! : 'all');
@@ -88,6 +89,7 @@ export function RentCollectionsDashboard({ dashboard, initialPeriod, initialBuil
                 <p className="mt-1 text-slate-700">These payments are matched to rooms but have not been signed off. Check them before contacting tenants. <button className="font-semibold text-sky-800 underline underline-offset-4" onClick={() => selectScope(period, building, 'pending')}>View rooms to confirm</button></p>
               </div>
               {totals.excessAmount > 0 && <p className="text-sm text-slate-600">{rentCurrency(totals.excessAmount)} excess on matched rooms needs allocation review in units.</p>}
+              {managerRecipientSuffix && location && month.isCurrent && <ManagerBriefingAction key={`${location.id}:${period}`} propertyId={location.id} propertyName={location.name} period={period} recipientSuffix={managerRecipientSuffix} />}
 
               <section aria-labelledby="room-balances" className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 p-4 sm:p-5"><div><h2 id="room-balances" className="text-xl font-bold">{heading} · Room balances</h2><p role="status" className="mt-1 text-sm text-slate-600">{visibleRooms.length} of {rooms.length} rooms shown</p></div><button onClick={openSummary} className={control + ' inline-flex items-center gap-2'}><MessageCircle size={18} />Draft management WhatsApp</button></div>

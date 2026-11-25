@@ -2,10 +2,24 @@ import { getSupabaseAdmin } from './supabase';
 import { readMonthlyPaymentsDashboard } from './monthly-payments';
 import { getChannelRuntimeConfig } from './channels/runtime-config';
 import { deliverManagementAlert, managementAlertConfig, managementAlertTransportConfig, type AlertImportRun } from './rent-management-alerts';
+import { oneOffManagementConfig, type ManagementBriefingRequest } from './management-briefing-request';
 
 export async function sendPostImportManagementAlert(runId: string) {
-  const config = managementAlertConfig(process.env);
-  if (!config) return { state: 'disabled', sent: 0 };
+  return sendManagementAlert(runId);
+}
+
+export async function sendOneOffManagementAlert(input: ManagementBriefingRequest) {
+  // The latest run must pass, even if an older clean run is still fresh.
+  const { data: latest, error } = await getSupabaseAdmin().from('bank_import_reconciliation_runs')
+    .select('id').order('started_at', { ascending: false }).limit(1).maybeSingle();
+  if (error || !latest) return { state: 'import_not_ready', sent: 0 };
+  return sendManagementAlert(latest.id, input);
+}
+
+async function sendManagementAlert(runId: string, oneOff?: ManagementBriefingRequest) {
+  const configured = managementAlertConfig(process.env);
+  if (!configured) return { state: 'disabled', sent: 0 };
+  const config = oneOff ? oneOffManagementConfig(configured, oneOff) : configured;
   const runtime = getChannelRuntimeConfig();
   // Management opt-in, enable flag and dedicated credentials govern this sender.
   // Shared chat outbound flags do not grant or block this separately authorized route.
@@ -55,5 +69,5 @@ export async function sendPostImportManagementAlert(runId: string) {
       const { error } = await admin.from('rent_management_alert_deliveries').update({ status, provider_message_id: providerId ?? null, updated_at: new Date().toISOString() }).eq('id', key);
       if (error) throw new Error('Management delivery needs operator verification.');
     },
-  });
+  }, new Date(), oneOff?.period);
 }
