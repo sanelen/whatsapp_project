@@ -48,3 +48,5 @@ PR #21 deployed as `895b95d`. Live authenticated checks caught an ambiguous Post
 Provider probes use the fixed production origin instead of generic `APP_URL`, which currently names another host. Vector integration health is reported separately from retrieval choice: a successful embedding and RPC with zero semantic matches is healthy, while provider/RPC failures still fail the gate. An isolated test covers both outcomes. No ledger or messaging mutation is added.
 
 The immutable Vercel deployment hostname is protected by Vercel SSO. The release gate uses the public production custom domain and retains strict deployment-SHA validation; a later deployment replacing the alias fails the older check rather than falsely validating it. Production acceptance remains pending the correction release and December manual import.
+
+The production deployment event did not arrive in GitHub during live acceptance. Keep event-based checks and add a main-push fallback that waits for the exact live SHA, fails after ten minutes, then runs the same signed API checks. Never cancel release checks when a newer release starts.

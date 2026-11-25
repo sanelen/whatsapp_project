@@ -60,7 +60,28 @@ async function terminal(runId) {
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
 }
-for (const item of [...cases].sort((a, b) => Number(a.mode === 'job-status') - Number(b.mode === 'job-status'))) {
+// Main-branch fallback when the hosting provider delays its deployment event.
+// This readiness read has no credentials or mutations; the API checks remain signed.
+let deploymentReady = true;
+if (process.env.RELEASE_WAIT_FOR_DEPLOYMENT === 'true') {
+  deploymentReady = false;
+  const deadline = Date.now() + 600000;
+  let reason = 'Expected revision is not live';
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(new URL('/api/whatsapp/webhook', needed('RELEASE_BASE_URL')), { redirect: 'manual', signal: AbortSignal.timeout(15000) });
+      await response.arrayBuffer();
+      if (response.headers.get('x-hamba-revision') === needed('RELEASE_EXPECTED_SHA')) { deploymentReady = true; break; }
+      reason = `Expected revision is not live (HTTP ${response.status})`;
+    } catch { reason = 'Production readiness request failed'; }
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+  if (!deploymentReady) {
+    report.checks.push({ route: '/api/whatsapp/webhook', method: 'GET', mode: 'deployment-readiness', status: 'failed', reason });
+    console.error(`FAILED deployment readiness: ${reason}`);
+  }
+}
+for (const item of (deploymentReady ? [...cases] : []).sort((a, b) => Number(a.mode === 'job-status') - Number(b.mode === 'job-status'))) {
   const check = { route: item.route, method: item.method, mode: item.mode, limitation: item.limitation };
   try {
     needed('RELEASE_BASE_URL'); needed('RELEASE_EXPECTED_SHA'); needed('RELEASE_CHECK_SECRET');

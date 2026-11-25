@@ -1,6 +1,6 @@
 # Production API checks
 
-Every successful Production deployment triggers `production-api` in the release workflow. Checkout uses the deployment SHA. Every response must carry that same `x-hamba-revision`; redirects, authentication failures, missing configuration, semantic failures and duration overruns fail the job. The report is an Actions artifact, with route, method, mode, duration and failure reason. Response bodies and tenant data are not logged.
+A main-branch push also waits up to ten minutes for the exact revision to become live and runs the API gate, so delayed provider deployment events do not silently omit normal releases. Every successful Production deployment triggers `production-api` in the release workflow. Checkout uses the deployment SHA. Every response must carry that same `x-hamba-revision`; redirects, authentication failures, missing configuration, semantic failures and duration overruns fail the job. The report is an Actions artifact, with route, method, mode, duration and failure reason. Response bodies and tenant data are not logged.
 
 ## Provisioning
 
