@@ -12,7 +12,7 @@ test('alerts require their own complete credential pair and never borrow shared 
   assert.equal(managementAlertTransportConfig({ ...shared, RENT_MANAGEMENT_ALERT_META_PHONE_NUMBER_ID: 'alert-sender' }), null);
   assert.deepEqual(managementAlertTransportConfig({ ...shared, RENT_MANAGEMENT_ALERT_META_ACCESS_TOKEN: ' alert-token ', RENT_MANAGEMENT_ALERT_META_PHONE_NUMBER_ID: ' alert-sender ' }), { token: 'alert-token', phoneId: 'alert-sender' });
 });
-const run: AlertImportRun = { id: 'run-1', organization_id: 'org', status: 'completed', trigger: 'scheduled', completed_at: now.toISOString(), reconciliation_summary: { failedOrPendingFiles: 0, entriesMissingPaymentReference: 0, periodsChecked: ['2026-11'], currentCycle: { period: '2026-11', sources: ['gmail', 'drive'], checkedAt: now.toISOString(), failedOrPendingFiles: 0, entriesMissingPaymentReference: 0 } } };
+const run: AlertImportRun = { id: 'run-1', organization_id: 'org', status: 'completed', trigger: 'scheduled', completed_at: now.toISOString(), reconciliation_summary: { autoMatch: { failed: 0 }, failedOrPendingFiles: 0, entriesMissingPaymentReference: 0, periodsChecked: ['2026-11'], currentCycle: { period: '2026-11', sources: ['gmail', 'drive'], checkedAt: now.toISOString(), failedOrPendingFiles: 0, entriesMissingPaymentReference: 0 } } };
 function harness(count = 2) {
   let reads = 0;
   const messages: string[][] = [];
@@ -25,7 +25,7 @@ function harness(count = 2) {
   }, { currentDate: now });
   const deps: AlertDependencies = {
     async readDashboard() { reads++; return snapshot; },
-    async claim(key, _run, _config, contentHash) { if (keys.has(key)) return false; if (lastContentHash === contentHash) return 'unchanged'; keys.add(key); lastContentHash = contentHash; return true; },
+    async claim(key, _run, _config, contentHash, scheduled) { if (keys.has(key)) return false; if (!scheduled && lastContentHash === contentHash) return 'unchanged'; keys.add(key); lastContentHash = contentHash; return true; },
     async send(_config, parameters) { messages.push(parameters); return `message-${messages.length}`; },
     async record(_key, state) { states.push(state); },
   };
@@ -42,11 +42,12 @@ test('no data is read for disabled, partial, manual, stale, wrong-organization o
   const h = harness();
   await deliverManagementAlert(run, null, h.deps, now);
   for (const invalid of [
-    { ...run, status: 'partial' }, { ...run, trigger: 'manual' }, { ...run, organization_id: 'other' },
+    { ...run, status: 'partial' }, { ...run, trigger: 'unsupported' }, { ...run, organization_id: 'other' },
     { ...run, completed_at: '2026-11-06T12:00:00Z' }, { ...run, completed_at: 'invalid' },
     { ...run, completed_at: '2026-11-08T12:00:00Z' },
     { ...run, reconciliation_summary: { ...run.reconciliation_summary, currentCycle: { ...run.reconciliation_summary!.currentCycle!, failedOrPendingFiles: 1 } } },
     { ...run, reconciliation_summary: null },
+    { ...run, reconciliation_summary: { ...run.reconciliation_summary, autoMatch: { failed: 1 } } },
   ]) await deliverManagementAlert(invalid, managementAlertConfig(env), h.deps, now);
   assert.equal(h.reads(), 0); assert.equal(h.messages.length, 0);
 });
@@ -130,16 +131,17 @@ test('unchanged content is suppressed across dates while a changed pending balan
   const tomorrow = new Date('2026-11-08T12:00:00Z');
   h.snapshot.asOf = '2026-11-08';
   const next = { ...run, id: 'next-day', completed_at: tomorrow.toISOString(), reconciliation_summary: { ...run.reconciliation_summary, currentCycle: { ...run.reconciliation_summary!.currentCycle!, checkedAt: tomorrow.toISOString() } } };
-  assert.equal((await deliverManagementAlert(next, managementAlertConfig(env), h.deps, tomorrow)).state, 'unchanged');
+  assert.equal((await deliverManagementAlert(next, managementAlertConfig(env), h.deps, tomorrow, '2026-11')).state, 'unchanged');
   h.snapshot.recentMonths.find(month => month.isCurrent)!.locations[0].rooms[0].pendingAmount = 2200;
-  assert.equal((await deliverManagementAlert(next, managementAlertConfig(env), h.deps, tomorrow)).sent, 1);
+  assert.equal((await deliverManagementAlert(next, managementAlertConfig(env), h.deps, tomorrow, '2026-11')).sent, 1);
   assert.equal(h.messages.length, 2);
 });
 
 test('explicit one-off mode accepts a fresh manual Both audit but not a different month or failed import', async () => {
   const manual = { ...run, trigger: 'manual' };
   const h = harness();
-  assert.equal((await deliverManagementAlert(manual, managementAlertConfig(env), h.deps, now)).state, 'import_not_ready');
+  // Both manual and scheduled imports feed the date-gated briefing after matching.
+  assert.equal((await deliverManagementAlert({ ...manual, reconciliation_summary: { ...manual.reconciliation_summary, autoMatch: undefined } }, managementAlertConfig(env), h.deps, now)).state, 'import_not_ready');
   assert.equal((await deliverManagementAlert(manual, managementAlertConfig(env), h.deps, now, '2026-10')).state, 'period_not_refreshed');
   assert.equal((await deliverManagementAlert({ ...manual, status: 'failed' }, managementAlertConfig(env), h.deps, now, '2026-11')).state, 'import_not_ready');
   assert.equal((await deliverManagementAlert(manual, managementAlertConfig(env), h.deps, now, '2026-11')).sent, 1);

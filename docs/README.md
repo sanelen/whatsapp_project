@@ -117,3 +117,5 @@ transcripts land here). Captured sessions:
 - These docs are committed with the project.
 - Do not store secrets or `.env.local` values here.
 - Before changing Next.js code, follow `AGENTS.md` and read the relevant local docs in `node_modules/next/dist/docs/`.
+
+- [Three-building briefing schedule, 25 November 2026](./reviews/full-flow-review-2026-11-25-scheduled-briefings.md)

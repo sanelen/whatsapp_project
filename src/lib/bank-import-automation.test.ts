@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { scheduledImportDue, countCurrentProblemFiles, sourceCheckState } from './bank-import-automation';
 
 const currentCycle = { period: '2026-12', sources: ['gmail', 'drive'], checkedAt: '2026-11-25T05:50:00Z', failedOrPendingFiles: 0, entriesMissingPaymentReference: 0 };
-const run = { status: 'completed', startedAt: '2026-11-25T05:48:00Z', summary: { currentCycle } };
+const run = { status: 'completed', startedAt: '2026-11-25T05:48:00Z', summary: { currentCycle, autoMatch: { failed: 0 } } };
 test('daily cadence tolerates cron jitter and does not postpone tomorrow after an evening run', () => {
   assert.equal(scheduledImportDue(run, new Date('2026-11-26T05:00:00Z')), true);
   assert.equal(scheduledImportDue(run, new Date('2026-11-25T17:00:00Z')), false);

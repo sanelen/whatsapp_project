@@ -602,7 +602,7 @@ export async function matchReferenceToUnit(input: {
 
   const amount = toMoney(reference.amount);
 
-  const { error: updateReferenceError } = await admin
+  let updateReference = admin
     .from('payment_references')
     .update({
       property_id: input.propertyId,
@@ -615,10 +615,15 @@ export async function matchReferenceToUnit(input: {
       signed_off_at: null,
       signed_off_by: '',
     })
-    .eq('id', input.paymentReferenceId);
+    .eq('id', input.paymentReferenceId)
+    .eq('signed_off', false);
+  // A concurrent import/replay must not overwrite a completed match or sign-off.
+  if (input.matchMethod?.startsWith('auto_')) updateReference = updateReference.is('unit_id', null);
+  const { data: updatedReference, error: updateReferenceError } = await updateReference.select('id').maybeSingle();
   if (updateReferenceError) {
     throw new Error(`Failed to match payment reference: ${updateReferenceError.message}`);
   }
+  if (!updatedReference) return { matched: false, status: 'already_processed', persistedStatus: period.status };
 
   const recomputed = await recomputeAndPersistPeriodStatus(period.id);
 
@@ -771,12 +776,12 @@ export async function autoMatchUnmatchedReferences(input: {
     await Promise.all(unitGroups.slice(offset, offset + groupBatchSize).map(async (unitMatches) => {
       for (const unitMatch of unitMatches) {
         try {
-          await matchReferenceToUnit({
+          const result = await matchReferenceToUnit({
             ...unitMatch,
             actor: input.actor,
             matchMethod: 'auto_reference',
           });
-          matched += 1;
+          if (result.matched) matched += 1;
         } catch {
           // e.g. blocked unit / missing period — leave for manual review.
           failed += 1;
