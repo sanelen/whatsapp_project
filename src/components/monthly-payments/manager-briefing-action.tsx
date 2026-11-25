@@ -31,7 +31,8 @@ export function ManagerBriefingAction({ propertyId, propertyName, period, recipi
       if (signal?.aborted) return;
       const property = result.data?.properties?.[0];
       if (!property) { setDelivery('No delivery record is available.'); return; }
-      setSchedule(property.scheduled ? `Automatic briefings: 1st and 7th each month, after the clean daily import and matching. Import starts 07:00–08:00 SAST. Next scheduled date: ${result.data.nextScheduledDate}.` : 'This building is not subscribed to automatic briefings.');
+      if (property.attemptedToday || property.state === 'delivery_needs_review') setAttempted(true);
+      setSchedule(property.scheduled ? `Automatic briefings: 1st and 7th each month, after the clean daily import and matching. Import starts 07:00–08:00 SAST. Next scheduled date: ${property.nextScheduledDate ?? result.data.nextScheduledDate}.` : 'This building is not subscribed to automatic briefings.');
       const labels: Record<string, string> = { not_sent: 'No briefing submitted yet', accepted: 'Accepted by WhatsApp; delivery not confirmed', sent: 'Sent by WhatsApp; delivery not confirmed', delivered: 'Delivered by WhatsApp', read: 'Read on WhatsApp', failed: 'Not delivered by WhatsApp', delivery_needs_review: 'Delivery outcome needs review' };
       const when = property.occurredAt ? ` · ${new Date(property.occurredAt).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' })} SAST` : '';
       setDelivery(`${labels[property.state] ?? 'Delivery needs review'}${when}${property.errorCode ? ` · Error ${property.errorCode}` : ''}${property.errorCode === 131049 ? '. Meta limits this delivery. No automatic retry; next attempt is on a scheduled date.' : ''}`);

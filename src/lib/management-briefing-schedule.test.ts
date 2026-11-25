@@ -15,6 +15,7 @@ test('December sends only on the 1st and 7th in SAST, including UTC month bounda
   assert.equal(managementBriefingDue(new Date('2026-12-07T22:00:00Z')), false);
   assert.equal(nextManagementBriefingDate(new Date('2026-11-25T18:49:05Z')), '2026-12-01');
   assert.equal(nextManagementBriefingDate(new Date('2026-12-01T12:00:00Z')), '2026-12-07');
+  assert.equal(nextManagementBriefingDate(new Date('2026-12-01T04:00:00Z'), true), '2026-12-01');
   assert.equal(nextManagementBriefingDate(new Date('2026-12-07T12:00:00Z')), '2027-01-01');
 });
 test('only the explicit allowlist is enrolled; non-send days do not call delivery', async () => {

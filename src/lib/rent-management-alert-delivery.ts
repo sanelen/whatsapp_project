@@ -6,6 +6,7 @@ import { oneOffManagementConfig, type ManagementBriefingRequest } from './manage
 import { dispatchScheduledBriefings, managementBriefingDue, scheduledManagementConfigs, nextManagementBriefingDate, managementBriefingDays } from './management-briefing-schedule';
 import { managementBriefingOutcome, managementBriefingClaimDecision, type BriefingAttempt } from './management-briefing-status';
 import type { ManagementAlertConfig } from './rent-management-alerts';
+import { southAfricaDate } from './rent-collections';
 
 export async function sendPostImportManagementAlert(runId: string) {
   const now = new Date();
@@ -46,7 +47,9 @@ export async function readManagementBriefingStatus(propertyId?: string) {
     const { data: attempt, error } = await admin.from('rent_management_alert_deliveries').select('id,status,provider_message_id,content_hash,created_at')
       .eq('organization_id', config.organizationId).eq('property_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (error) throw new Error('Cannot read management briefing status.');
-    properties.push({ propertyId: id, name: property.name, scheduled: configs.some(item => item.propertyId === id),
+    const attemptedToday = Boolean(attempt && southAfricaDate(new Date(attempt.created_at)) === southAfricaDate(now));
+    properties.push({ propertyId: id, name: property.name, scheduled: configs.some(item => item.propertyId === id), attemptedToday,
+      nextScheduledDate: nextManagementBriefingDate(now, !attemptedToday),
       attemptAt: attempt?.created_at ?? null, ...await readProviderOutcome(attempt, config, transport.phoneId) });
   }
   return { configured: true, recipientSuffix: config.recipient.slice(-4), days: managementBriefingDays, timezone: 'Africa/Johannesburg',

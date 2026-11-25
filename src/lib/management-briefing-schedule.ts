@@ -13,8 +13,9 @@ export function scheduledManagementConfigs(config: ManagementAlertConfig, env: R
   return [...new Set(ids)].map(propertyId => ({ ...config, propertyId }));
 }
 
-export function nextManagementBriefingDate(now = new Date()) {
+export function nextManagementBriefingDate(now = new Date(), includeToday = false) {
   const today = southAfricaDate(now);
+  if (includeToday && managementBriefingDue(now)) return today;
   const date = new Date(`${today}T12:00:00Z`);
   for (let i = 1; i <= 32; i++) {
     date.setUTCDate(date.getUTCDate() + 1);
