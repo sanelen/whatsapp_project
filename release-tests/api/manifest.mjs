@@ -21,6 +21,7 @@ export const cases = [
   { method: 'GET', route: '/api/monthly-payments/import/reconcile', query: '?dryRun=true', status: 202, mode: 'workflow', budgetMs: 15000 },
   { method: 'POST', route: '/api/monthly-payments/import/reconcile', body: { dryRun: true }, status: 202, mode: 'workflow', budgetMs: 15000 },
   invalid('POST', '/api/monthly-payments/references', 'Missing action'),
+  invalid('POST', '/api/monthly-payments/management-briefing', 'A building and billing month are required'),
   invalid('POST', '/api/monthly-payments/rooms', 'propertyId is required'),
   read('/api/property-content', 'data:object', '?propertyId=$PROPERTY'),
   invalid('POST', '/api/property-content', 'propertyId is required'),

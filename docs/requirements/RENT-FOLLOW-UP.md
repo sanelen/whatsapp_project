@@ -39,6 +39,18 @@ follow-up presentation is `expected = confirmed + pending + still to receive`.
 No sign-off, credit allocation, or alert activation is implied by either display.
 See [pending-receipt review](../reviews/full-flow-review-2026-11-25-pending-rent.md).
 
+## Explicit one-off building briefings
+
+The owner authorized one current December briefing each for Berea and West Rich
+on 25 November. The recurring property remains Quarry Heights. Rent Follow-up
+supports an explicit connected-manager send for one selected current-month building.
+The destination and approved template stay server-owned; no recipient override or
+recurring enrollment is accepted. A completed, clean and fresh latest Both audit
+is required, including when that audit was manually triggered. The same per-building
+ledger, daily cap and unchanged/uncertain-send safeguards apply. Only the signed-in
+operator can request the send; release probes can validate empty requests only.
+See [one-off review](../reviews/full-flow-review-2026-11-25-one-off-briefings.md).
+
 ## Accounting boundary
 
 Saved `unit_payment_periods` charges are historical truth; today's rent or vacancy

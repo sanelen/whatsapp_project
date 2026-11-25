@@ -119,7 +119,7 @@ const previewTable: PropertyUnitsTable = previewLocation ? {
 createRoot(document.getElementById('root')!).render(
   location.pathname === '/audit' || location.pathname.includes('import-audit') ? <ImportAuditViewPanel view={audit} /> :
   (location.pathname === '/dashboard' || location.pathname === '/monthly-payments') ? <MonthlyPaymentsHub dashboard={dashboard} /> :
-  location.pathname === '/monthly-payments/follow-up' ? <RentCollectionsDashboard dashboard={dashboard} initialPeriod={previewParams.get('period') ?? undefined} initialBuilding={previewParams.get('building') ?? undefined} initialFilter={previewParams.get('filter') ?? undefined} /> :
+  location.pathname === '/monthly-payments/follow-up' ? <RentCollectionsDashboard managerRecipientSuffix="0000" dashboard={dashboard} initialPeriod={previewParams.get('period') ?? undefined} initialBuilding={previewParams.get('building') ?? undefined} initialFilter={previewParams.get('filter') ?? undefined} /> :
   (location.pathname === '/units' || previewLocation)
     ? <UnitsTable table={previewLocation ? previewTable : table} initialUnitId={previewParams.get('unitId') ?? 'room-1'} />
     : <ReferencePoolViewPanel view={{ ...view, periodKey: previewPeriod }} initialProperty={previewParams.get('property') ?? undefined} />

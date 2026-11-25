@@ -18,6 +18,7 @@ test('signed requests cannot sign off, edit rent, send messages, change settings
   for (const [path, body] of [
     ['/api/monthly-payments/references', { action: 'sign_off', paymentReferenceId: 'real' }],
     ['/api/monthly-payments/rooms', { propertyId: 'test-property', rentAmount: 1 }],
+    ['/api/monthly-payments/management-briefing', { propertyId: '11111111-1111-4111-8111-111111111111', period: '2026-12' }],
     ['/api/settings/prompt', { temperature: 1 }],
     ['/api/workspace', { action: 'createOrganization', payload: { name: 'test' } }],
     ['/api/whatsapp/webhook', { entry: [{ changes: [] }] }],

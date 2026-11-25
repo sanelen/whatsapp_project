@@ -41,20 +41,20 @@ export type AlertDependencies = {
 };
 
 /** At-most-once attempts: an ambiguous provider timeout is retained for operator review, never blindly retried. */
-export async function deliverManagementAlert(run: AlertImportRun, config: ManagementAlertConfig | null, deps: AlertDependencies, now = new Date()) {
+export async function deliverManagementAlert(run: AlertImportRun, config: ManagementAlertConfig | null, deps: AlertDependencies, now = new Date(), oneOffPeriod?: string) {
   if (!config) return { state: 'disabled', sent: 0 };
   const age = now.getTime() - Date.parse(run.completed_at ?? '');
   const audit = run.reconciliation_summary;
   const current = audit?.currentCycle;
   const sourceAge = now.getTime() - Date.parse(current?.checkedAt ?? '');
-  if (run.organization_id !== config.organizationId || run.trigger !== 'scheduled' || run.status !== 'completed' ||
+  if (run.organization_id !== config.organizationId || (run.trigger !== 'scheduled' && !(oneOffPeriod && run.trigger === 'manual')) || run.status !== 'completed' ||
       !Number.isFinite(age) || age < 0 || age > 2 * 60 * 60 * 1000 ||
       !Number.isFinite(sourceAge) || sourceAge < 0 || sourceAge > 2 * 60 * 60 * 1000 ||
       !current || !current.sources.includes('gmail') || !current.sources.includes('drive') ||
       current.failedOrPendingFiles !== 0 || current.entriesMissingPaymentReference !== 0) return { state: 'import_not_ready', sent: 0 };
   const dashboard = await deps.readDashboard();
   const month = dashboard.recentMonths.find(item => item.isCurrent);
-  if (dashboard.setupState !== 'ready' || !month || !audit?.periodsChecked?.includes(month.key) || current.period !== month.key) return { state: 'period_not_refreshed', sent: 0 };
+  if (dashboard.setupState !== 'ready' || !month || !audit?.periodsChecked?.includes(month.key) || current.period !== month.key || (oneOffPeriod && oneOffPeriod !== month.key)) return { state: 'period_not_refreshed', sent: 0 };
   const property = month.locations.find(item => item.id === config.propertyId);
   if (!property || !property.rooms.length || property.balances.chargeMissingCount || property.balances.unknownDueDateCount) return { state: 'balances_incomplete', sent: 0 };
   const total = sumRentBalances(property.rooms);
