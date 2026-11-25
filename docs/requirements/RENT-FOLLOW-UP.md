@@ -192,3 +192,42 @@ historical reconciliation summary. Do not reconnect Google through chat secrets.
 The Meta credential field was rechecked and is still empty. The production setup
 page is foregrounded at **Generate token**, with browser takeover requested for
 the owner's direct credential issuance. No additional building choice is needed.
+
+### Issued credential and delivered setup test — 25 November 2026
+
+The owner completed Meta SMS authorization and generated the sender credential.
+Read-only Graph checks returned HTTP 200 for the selected sender and its approved
+management template. The template has the expected four body parameters.
+
+The owner's updated storage requirement supersedes earlier local-token plans:
+**persist the new Meta token only in Vercel**, as the server-only
+`META_WHATSAPP_ACCESS_TOKEN` Secret/sensitive production variable for the existing
+`whatsapp-project`. A transient local copy made before that correction was removed
+while preserving other routing settings. An exact-token scan found zero matches
+in tracked working files, task artifacts and all 2,398 Git objects (including
+staged/unreachable objects and history). No push, remote repository secret write,
+dashboard deployment or automatic-alert activation occurred.
+
+One authorized setup message was submitted using the token in memory only,
+connected hamba Trading info, and the confirmed recipient ending 4647. The approved
+`hamba_management_rent_briefing` body used these four parameters:
+
+1. `SETUP TEST ONLY: management alert delivery check.`
+2. `No financial figures are included; this is not a rent statement.`
+3. `No tenant follow-up or payment action is requested.`
+4. `Please confirm receipt of this setup test.`
+
+Meta returned HTTP 200 and `accepted`. A matching `channel_events` provider-message
+receipt subsequently recorded **delivered at 15:38:23 SAST** (13:38:23 UTC). This
+verifies handset delivery, not that a person read it. A private attempt record
+prevents this setup script from sending again. No generic integration template,
+hello_world message or financial sample was sent.
+
+Vercel persistence remains blocked by account access: the connector returns 403
+for the linked project/team, lists no accessible teams, and its team authorization
+helper returns 404. The browser account had no projects and no other teams. The
+browser is now at GitHub sign-in to Vercel, prepared for the repository-owner
+account. The immediate remaining action is the owner's personal sign-in to the
+Vercel account that owns `whatsapp-project`, followed by saving the token as the
+production Secret. The Meta page remains available for direct private transfer;
+no secret should be pasted into chat. No new local credential file is retained.

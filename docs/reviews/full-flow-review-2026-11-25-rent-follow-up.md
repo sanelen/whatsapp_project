@@ -159,3 +159,16 @@ At the owner's immediate request, Meta's recipient country was set to South Afri
 and the confirmed recipient ending 4647 entered. The generated request preview
 verifies the complete international destination. Send was not pressed. The token
 field is still empty; Meta's generic integration-test template must not be sent.
+
+The owner subsequently generated the token. The approved management template
+setup test was sent exactly once to the confirmed recipient, with explicit
+setup-only text and no financial figures. Meta accepted it and a matching webhook
+confirmed **delivered at 15:38:23 SAST on 25 November**. Human reading is unverified.
+
+The owner then required Vercel-only token persistence. The transient local token
+copy was removed; exact-token checks across tracked files, task artifacts and all
+2,398 Git objects found no exposure. The test used the token in memory. Vercel
+storage is still blocked: connector project access is 403, team authorization is
+404, and the browser's previous account had no project/team access. GitHub sign-in
+to Vercel is prepared for the owner to authenticate. Automatic delivery remains
+disabled, and no reviewed dashboard code has been deployed.
