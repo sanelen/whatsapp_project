@@ -1,12 +1,12 @@
 # Rent Follow-up — owner request, 2026-11-25
 
-Status: Rent Follow-up and the pending-receipt correction are deployed. The owner
-subsequently authorized one real-data Quarry Heights management briefing and
-ongoing meaningful updates to the already opted-in pamphlet manager number.
-The unattended upgrade is deployed and verified. Production enablement is saved;
-the real-data delivery receipt remains pending after correcting a legacy HTTP
-localhost review origin. Earlier setup-only evidence below is
-historical and does not prove a financial briefing was delivered.
+Status: deployed and operationally verified on 25 November 2026. The daily
+Gmail + Drive workflow and management alerts are active. Exactly one real-data
+Quarry Heights briefing was delivered to the authorized manager at 20:18:56 SAST,
+verified by a matching Meta webhook. Its content fingerprint matches the refreshed
+post-import balances, including pending receipts. Financial sign-off remains manual.
+The earlier setup-only evidence below is historical and is separate from this test.
+See the final acceptance section in the linked unattended-flow review.
 
 ## Acceptance
 
@@ -116,7 +116,7 @@ must not reclassify an otherwise completed import. Disable future delivery by
 clearing `RENT_MANAGEMENT_ALERTS_ENABLED`, retaining the ledger.
 
 See [unattended-flow review](../reviews/full-flow-review-2026-11-25-unattended-briefing.md)
-for local evidence and the outstanding live acceptance.
+for local and production evidence, including the delivered receipt.
 
 ## Management alert setup — 25 November 2026
 
