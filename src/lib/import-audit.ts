@@ -195,6 +195,11 @@ export function canonicalEvidenceEntryIds(metadata: Record<string, unknown> | nu
   ])];
 }
 
+export function canonicalEvidencePeriod(metadata: Record<string, unknown> | null, periodEntryIds: Set<string>) {
+  const ids = canonicalEvidenceEntryIds(metadata);
+  return ids.some(id => periodEntryIds.has(id)) ? 'inside' : ids.length ? 'outside' : 'unknown';
+}
+
 export async function readImportAuditView(input?: {
   periodKey?: string;
   source?: string;
@@ -268,9 +273,13 @@ export async function readImportAuditView(input?: {
   const messagesById = new Map((messagesResult.data ?? []).map((message) => [message.id as string, message]));
   const files = candidateFiles.filter((file) => {
     const metadata = file.raw_metadata as Record<string, unknown> | null;
-    if (entryFileIds.has(file.id as string) || canonicalEvidenceEntryIds(metadata).some(id => entryIdSet.has(id))) {
+    const canonicalPeriod = canonicalEvidencePeriod(metadata, entryIdSet);
+    if (entryFileIds.has(file.id as string) || canonicalPeriod === 'inside') {
       return true;
     }
+    // A monthly statement can arrive in the following billing cycle. Known
+    // parsed receipts in another period are not missing database records here.
+    if (file.parser_status === 'parsed' && canonicalPeriod === 'outside') return false;
     const message = messagesById.get(file.message_id as string);
     const receivedDate = (message?.received_at as string | null | undefined)?.slice(0, 10) ?? '';
     return receivedDate >= billingWindow.startDate && receivedDate <= billingWindow.endDate;

@@ -710,8 +710,12 @@ export type RoomManagerView = {
   rooms: RoomManagerRoomRow[];
 };
 
-function transactionDateOnly(value: string | null | undefined, fallback: string | null | undefined) {
-  if (value) return value.slice(0, 10);
+export function transactionDateOnly(value: string | null | undefined, fallback: string | null | undefined) {
+  if (value) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const timestamp = new Date(value);
+    if (Number.isFinite(timestamp.getTime())) return southAfricaDate(timestamp);
+  }
   return fallback ?? null;
 }
 
