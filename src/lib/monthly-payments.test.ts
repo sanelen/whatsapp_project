@@ -4,12 +4,22 @@ import {
   buildMonthlyPaymentsDashboardSnapshot,
   computeDepositSplitSuggestion,
   computeUnitStatus,
+  transactionDateOnly,
   type MonthlyPaymentsOrganizationRow,
   type MonthlyPaymentsPeriodRow,
   type MonthlyPaymentsPropertyRow,
   type MonthlyPaymentsReferenceRow,
   type MonthlyPaymentsUnitRow,
 } from './monthly-payments';
+
+test('bank dates use South African calendar days, including the 9th billing cutoff', () => {
+  assert.equal(transactionDateOnly('2026-10-30T22:00:00+00:00', '2026-10-31'), '2026-10-31');
+  assert.equal(transactionDateOnly('2026-10-29T22:00:00Z', '2026-10-30'), '2026-10-30');
+  assert.equal(transactionDateOnly('2026-11-08T22:00:00Z', '2026-11-09'), '2026-11-09');
+  assert.equal(transactionDateOnly('2026-11-09', null), '2026-11-09');
+  assert.equal(transactionDateOnly(null, '2026-11-09'), '2026-11-09');
+  assert.equal(transactionDateOnly('invalid', '2026-11-09'), '2026-11-09');
+});
 
 const organizations: MonthlyPaymentsOrganizationRow[] = [
   { id: 'org-1', name: 'Hamba Trading' },

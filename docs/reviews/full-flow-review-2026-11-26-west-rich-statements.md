@@ -1,6 +1,6 @@
 # West Rich account 4079 statement intake — 26 November 2026
 
-Verdict: ship with a coverage caveat. Authorized August–October evidence reconciles; November bank evidence is still missing. Production import/replay acceptance is recorded on the release PR after rollout.
+Verdict: ship with a coverage caveat. Authorized August–October evidence reconciles; November bank evidence is still missing. Production backfill and replay passed on revision 2349031 (PR #30). A narrow follow-up corrects date presentation and late-arriving statement audit filtering.
 
 ## Scope and trigger
 
@@ -40,7 +40,15 @@ The strict parser intentionally stops on an unsupported future layout rather tha
 
 ## Production screen checklist
 
-- [ ] Import configuration: scoped 4079 policy and coverage date.
-- [ ] September/October/November audit: gross amounts, duplicate evidence links, correct unique totals.
-- [ ] West Rich receipts: nine matched pending, one unmatched, none signed off by this import.
-- [ ] December: no statement-backed claim beyond 31 October; November evidence gap retained.
+- [x] Import configuration: scoped 4079 policy and coverage date.
+- [x] September/October/November audit: gross amounts, duplicate evidence links, correct unique totals.
+- [x] West Rich receipts: nine matched pending, one unmatched, none signed off by this import.
+- [x] December: no statement-backed claim beyond 31 October; November evidence gap retained.
+
+## Live acceptance and final read-model correction
+
+PR #30 deployed successfully; its production API and browser gates passed. The first Both run completed at 09:59 SAST with ten scoped receipts (R21,600), nine matched, one unmatched and zero sign-offs. Four original files were archived, including two August versions. The three independently downloaded originals have matching SHA-256 values in the archive records; each import/replay also downloaded and byte-compared every archive against its Gmail source before processing.
+
+The repeat completed at 10:01 SAST: zero new entries, receipts or archives, zero matching changes and zero failures. All 68 pre-existing West Rich receipt rows retain their exact pre-run digest. Statement coverage remains 31 October; the personal mailbox remains inactive for general import. Neither run sent a manager or tenant message. The regular notification part additionally imported one newly arrived Quarry Heights receipt; it is separate from the ten-credit West Rich backfill.
+
+Browser verification confirmed all three billing-period totals, multiple August evidence links, cash-deposit rows, the pending room payment and the unmatched payer-only receipt. It also exposed two read-model defects: UTC slicing showed midnight SAST payments one day early, and a September statement received in October appeared as a missing database record in October despite its credits belonging to September. The follow-up converts timestamps to South African dates and filters known parsed canonical evidence by transaction period, with regression tests for the 9th cutoff and overlapping statement periods. Stored receipts, original dates, allocations and sign-offs are unchanged.

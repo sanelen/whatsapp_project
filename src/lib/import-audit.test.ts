@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canonicalEvidenceEntryIds, classifyImportAuditReview, importAuditDriveUrl } from './import-audit';
+import { canonicalEvidenceEntryIds, canonicalEvidencePeriod, classifyImportAuditReview, importAuditDriveUrl } from './import-audit';
 
 test('overlapping multi-row statements retain every canonical transaction without duplicate totals', () => {
   assert.deepEqual(canonicalEvidenceEntryIds({ canonicalEntryId: 'one', canonicalEntryIds: ['one', 'two', null, 3] }), ['one', 'two']);
   assert.deepEqual(canonicalEvidenceEntryIds(null), []);
+});
+
+test('late-arriving statements use canonical transaction periods, not their email arrival month', () => {
+  assert.equal(canonicalEvidencePeriod({ canonicalEntryIds: ['september-credit'] }, new Set(['october-credit'])), 'outside');
+  assert.equal(canonicalEvidencePeriod({ canonicalEntryIds: ['september-credit', 'october-credit'] }, new Set(['october-credit'])), 'inside');
+  assert.equal(canonicalEvidencePeriod({}, new Set(['october-credit'])), 'unknown');
 });
 
 test('source links open the archived Drive file, never Gmail', () => {

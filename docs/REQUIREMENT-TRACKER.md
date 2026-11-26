@@ -96,4 +96,4 @@ mock tests or treat the archive change as deployed.
 
 ## Owner-promoted West Rich intake (2026-11-26)
 
-PAY-3 / FR-2.12–2.15: owner authorized scoped 4079 statement intake and the ten verified August–October credits (R21,600). Implementation, parser verification and transactional dedupe checks are complete; production rollout/replay evidence is recorded on the release PR. November bank evidence remains missing, and this does not close general historical allocation/duplicate-repair acceptance. See [review](./reviews/full-flow-review-2026-11-26-west-rich-statements.md).
+PAY-3 / FR-2.12–2.15: owner authorized scoped 4079 statement intake and the ten verified August–October credits (R21,600). PR #30 is deployed: ten receipts / R21,600, nine matched pending, one unmatched, zero signed off; repeat added nothing and all 68 pre-existing receipts are unchanged. A verified follow-up corrects SAST date presentation and late-arriving statement audit classification. November bank evidence remains missing, and this does not close general historical allocation/duplicate-repair acceptance. See [review](./reviews/full-flow-review-2026-11-26-west-rich-statements.md).
