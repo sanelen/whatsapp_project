@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseCapitecStatement, scopedStatementQuery, statementReferenceKey } from './capitec-statement';
+import { isScopedStatementMessage, parseCapitecStatement, scopedStatementQuery, statementReferenceKey } from './capitec-statement';
 import { getBillingPeriodForDate } from './bank-import';
 
 const header = (month: string, end: string) => `Capitec Bank Limited\nBusiness Flexible Savings\nAccount Statement\nAccount: Business Flexible Savings Account 0000004079\nFrom Date: 01/${month}/2026 Opening Balance:\nTo Date: ${end}/${month}/2026 Closing Balance:\nTransaction History\nDate Description Category Money In Money Out Fee* Balance\n`;
@@ -61,7 +61,62 @@ test('same-day identical date-only credits require review; overlaps keep stable 
 test('source search restricts account, statement type, attachment and date', () => {
   assert.match(scopedStatementQuery(), /4079/);
   assert.match(scopedStatementQuery(), /subject:"Capitec Business Account Statement"/);
-  assert.match(scopedStatementQuery(), /after:2026\/09\/01/);
+  assert.match(scopedStatementQuery(), /subject:"Stamped Bank Statement"/);
+  assert.match(scopedStatementQuery(), /after:2026\/05\/01/);
+  assert.match(scopedStatementQuery(), /in:anywhere/);
+});
+
+const legacy = `Capitec Bank Limited
+Business Account Statement
+Date 01/06/2026
+Account type Flexible Savings Account
+Account No. 0000004079
+Statement No. 00001 Page: 1
+Description Reference Fees Amount Balance
+Balance brought forward +0.00
+17/05/26 17/05/26 CASH DEPOSIT (ATM) TENANT ROOM2 -14.00 +1 000.00 +986.00
+22/05/26 22/05/26 Ret Cr Transfer Tenant Room 2 +4 000.00 +4 986.00
+29/05/26 29/05/26 Inward EFT Credit WRROOM08 +1 400.00 +6 386.00
+29/05/26 29/05/26 Deposit Transfer Refund room8 To 0000007467 -1 400.00 +4 986.00
+30/05/26 30/05/26 Ret Cr Transfer WRRoom8 +1 400.00 +6 386.00
+31/05/26 31/05/26 Ret Cr Transfer WRRoom8 +1 900.00 +8 286.00
+31/05/26 31/05/26 Credit Interest +2.58 +8 288.58
+Capitec Bank
+26/11/2026
+Branch: 450105`;
+
+test('legacy statement uses bank header coverage, gross credits and signed debit reconciliation', () => {
+  const parsed = parseCapitecStatement(legacy);
+  assert.equal(parsed.startDate, '2026-05-01');
+  assert.equal(parsed.endDate, '2026-05-31');
+  assert.equal(parsed.entries.length, 5);
+  assert.equal(parsed.entries.reduce((sum, entry) => sum + entry.amount, 0), 9700);
+  assert.equal(parsed.ignoredRows, 2); // Interest and outgoing refund remain evidence only.
+  assert.equal(parsed.entries[0].amount, 1000); // Cash deposit fee is not subtracted from the credit.
+  assert.ok(parsed.entries.every(entry => getBillingPeriodForDate(entry.transactionDate!) === '2026-06'));
+  const modernOverlap = parseCapitecStatement(header('05', '31') +
+    '17/05/2026 ATM Cash Deposit: TENANT ROOM2 Cash Deposit 1 000.00 -14.00 986.00');
+  assert.equal(parsed.entries[0].transactionId, modernOverlap.entries[0].transactionId);
+});
+
+test('legacy parsing fails closed on account, balances, dates, unknown credits and ambiguous repeats', () => {
+  assert.throws(() => parseCapitecStatement(legacy.replace('0000004079', '0000007467')), /account does not match/);
+  assert.throws(() => parseCapitecStatement(legacy.replace('-14.00', '-14.01')), /balance does not reconcile/);
+  assert.throws(() => parseCapitecStatement(legacy.replace('17/05/26 17/05/26', '17/05/26 16/05/26')), /dates need review/);
+  assert.throws(() => parseCapitecStatement(legacy.replace('Date 01/06/2026', 'Date 26/11/2026')), /Unsupported legacy/);
+  assert.throws(() => parseCapitecStatement(legacy.replace('Ret Cr Transfer Tenant', 'Unknown Credit Tenant')), /unsupported transaction/);
+  assert.throws(() => parseCapitecStatement(legacy.replace('30/05/26 30/05/26 Ret Cr Transfer WRRoom8',
+    '29/05/26 29/05/26 Ret Cr Transfer WRROOM08')), /manual review/);
+});
+
+test('statement sender and subject validation accepts observed bank variants, rejects lookalikes', () => {
+  for (const sender of ['noreply@capitecbank.co.za', 'donotreply@capitecbank.co.za', 'Capitec <connect@capitecbank.co.za>']) {
+    assert.equal(isScopedStatementMessage(sender, 'Stamped Bank Statement'), true);
+    assert.equal(isScopedStatementMessage(sender, 'Capitec Business Account Statement 31 Oct 2026'), true);
+  }
+  assert.equal(isScopedStatementMessage('noreply@capitecbank.co.za.attacker.example', 'Stamped Bank Statement'), false);
+  assert.equal(isScopedStatementMessage('other@example.com', 'Stamped Bank Statement'), false);
+  assert.equal(isScopedStatementMessage('noreply@capitecbank.co.za', 'Capitec Business Transaction Notification'), false);
 });
 
 test('4079 stays in West Rich and only clear room references match', async () => {

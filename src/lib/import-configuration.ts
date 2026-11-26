@@ -115,8 +115,8 @@ export async function readImportConfiguration(): Promise<ImportConfigurationView
       active: Boolean(row.is_active),
     })),
     policies: [...BANK_IMPORT_POLICIES, ...(statementEnabled ? [{
-      id: 'scoped-4079-statements', input: 'West Rich account 4079: monthly statements', action: 'review' as const,
-      explanation: `Daily Both import reads only account 4079 statements from the configured source mailbox. Archived statement coverage through ${coveredThrough ?? 'not yet verified'}. Later dates need bank evidence; missing evidence does not establish nonpayment. Room matches still require staff sign-off.`,
+      id: 'scoped-4079-statements', input: 'West Rich account 4079: bank statements', action: 'review' as const,
+      explanation: `Daily Both import reads account 4079 monthly and stamped statements from the business destination and configured source mailbox. Archived statement coverage through ${coveredThrough ?? 'not yet verified'}. Later dates need bank evidence; missing evidence does not establish nonpayment. Room matches still require staff sign-off.`,
     }] : [])],
   };
 }

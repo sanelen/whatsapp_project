@@ -45,6 +45,7 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 ## Gaps not yet ticketed
 
 - Owner-directed West Rich account 4079 statement intake (2026-11-26), FR-2.12–2.15 / PAY-3: scoped source, canonical overlap protection and authorized backfill. November evidence remains absent. No dedicated Linear issue; see [review](./reviews/full-flow-review-2026-11-26-west-rich-statements.md).
+- Same-day owner follow-up: direct business-mailbox stamped statements and personal monthly source; verified May–July adds twelve gross credits / R24,700, with overlapping versions linked to canonical entries. Local checks pass; live import/replay and 78-row preservation are release acceptance. May's outgoing R1,400 refund requires staff review. See [business-source review](./reviews/full-flow-review-2026-11-26-west-rich-business-statements.md).
 
 - PAY-7 pending-rent follow-up correction (2026-11-25): FR-2.5 chase exclusion and current-cycle reconciliation; no dedicated Linear mapping. See [review](./reviews/full-flow-review-2026-11-25-pending-rent.md).
 
