@@ -1,6 +1,6 @@
 import { createHash, createSign } from 'node:crypto';
 import { extractPdfText } from './pdf-text';
-import { parseCapitecStatement, scopedStatementQuery, statementReferenceKey } from './capitec-statement';
+import { isScopedStatementMessage, parseCapitecStatement, scopedStatementQuery, statementReferenceKey } from './capitec-statement';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { referenceContainsMatcherToken, tokenizeMatcherValue } from '@/lib/auto-match';
 import { EXCLUDED_BANK_ACCOUNT_SUFFIXES, MIXED_LEGACY_BANK_ACCOUNT_SUFFIXES, PROPERTY_LOCKED_BANK_ACCOUNT_SUFFIXES } from '@/config/bank-import-metadata';
@@ -2934,6 +2934,38 @@ export async function importScoped4079Statements(archiveMailboxId: string): Prom
   const { data: mailbox, error: sourceError } = await admin.from('bank_import_mailboxes').select('*')
     .ilike('email_address', sourceEmail).eq('organization_id', archiveMailbox.organization_id).single<BankImportMailboxRow>();
   if (sourceError || !mailbox) throw new Error('Scoped source mailbox record is missing');
+  const sources = archiveMailbox.id === mailbox.id ? [archiveMailbox] : [archiveMailbox, mailbox];
+  const summaries: BankImportRunSummary[] = [];
+  const failures: string[] = [];
+  for (const source of sources) {
+    try {
+      summaries.push(await importScoped4079Mailbox(archiveMailbox, source, password, source.id === mailbox.id));
+    } catch (error) {
+      failures.push(`${source.email_address}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (!summaries.length) throw new Error(failures.join(' | '));
+  const summary = summaries[0];
+  const counts = ['messagesScanned', 'messagesImported', 'attachmentsProcessed', 'filesStored', 'duplicateFiles',
+    'entriesCreated', 'paymentReferencesCreated', 'ignoredEntries', 'failedMessages', 'messagesSkipped', 'filesArchivedToDrive'] as const;
+  for (const other of summaries.slice(1)) {
+    for (const field of counts) summary[field] += other[field];
+  }
+  const coverage = summaries.map(item => item.statementCoverage!);
+  summary.importedPeriods = [...new Set(summaries.flatMap(item => item.importedPeriods))].sort();
+  summary.statementCoverage = { accountSuffix: '4079',
+    throughDate: coverage.map(item => item.throughDate).filter((date): date is string => Boolean(date)).sort().at(-1) ?? null,
+    sourceMailbox: sources.map(source => source.email_address).join(', '),
+    entryIds: [...new Set(coverage.flatMap(item => item.entryIds))] };
+  summary.failedMessages += failures.length;
+  summary.errorMessage = [...failures, ...summaries.map(item => item.errorMessage).filter(Boolean)].join(' | ') || undefined;
+  return summary;
+}
+
+async function importScoped4079Mailbox(archiveMailbox: BankImportMailboxRow, mailbox: BankImportMailboxRow,
+  password: string, includeHistoricalMessage: boolean): Promise<BankImportRunSummary> {
+  const admin = getSupabaseAdmin();
+  if (!archiveMailbox.organization_id || mailbox.organization_id !== archiveMailbox.organization_id) throw new Error('Scoped mailbox organization mismatch');
   const auth = await getGoogleAccessToken(mailbox.email_address);
   await verifyGmailMailboxAccess(auth, mailbox.email_address);
   const userId = gmailUserIdForRequest(auth, mailbox.email_address);
@@ -2952,8 +2984,8 @@ export async function importScoped4079Statements(archiveMailboxId: string): Prom
   } while (pageToken);
   // One explicitly selected historical message contains multiple unrelated files;
   // only the configured 4079 statement attachment is read from that message.
-  const backfillId = process.env.BANK_STATEMENT_4079_BACKFILL_MESSAGE_ID?.trim();
-  const backfillName = process.env.BANK_STATEMENT_4079_BACKFILL_FILENAME?.trim();
+  const backfillId = includeHistoricalMessage ? process.env.BANK_STATEMENT_4079_BACKFILL_MESSAGE_ID?.trim() : undefined;
+  const backfillName = includeHistoricalMessage ? process.env.BANK_STATEMENT_4079_BACKFILL_FILENAME?.trim() : undefined;
   if (backfillId && backfillName) ids.add(backfillId);
   const summary: BankImportRunSummary = {
     mailboxEmail: archiveMailbox.email_address, authMode: auth.authMode,
@@ -2973,8 +3005,9 @@ export async function importScoped4079Statements(archiveMailboxId: string): Prom
       const message = await gmailRequest<GmailMessage>(auth.accessToken, `users/${userId}/messages/${id}`, { format: 'full' });
       const headers = parseHeaders(message.payload?.headers);
       const historical = id === backfillId;
-      if (!historical && (!/Capitec Business Account Statement/i.test(headers.get('subject') ?? '') ||
-          !/@capitecbank\.co\.za\b/i.test(headers.get('from') ?? ''))) throw new Error('Scoped statement sender/subject does not match');
+      if (!historical && !isScopedStatementMessage(headers.get('from') ?? '', headers.get('subject') ?? '')) {
+        throw new Error('Scoped statement sender/subject does not match');
+      }
       const { attachments } = await collectGmailAttachments(auth.accessToken, userId, message, new Set(),
         name => historical ? name === backfillName : /^account.statement.*\.pdf$/i.test(name));
       if (!attachments.length) throw new Error('Scoped statement PDF attachment is missing');
@@ -2985,7 +3018,7 @@ export async function importScoped4079Statements(archiveMailboxId: string): Prom
       for (const attachment of attachments) {
         summary.attachmentsProcessed++;
         const statement = parseCapitecStatement(await extractPdfText(attachment.data, password));
-        if (statement.startDate < '2026-08-01') throw new Error('Statement predates the authorized scoped intake');
+        if (statement.startDate < '2026-05-01') throw new Error('Statement predates the authorized scoped intake');
         if (statement.entries.some(entry => !isEntryOnOrBeforeToday(entry))) throw new Error('Statement contains future transactions');
         const fileSha256 = sha256(attachment.data);
         const storagePath = buildImportStoragePath({ organizationId: archiveMailbox.organization_id, mailboxId: mailbox.id,

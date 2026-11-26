@@ -82,6 +82,7 @@ is now the visual reference, not a separate competing plan.
 ## Full flow reviews
 
 - [West Rich statement intake — 2026-11-26](./reviews/full-flow-review-2026-11-26-west-rich-statements.md) — scoped account 4079 source, encrypted originals, overlap dedupe and missing-November evidence boundary.
+- [West Rich business statement intake — 2026-11-26](./reviews/full-flow-review-2026-11-26-west-rich-business-statements.md) — direct business-mailbox statements, legacy monthly layout, May–July backfill and cross-mailbox provenance.
 
 - [One-off management briefings — 2026-11-25](./reviews/full-flow-review-2026-11-25-one-off-briefings.md) — explicit building sends through the existing manager, with shared duplicate protection and unchanged recurring scope.
 

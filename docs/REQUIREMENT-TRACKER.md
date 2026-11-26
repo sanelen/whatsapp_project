@@ -96,4 +96,6 @@ mock tests or treat the archive change as deployed.
 
 ## Owner-promoted West Rich intake (2026-11-26)
 
+Follow-up: incorporate the six stamped statements sent directly to the business mailbox and include both scoped sources in daily Both intake. Verified May–July evidence adds twelve gross credits / R24,700; August–October reissues overlap existing receipts. Local 336-test/build/typecheck/lint gates pass. Remaining release acceptance: live import/replay, original archives/provenance, matching without sign-off, and unchanged full rows for all 78 existing receipts. The May R1,400 outgoing refund remains evidence for staff review; November calendar coverage is still absent. See [business-source review](./reviews/full-flow-review-2026-11-26-west-rich-business-statements.md).
+
 PAY-3 / FR-2.12–2.15: owner authorized scoped 4079 statement intake and the ten verified August–October credits (R21,600). PR #30 is deployed: ten receipts / R21,600, nine matched pending, one unmatched, zero signed off; repeat added nothing and all 68 pre-existing receipts are unchanged. A verified follow-up corrects SAST date presentation and late-arriving statement audit classification. November bank evidence remains missing, and this does not close general historical allocation/duplicate-repair acceptance. See [review](./reviews/full-flow-review-2026-11-26-west-rich-statements.md).
