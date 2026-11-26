@@ -93,3 +93,7 @@ BANK-DRIVE-01 through BANK-DRIVE-06 are **Partial**, local branch only. See
 scenarios, remaining checks, dependencies and review date. Linear mapping pending;
 not eligible for unattended financial execution. Do not mark these Met from local
 mock tests or treat the archive change as deployed.
+
+## Owner-promoted West Rich intake (2026-11-26)
+
+PAY-3 / FR-2.12–2.15: owner authorized scoped 4079 statement intake and the ten verified August–October credits (R21,600). Implementation, parser verification and transactional dedupe checks are complete; production rollout/replay evidence is recorded on the release PR. November bank evidence remains missing, and this does not close general historical allocation/duplicate-repair acceptance. See [review](./reviews/full-flow-review-2026-11-26-west-rich-statements.md).

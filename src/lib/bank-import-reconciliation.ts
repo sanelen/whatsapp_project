@@ -153,7 +153,7 @@ export async function runBankImportReconciliation(input?: { force?: boolean; tri
       admin.from('bank_import_file_occurrences').select('mailbox_id,file_id,file_sha256').in('mailbox_id', mailboxIds).gte('last_seen_at', since.toISOString()),
       admin.from('bank_import_files').select('id', { count: 'exact', head: true }).in('parser_status', ['pending', 'failed']),
       admin.from('bank_import_files').select('id').eq('parser_status', 'parsed'),
-      admin.from('bank_import_entries').select('id,file_id').eq('organization_id', organizationId).ilike('transaction_type', 'incoming funds'),
+      admin.from('bank_import_entries').select('id,file_id').eq('organization_id', organizationId).in('transaction_type', ['Incoming Funds', 'Cash Deposit']),
     ]);
     if (occurrencesResult.error) throw new Error(`Failed to compare mailbox files: ${occurrencesResult.error.message}`);
     if (problemFilesResult.error) throw new Error(`Failed to count problem import files: ${problemFilesResult.error.message}`);

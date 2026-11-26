@@ -61,6 +61,13 @@ export async function readImportConfiguration(): Promise<ImportConfigurationView
   const propertyNames = new Map((propertiesResult.data ?? []).map((row) => [row.id as string, row.name as string]));
   const unitLabels = new Map((unitsResult.data ?? []).map((row) => [row.id as string, row.label as string]));
   const configuredSuffixes = new Set(mappings.map((row) => row.account_number_suffix as string));
+  const statementEnabled = process.env.BANK_STATEMENT_4079_ENABLED === 'true';
+  const statementCoverage = statementEnabled ? await admin.from('bank_import_files')
+    .select('statement_period_end').contains('raw_metadata', { statementAccountSuffix: '4079' })
+    .eq('parser_status', 'parsed').not('drive_archived_at', 'is', null)
+    .order('statement_period_end', { ascending: false }).limit(1) : null;
+  if (statementCoverage?.error) throw new Error('Failed to read account 4079 statement coverage');
+  const coveredThrough = statementCoverage?.data?.[0]?.statement_period_end;
 
   return {
     mailboxes: (mailboxesResult.data ?? []).map((row) => ({
@@ -107,6 +114,9 @@ export async function readImportConfiguration(): Promise<ImportConfigurationView
       priority: Number(row.priority ?? 0),
       active: Boolean(row.is_active),
     })),
-    policies: BANK_IMPORT_POLICIES,
+    policies: [...BANK_IMPORT_POLICIES, ...(statementEnabled ? [{
+      id: 'scoped-4079-statements', input: 'West Rich account 4079: monthly statements', action: 'review' as const,
+      explanation: `Daily Both import reads only account 4079 statements from the configured source mailbox. Archived statement coverage through ${coveredThrough ?? 'not yet verified'}. Later dates need bank evidence; missing evidence does not establish nonpayment. Room matches still require staff sign-off.`,
+    }] : [])],
   };
 }

@@ -44,6 +44,8 @@ Team: **Automatemylife** · Project: **WhatsApp Tenant Assistant Guardrails**
 
 ## Gaps not yet ticketed
 
+- Owner-directed West Rich account 4079 statement intake (2026-11-26), FR-2.12–2.15 / PAY-3: scoped source, canonical overlap protection and authorized backfill. November evidence remains absent. No dedicated Linear issue; see [review](./reviews/full-flow-review-2026-11-26-west-rich-statements.md).
+
 - PAY-7 pending-rent follow-up correction (2026-11-25): FR-2.5 chase exclusion and current-cycle reconciliation; no dedicated Linear mapping. See [review](./reviews/full-flow-review-2026-11-25-pending-rent.md).
 
 - Owner-directed durable imports and production API verification (2026-11-25) — implementation and local checks ready; dedicated credentials are provisioned; live acceptance remains. No dedicated Linear ticket yet. See [review](./reviews/full-flow-review-2026-11-25-import-reliability.md).

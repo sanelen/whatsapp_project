@@ -1,5 +1,6 @@
 import { createHash, createSign } from 'node:crypto';
 import { extractPdfText } from './pdf-text';
+import { parseCapitecStatement, scopedStatementQuery, statementReferenceKey } from './capitec-statement';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { referenceContainsMatcherToken, tokenizeMatcherValue } from '@/lib/auto-match';
 import { EXCLUDED_BANK_ACCOUNT_SUFFIXES, MIXED_LEGACY_BANK_ACCOUNT_SUFFIXES, PROPERTY_LOCKED_BANK_ACCOUNT_SUFFIXES } from '@/config/bank-import-metadata';
@@ -167,6 +168,7 @@ export type BankImportRunSummary = {
   messagesSkipped: number;
   filesArchivedToDrive: number;
   importedPeriods: string[];
+  statementCoverage?: { accountSuffix: '4079'; throughDate: string | null; sourceMailbox: string; entryIds: string[] };
 };
 
 export type BankImportSource = 'gmail' | 'drive' | 'bank' | 'both';
@@ -1117,7 +1119,7 @@ async function loadGmailAttachment(
   return decodeBase64Url(payload.data);
 }
 
-async function collectGmailAttachments(accessToken: string, gmailUserId: string, message: GmailMessage, completedIds = new Set<string>()) {
+async function collectGmailAttachments(accessToken: string, gmailUserId: string, message: GmailMessage, completedIds = new Set<string>(), acceptFile?: (name: string) => boolean) {
   const attachments: ImportedAttachment[] = [];
   let skipped = 0;
 
@@ -1130,6 +1132,7 @@ async function collectGmailAttachments(accessToken: string, gmailUserId: string,
 
     const fileName = part.filename?.trim() ?? '';
     if (!fileName) return;
+    if (acceptFile && !acceptFile(fileName)) return;
 
     if (part.body?.attachmentId && completedIds.has(part.body.attachmentId)) { skipped++; return; }
 
@@ -1420,6 +1423,7 @@ async function createBankImportFile(input: {
   attachment: ImportedAttachment;
   fileSha256: string;
   storagePath: string;
+  statementAccountSuffix?: string;
 }) {
   const admin = getSupabaseAdmin();
   const recordOccurrence = async (fileId: string) => {
@@ -1472,6 +1476,7 @@ async function createBankImportFile(input: {
       raw_metadata: {
         source: input.attachment.source,
         nestedFrom: input.attachment.nestedFrom ?? '',
+        ...(input.statementAccountSuffix ? { statementAccountSuffix: input.statementAccountSuffix } : {}),
       },
     })
     .select('id')
@@ -1541,6 +1546,21 @@ async function upsertBankImportEntry(input: {
   resolved: ResolvedImportContext;
 }) {
   const admin = getSupabaseAdmin();
+  if (input.entry.destinationAccountSuffix === '4079') {
+    const entry = input.entry;
+    const key = [input.organizationId, entry.transactionDate, entry.amount.toFixed(2), statementReferenceKey(entry.reference)].join('|');
+    const { data, error } = await admin.rpc('upsert_scoped_statement_entry', { payload: {
+      file_id: input.fileId, organization_id: input.organizationId, property_id: input.resolved.propertyId,
+      entry_fingerprint: `scoped4079:${sha256(Buffer.from(key))}`, transaction_type: entry.transactionType,
+      transaction_date: entry.transactionDate, transaction_time: entry.transactionTime, reference: entry.reference,
+      description: entry.description, payer_name: entry.payerName, amount: entry.amount,
+      destination_account_suffix: '4079', available_balance: entry.availableBalance, raw_extracted_text: entry.rawExtractedText,
+      raw_metadata: { transactionId: entry.transactionId, propertyName: input.resolved.propertyName,
+        matchedBy: input.resolved.matchedBy, unitHints: input.resolved.unitHints },
+    } });
+    if (error || !data) throw new Error(`Scoped statement identity failed: ${error?.message ?? 'missing entry'}`);
+    return data as string;
+  }
   if (input.entry.transactionDate && input.entry.transactionTime && input.entry.destinationAccountSuffix) {
     const { data: crossSourceCandidates, error: crossSourceError } = await admin
       .from('bank_import_entries')
@@ -1730,6 +1750,7 @@ export async function saveImportEvidenceToDrive(input: {
   propertyMappings: BankImportPropertyMappingRow[];
   sourceDriveId?: string;
   newFile?: boolean;
+  statement?: { startDate: string; endDate: string; propertyName: string };
 }): Promise<{ bytes: Buffer; newlyArchived: boolean }> {
   const admin = getSupabaseAdmin();
   const { accessToken } = await getGoogleAccessToken(input.mailboxEmail);
@@ -1759,13 +1780,15 @@ export async function saveImportEvidenceToDrive(input: {
     const building = parsed?.destinationAccountSuffix
       ? sanitizeDriveFolderName(input.propertyMappings.find((mapping) => mapping.account_number_suffix === parsed.destinationAccountSuffix)?.property_name ?? 'Unassigned property')
       : 'Unassigned property';
-    const segments = [DRIVE_ARCHIVE_ROOT_FOLDER, period, building];
+    const segments = input.statement
+      ? [DRIVE_ARCHIVE_ROOT_FOLDER, 'Account Statements', sanitizeDriveFolderName(input.statement.propertyName), '4079', input.statement.endDate.slice(0, 7)]
+      : [DRIVE_ARCHIVE_ROOT_FOLDER, period, building];
     folderPath = segments.join('/');
     const parentId = await ensureFolderPath(accessToken, segments);
     await uploadDriveFile({ accessToken, fileId: driveId, parentId,
-      name: `${parsed?.transactionDate ?? 'date-unknown'}_${input.attachment.fileName}`,
+      name: `${input.statement?.endDate ?? parsed?.transactionDate ?? 'date-unknown'}_${input.attachment.fileName}`,
       mimeType: input.attachment.mimeType || 'application/pdf', data: input.attachment.data,
-      appProperties: { hambaFileId: input.fileId } });
+      appProperties: { hambaFileId: input.fileId, ...(input.statement ? { hambaSourceKind: 'statement' } : {}) } });
   }
   const bytes = await downloadDriveFile(accessToken, driveId);
   if (!bytes.equals(input.attachment.data)) throw new Error('Drive source does not match the imported attachment');
@@ -2391,9 +2414,9 @@ export async function listBankImportDriveFiles(mailboxId: string, source: 'drive
   const rootId = source === 'bank'
     ? DRIVE_BANK_UPLOADS_FOLDER_ID ?? await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER, DRIVE_BANK_UPLOADS_FOLDER])
     : await ensureFolderPath(accessToken, [DRIVE_ARCHIVE_ROOT_FOLDER]);
-  const files = await (source === 'bank'
+  const files = (await (source === 'bank'
     ? listFilesUnder(accessToken, rootId, { extensions: ['.pdf', '.csv', '.txt'], mimeTypes: ['application/pdf', 'text/csv', 'text/plain'] })
-    : listPdfFilesUnder(accessToken, rootId));
+    : listPdfFilesUnder(accessToken, rootId))).filter(file => source === 'bank' || file.appProperties?.hambaSourceKind !== 'statement');
   if (!billingPeriod || source === 'bank') return files;
   const window = getBillingWindowForPeriod(billingPeriod);
   const outside = new Set<string>();
@@ -2875,22 +2898,141 @@ export async function verifyBankImportEvidence(period: string) {
   const window = getBillingWindowForPeriod(period);
   const admin = getSupabaseAdmin();
   const { data: rows, error } = await admin.from('bank_import_entries')
-    .select('amount,transaction_date,file_id,bank_import_files!inner(file_sha256,drive_file_id,bank_import_messages!inner(mailbox_id)),payment_references!payment_references_bank_import_entry_id_fkey(id)')
+    .select('amount,reference,transaction_date,file_id,bank_import_files!inner(file_sha256,drive_file_id,raw_metadata,bank_import_messages!inner(mailbox_id)),payment_references!payment_references_bank_import_entry_id_fkey(id)')
     .gte('transaction_date', window.startDate).lte('transaction_date', window.endDate).limit(6);
   if (error) throw new Error(`Evidence probe query failed: ${error.message}`);
   if (!rows?.length) throw new Error('No representative imported evidence in selected cycle');
   const mailboxes = await listActiveBankImportMailboxes();
   let verified = 0;
-  for (const row of rows as unknown as Array<{ amount: number; transaction_date: string; payment_references: Array<{ id: string }>; bank_import_files: { file_sha256: string; drive_file_id: string; bank_import_messages: { mailbox_id: string } } }>) {
+  for (const row of rows as unknown as Array<{ amount: number; reference: string; transaction_date: string; payment_references: Array<{ id: string }>; bank_import_files: { file_sha256: string; drive_file_id: string; raw_metadata: Record<string, unknown>; bank_import_messages: { mailbox_id: string } } }>) {
     const file = row.bank_import_files;
     const mailbox = mailboxes.find((item) => item.id === file.bank_import_messages.mailbox_id) ?? mailboxes[0];
     if (!file.drive_file_id || !row.payment_references.length || !mailbox) throw new Error('Evidence is missing an archive or receipt');
     const { accessToken } = await getGoogleAccessToken(mailbox.email_address);
     const bytes = await downloadDriveFile(accessToken, file.drive_file_id);
     if (sha256(bytes) !== file.file_sha256) throw new Error('Archived original hash mismatch');
-    const parsed = parseCapitecTransactionText(await extractPdfText(bytes));
+    const parsed = file.raw_metadata?.statementAccountSuffix === '4079'
+      ? parseCapitecStatement(await extractPdfText(bytes, process.env.BANK_STATEMENT_4079_PASSWORD)).entries.find(entry =>
+        entry.transactionDate === row.transaction_date && entry.amount === Number(row.amount) && statementReferenceKey(entry.reference) === statementReferenceKey(row.reference))
+      : parseCapitecTransactionText(await extractPdfText(bytes));
     if (!parsed || parsed.amount !== Number(row.amount) || parsed.transactionDate !== row.transaction_date) throw new Error('Archive parser does not reproduce the stored transaction');
     verified++;
   }
   return { verified, originalHashesVerified: verified, receiptsVerified: verified };
+}
+
+/** Explicit account-scoped intake; never activates the personal notification mailbox. */
+export async function importScoped4079Statements(archiveMailboxId: string): Promise<BankImportRunSummary | null> {
+  if (process.env.BANK_STATEMENT_4079_ENABLED !== 'true') return null;
+  const sourceEmail = process.env.BANK_IMPORT_SOURCE_MAILBOX_EMAIL?.trim();
+  const password = process.env.BANK_STATEMENT_4079_PASSWORD?.trim();
+  if (!sourceEmail || !password || !password.endsWith('4079')) throw new Error('Account 4079 statement source/password is not configured');
+  const admin = getSupabaseAdmin();
+  const { data: archiveMailbox, error: archiveError } = await admin.from('bank_import_mailboxes')
+    .select('*').eq('id', archiveMailboxId).eq('is_active', true).single<BankImportMailboxRow>();
+  if (archiveError || !archiveMailbox?.organization_id) throw new Error('Active archive mailbox is missing');
+  const { data: mailbox, error: sourceError } = await admin.from('bank_import_mailboxes').select('*')
+    .ilike('email_address', sourceEmail).eq('organization_id', archiveMailbox.organization_id).single<BankImportMailboxRow>();
+  if (sourceError || !mailbox) throw new Error('Scoped source mailbox record is missing');
+  const auth = await getGoogleAccessToken(mailbox.email_address);
+  await verifyGmailMailboxAccess(auth, mailbox.email_address);
+  const userId = gmailUserIdForRequest(auth, mailbox.email_address);
+  const { propertyMappings, unitMatchHints } = await loadImportLookups(archiveMailbox.organization_id);
+  const property = propertyMappings.find(mapping => mapping.account_number_suffix === '4079');
+  if (!property?.property_id) throw new Error('Account 4079 property mapping is missing');
+  const ids = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const page = await gmailRequest<GmailListResponse>(auth.accessToken, `users/${userId}/messages`, {
+      q: scopedStatementQuery(), maxResults: 100, ...(pageToken ? { pageToken } : {}),
+    });
+    for (const message of page.messages ?? []) ids.add(message.id);
+    pageToken = page.nextPageToken;
+    if (ids.size > 250) throw new Error('Scoped statement source exceeds the bounded import limit');
+  } while (pageToken);
+  // One explicitly selected historical message contains multiple unrelated files;
+  // only the configured 4079 statement attachment is read from that message.
+  const backfillId = process.env.BANK_STATEMENT_4079_BACKFILL_MESSAGE_ID?.trim();
+  const backfillName = process.env.BANK_STATEMENT_4079_BACKFILL_FILENAME?.trim();
+  if (backfillId && backfillName) ids.add(backfillId);
+  const summary: BankImportRunSummary = {
+    mailboxEmail: archiveMailbox.email_address, authMode: auth.authMode,
+    billingPeriod: null, billingWindowStart: null, billingWindowEnd: null,
+    messagesScanned: 0, messagesImported: 0, attachmentsProcessed: 0, filesStored: 0,
+    duplicateFiles: 0, entriesCreated: 0, paymentReferencesCreated: 0, ignoredEntries: 0,
+    failedMessages: 0, messagesSkipped: 0, filesArchivedToDrive: 0, importedPeriods: [],
+    statementCoverage: { accountSuffix: '4079', throughDate: null, sourceMailbox: mailbox.email_address, entryIds: [] },
+  };
+  const periods = new Set<string>();
+  const entryIds = new Set<string>();
+  const failures: string[] = [];
+  for (const id of [...ids].sort()) {
+    summary.messagesScanned++;
+    let messageRowId: string | undefined;
+    try {
+      const message = await gmailRequest<GmailMessage>(auth.accessToken, `users/${userId}/messages/${id}`, { format: 'full' });
+      const headers = parseHeaders(message.payload?.headers);
+      const historical = id === backfillId;
+      if (!historical && (!/Capitec Business Account Statement/i.test(headers.get('subject') ?? '') ||
+          !/@capitecbank\.co\.za\b/i.test(headers.get('from') ?? ''))) throw new Error('Scoped statement sender/subject does not match');
+      const { attachments } = await collectGmailAttachments(auth.accessToken, userId, message, new Set(),
+        name => historical ? name === backfillName : /^account.statement.*\.pdf$/i.test(name));
+      if (!attachments.length) throw new Error('Scoped statement PDF attachment is missing');
+      const messageRow = await upsertBankImportMessage({ mailbox, message, messageFrom: headers.get('from') ?? '',
+        subject: headers.get('subject') ?? '', receivedAt: message.internalDate ? new Date(Number(message.internalDate)).toISOString() : null });
+      messageRowId = messageRow.id;
+      summary.messagesImported++;
+      for (const attachment of attachments) {
+        summary.attachmentsProcessed++;
+        const statement = parseCapitecStatement(await extractPdfText(attachment.data, password));
+        if (statement.startDate < '2026-08-01') throw new Error('Statement predates the authorized scoped intake');
+        if (statement.entries.some(entry => !isEntryOnOrBeforeToday(entry))) throw new Error('Statement contains future transactions');
+        const fileSha256 = sha256(attachment.data);
+        const storagePath = buildImportStoragePath({ organizationId: archiveMailbox.organization_id, mailboxId: mailbox.id,
+          sourceFolder: 'gmail', messageSourceId: id, fileSha256, fileName: attachment.fileName });
+        const { file, duplicate } = await createBankImportFile({ organizationId: archiveMailbox.organization_id,
+          mailboxId: mailbox.id, messageId: messageRow.id, source: 'gmail', attachment, fileSha256, storagePath, statementAccountSuffix: '4079' });
+        if (duplicate) summary.duplicateFiles++; else summary.filesStored++;
+        try {
+          await uploadImportFile(storagePath, attachment.data, attachment.mimeType);
+          const archive = await saveImportEvidenceToDrive({ fileId: file.id, mailboxEmail: archiveMailbox.email_address,
+            attachment, propertyMappings, newFile: !duplicate, statement: { ...statement, propertyName: property.property_name } });
+          if (archive.newlyArchived) summary.filesArchivedToDrive++;
+          for (const entry of statement.entries) {
+            const integrityError = validateParsedImportEntry(entry);
+            if (integrityError) throw new Error(integrityError);
+            if (isExcludedNonRentCredit(entry)) { summary.ignoredEntries++; continue; }
+            const resolved = resolveImportContext({ entry, organizationId: archiveMailbox.organization_id, propertyMappings, unitMatchHints });
+            if (resolved.propertyId !== property.property_id) throw new Error('Statement property boundary was not preserved');
+            const entryId = await upsertBankImportEntry({ fileId: file.id, organizationId: archiveMailbox.organization_id, entry, resolved });
+            const outcome = await upsertPaymentReferenceFromImport({ organizationId: archiveMailbox.organization_id,
+              propertyId: resolved.propertyId, bankImportEntryId: entryId, entry });
+            if (outcome === 'inserted') { summary.entriesCreated++; summary.paymentReferencesCreated++; }
+            entryIds.add(entryId);
+            periods.add(getBillingPeriodForDate(entry.transactionDate!));
+          }
+          summary.ignoredEntries += statement.ignoredRows;
+          const { error } = await admin.from('bank_import_files').update({ statement_period_start: statement.startDate,
+            statement_period_end: statement.endDate }).eq('id', file.id);
+          if (error) throw new Error('Could not save statement coverage');
+          await markBankImportFile({ fileId: file.id, parserStatus: 'parsed' });
+          if (!summary.statementCoverage!.throughDate || statement.endDate > summary.statementCoverage!.throughDate!) {
+            summary.statementCoverage!.throughDate = statement.endDate;
+          }
+        } catch (error) {
+          await markBankImportFile({ fileId: file.id, parserStatus: 'failed', parserError: error instanceof Error ? error.message : String(error) });
+          throw error;
+        }
+      }
+      await markBankImportMessageStatus(messageRow.id, 'processed', '');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(message); summary.failedMessages++;
+      if (messageRowId) await markBankImportMessageStatus(messageRowId, 'failed', message);
+    }
+  }
+  summary.importedPeriods = [...periods].sort();
+  summary.statementCoverage!.entryIds = [...entryIds];
+  if (failures.length) summary.errorMessage = failures.join(' | ');
+  return summary;
 }

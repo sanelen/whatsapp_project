@@ -16,7 +16,7 @@ test('automatic matching persists pending only, skips ambiguity and replay, and 
   const events: Array<{ event_type: string }> = [];
   let writes = 0;
   let concurrent = false;
-  t.mock.method(globalThis, 'fetch', async (input, init) => {
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     assert.equal(url.hostname, 'match-persistence.invalid', 'No live network in persistence verification');
     const method = init?.method ?? 'GET';
@@ -62,4 +62,23 @@ test('automatic matching persists pending only, skips ambiguity and replay, and 
   assert.equal(references[0].unit_id, 'operator-unit'); assert.equal(references[0].signed_off, true);
   assert.equal(events.filter(event => event.event_type === 'matched').length, 1);
   assert.equal(events.filter(event => event.event_type === 'signed_off').length, 0);
+});
+
+test('scoped statement matching selects only imported entry IDs and an empty scope does no work', async t => {
+  const { autoMatchUnmatchedReferences } = await import('./monthly-payments-ops');
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    assert.equal(url.hostname, 'match-persistence.invalid');
+    assert.equal(url.pathname.split('/').at(-1), 'payment_references');
+    assert.equal(url.searchParams.get('bank_import_entry_id'), 'in.(scoped-entry)');
+    assert.equal(url.searchParams.get('unit_id'), 'is.null');
+    assert.equal(url.searchParams.get('signed_off'), 'eq.false');
+    calls++;
+    return Response.json([]);
+  });
+  await autoMatchUnmatchedReferences({ actor: 'scoped test', bankImportEntryIds: [] });
+  assert.equal(calls, 0);
+  await autoMatchUnmatchedReferences({ actor: 'scoped test', bankImportEntryIds: ['scoped-entry'] });
+  assert.equal(calls, 1);
 });

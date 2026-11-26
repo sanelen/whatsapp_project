@@ -188,6 +188,13 @@ export function classifyImportAuditReview(input: {
   };
 }
 
+export function canonicalEvidenceEntryIds(metadata: Record<string, unknown> | null) {
+  return [...new Set([
+    ...(typeof metadata?.canonicalEntryId === 'string' ? [metadata.canonicalEntryId] : []),
+    ...(Array.isArray(metadata?.canonicalEntryIds) ? metadata.canonicalEntryIds.filter((id): id is string => typeof id === 'string') : []),
+  ])];
+}
+
 export async function readImportAuditView(input?: {
   periodKey?: string;
   source?: string;
@@ -203,7 +210,7 @@ export async function readImportAuditView(input?: {
     admin
       .from('bank_import_entries')
       .select('id,file_id,transaction_date,reference,amount,destination_account_suffix,property_id')
-      .ilike('transaction_type', 'incoming funds')
+      .in('transaction_type', ['Incoming Funds', 'Cash Deposit'])
       .gte('transaction_date', billingWindow.startDate)
       .lte('transaction_date', billingWindow.endDate)
       .order('transaction_date', { ascending: false }),
@@ -261,8 +268,7 @@ export async function readImportAuditView(input?: {
   const messagesById = new Map((messagesResult.data ?? []).map((message) => [message.id as string, message]));
   const files = candidateFiles.filter((file) => {
     const metadata = file.raw_metadata as Record<string, unknown> | null;
-    const canonicalEntryId = typeof metadata?.canonicalEntryId === 'string' ? metadata.canonicalEntryId : null;
-    if (entryFileIds.has(file.id as string) || Boolean(canonicalEntryId && entryIdSet.has(canonicalEntryId))) {
+    if (entryFileIds.has(file.id as string) || canonicalEvidenceEntryIds(metadata).some(id => entryIdSet.has(id))) {
       return true;
     }
     const message = messagesById.get(file.message_id as string);
@@ -283,11 +289,12 @@ export async function readImportAuditView(input?: {
   const entryById = new Map(entries.map((entry) => [entry.id as string, entry]));
   for (const file of files) {
     const metadata = file.raw_metadata as Record<string, unknown> | null;
-    const canonicalEntryId = typeof metadata?.canonicalEntryId === 'string' ? metadata.canonicalEntryId : null;
-    const canonicalEntry = canonicalEntryId ? entryById.get(canonicalEntryId) : null;
-    if (canonicalEntry && !entriesByFile.has(file.id as string)) {
-      entriesByFile.set(file.id as string, [canonicalEntry]);
+    const combined = new Map((entriesByFile.get(file.id as string) ?? []).map(entry => [entry.id, entry]));
+    for (const id of canonicalEvidenceEntryIds(metadata)) {
+      const entry = entryById.get(id);
+      if (entry) combined.set(entry.id, entry);
     }
+    if (combined.size) entriesByFile.set(file.id as string, [...combined.values()]);
   }
 
   const auditFiles: ImportAuditFile[] = files.map((file) => {
