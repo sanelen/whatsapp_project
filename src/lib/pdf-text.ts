@@ -11,9 +11,9 @@ async function loadPdfParser() {
   return pdfParserPromise;
 }
 
-export async function extractPdfText(buffer: Buffer) {
+export async function extractPdfText(buffer: Buffer, password?: string) {
   const { PDFParse } = await loadPdfParser();
-  const parser = new PDFParse({ data: buffer });
+  const parser = new PDFParse({ data: buffer, password });
 
   try {
     const parsed = await parser.getText();

@@ -104,6 +104,11 @@ export async function bankImportReconciliationWorkflow(force: boolean, trigger: 
         }
       }
     }
+    if (!options || options.source === 'both') {
+      const scoped = await importScopedStatements(preparation.mailboxes[0]);
+      if (scoped) slices.push(scoped);
+      await recordProgress(preparation, slices, 'statements');
+    }
     await recordProgress(preparation, slices, 'matching');
     const matching = await matchImportedPayments(preparation.periodsChecked, options?.pullAll === true);
     if (matching.failed) slices.push({ mailboxEmail: preparation.mailboxes[0].emailAddress, period: '', ok: false, error: `${matching.failed} automatic matches failed` });
@@ -134,6 +139,28 @@ export async function bankImportReconciliationWorkflow(force: boolean, trigger: 
   } catch (error) {
     await failReconciliation(preparation.runId, error instanceof Error ? error.message : String(error));
     throw error;
+  }
+}
+
+async function importScopedStatements(mailbox: MailboxSpec): Promise<SliceResult | null> {
+  "use step";
+  const { importScoped4079Statements } = await import('@/lib/bank-import');
+  try {
+    const summary = await importScoped4079Statements(mailbox.id);
+    if (!summary) return null;
+    // Historical statement receipts only; never sweep unrelated historical rows.
+    const { ensurePaymentPeriodsForPeriod, autoMatchUnmatchedReferences } = await import('@/lib/monthly-payments-ops');
+    for (const periodKey of summary.importedPeriods) await ensurePaymentPeriodsForPeriod({ periodKey });
+    if (summary.statementCoverage!.entryIds.length) {
+      const matching = await autoMatchUnmatchedReferences({ actor: 'auto-match (scoped statement import)',
+        bankImportEntryIds: summary.statementCoverage!.entryIds });
+      if (matching.failed) { summary.failedMessages++; summary.errorMessage = 'Scoped statement matching failed'; }
+    }
+    return { mailboxEmail: mailbox.emailAddress, period: 'account 4079 statements', ok: summary.failedMessages === 0,
+      error: summary.errorMessage, summaries: [summary] };
+  } catch (error) {
+    return { mailboxEmail: mailbox.emailAddress, period: 'account 4079 statements', ok: false,
+      error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -272,7 +299,7 @@ async function finalizeReconciliation(
       admin.from('bank_import_file_occurrences').select('mailbox_id,file_id,file_sha256').in('mailbox_id', mailboxIds).gte('last_seen_at', since.toISOString()),
       readAllRows((from, to) => admin.from('bank_import_files').select('id,bank_import_entries(transaction_date)').in('parser_status', ['pending', 'failed']).order('id').range(from, to)),
       admin.from('bank_import_files').select('id').eq('parser_status', 'parsed'),
-      readAllRows((from, to) => admin.from('bank_import_entries').select('id,file_id,transaction_date').eq('organization_id', preparation.organizationId).ilike('transaction_type', 'incoming funds').order('id').range(from, to)),
+      readAllRows((from, to) => admin.from('bank_import_entries').select('id,file_id,transaction_date').eq('organization_id', preparation.organizationId).in('transaction_type', ['Incoming Funds', 'Cash Deposit']).order('id').range(from, to)),
     ]);
     if (occurrencesResult.error) throw new Error(`Failed to compare mailbox files: ${occurrencesResult.error.message}`);
     if (problemFilesResult.error) throw new Error(`Failed to count problem import files: ${problemFilesResult.error.message}`);

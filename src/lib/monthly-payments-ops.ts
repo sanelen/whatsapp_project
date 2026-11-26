@@ -673,11 +673,15 @@ export async function matchReferenceToUnit(input: {
  */
 export async function autoMatchUnmatchedReferences(input: {
   periods?: string[];
+  bankImportEntryIds?: string[];
   dryRun?: boolean;
   propertyId?: string;
   actor: string;
 }) {
   const admin = getSupabaseAdmin();
+  if (input.bankImportEntryIds && input.bankImportEntryIds.length === 0) {
+    return { scanned: 0, matched: 0, ambiguous: 0, unmatched: 0, failed: 0 };
+  }
 
   let referenceQuery = admin
     .from('payment_references')
@@ -685,6 +689,7 @@ export async function autoMatchUnmatchedReferences(input: {
     .is('unit_id', null)
     .eq('signed_off', false);
   if (input.propertyId) referenceQuery = referenceQuery.eq('property_id', input.propertyId);
+  if (input.bankImportEntryIds) referenceQuery = referenceQuery.in('bank_import_entry_id', input.bankImportEntryIds);
   if (input.periods?.length) {
     const { getBillingWindowForPeriod } = await import('@/lib/bank-import');
     const windows = input.periods.map(getBillingWindowForPeriod);
